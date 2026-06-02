@@ -22,7 +22,7 @@ class MarketData:
 
         ticker = yf.Ticker(symbol)
         df = ticker.history(period=period, interval=interval, auto_adjust=True)
-        if df.empty:
+        if df is None or df.empty:
             raise ValueError(f"No se obtuvieron datos para {symbol}")
 
         df.columns = [c.lower() for c in df.columns]
@@ -37,7 +37,7 @@ class MarketData:
                        interval: str = "1d") -> pd.DataFrame:
         ticker = yf.Ticker(symbol)
         df = ticker.history(start=start, end=end, interval=interval, auto_adjust=True)
-        if df.empty:
+        if df is None or df.empty:
             raise ValueError(f"No se obtuvieron datos para {symbol} ({start} → {end})")
         df.columns = [c.lower() for c in df.columns]
         df.index = pd.to_datetime(df.index)

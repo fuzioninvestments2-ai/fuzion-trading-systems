@@ -37,6 +37,8 @@ async def get_options_chain(symbol: str, expiration: Optional[str] = None):
             "calls": [vars(c) for c in chain.calls[:20]],
             "puts": [vars(p) for p in chain.puts[:20]],
         }, t0)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -45,13 +47,16 @@ async def get_options_chain(symbol: str, expiration: Optional[str] = None):
 async def calculate_greeks(request: GreeksRequest):
     t0 = time.time()
     try:
-        g = _greeks.calculate_all_greeks(
-            request.S, request.K, request.T, request.r, request.sigma, request.option_type)
+        S, K, T = request.resolved_S(), request.resolved_K(), request.resolved_T()
+        r, sigma = request.resolved_r(), request.resolved_sigma()
+        g = _greeks.calculate_all_greeks(S, K, T, r, sigma, request.option_type)
         iv = _greeks.calculate_iv(
-            _greeks._bs_price(request.S, request.K, request.T, request.r, request.sigma, request.option_type),
-            request.S, request.K, request.T, request.r, request.option_type)
+            _greeks._bs_price(S, K, T, r, sigma, request.option_type),
+            S, K, T, r, request.option_type)
         return _resp({"delta": g.delta, "gamma": g.gamma, "theta": g.theta,
                       "vega": g.vega, "rho": g.rho, "iv": iv}, t0)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -76,6 +81,8 @@ async def get_iv_analysis(symbol: str):
             "skew": {"put_skew": skew.put_skew, "call_skew": skew.call_skew,
                      "ratio": skew.skew_ratio},
         }, t0)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -92,6 +99,8 @@ async def screen_options(request: ScreenRequest):
         )
         results = _screener.scan_universe(request.universe, criteria)
         return _resp({"results": [vars(r) for r in results]}, t0)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -105,6 +114,8 @@ async def scan_wheel(request: WheelScanRequest):
         candidates = engine.scan_csp_candidates(
             request.universe, request.account_size, request.regime)
         return _resp({"candidates": [vars(c) for c in candidates[:10]]}, t0)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -118,6 +129,8 @@ async def scan_condors(request: CondorScanRequest):
         candidates = engine.find_condors(
             request.symbol, request.account_size, request.regime)
         return _resp({"candidates": [vars(c) for c in candidates[:5]]}, t0)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -131,6 +144,8 @@ async def scan_spreads(request: SpreadScanRequest):
         candidates = engine.find_spreads(
             request.symbol, request.direction, request.account_size, request.regime)
         return _resp({"candidates": [vars(c) for c in candidates[:5]]}, t0)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -143,5 +158,7 @@ async def scan_earnings(request: EarningsScanRequest):
         engine = EarningsEngine(_fetcher, _iv)
         plays = engine.find_earnings_plays(request.universe, request.regime)
         return _resp({"plays": [vars(p) for p in plays[:10]]}, t0)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

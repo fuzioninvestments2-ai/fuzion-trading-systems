@@ -22,8 +22,15 @@ async def generate_signals(request: SignalRequest):
     try:
         md = MktData({})
         signals_out = []
-        for symbol in request.symbols:
-            bars = md.get_bars(symbol, period=request.period)
+        symbols = request.get_symbols()
+        if not symbols:
+            raise HTTPException(status_code=400, detail="Proporciona 'symbol' o 'symbols'")
+        for symbol in symbols:
+            try:
+                bars = md.get_bars(symbol, period=request.period)
+            except Exception as data_err:
+                raise HTTPException(status_code=503,
+                    detail=f"No se pudo obtener datos para {symbol}: {data_err}")
             hmm = HMMEngine({"n_candidates": [3, 4], "n_init": 3,
                               "min_train_bars": 252, "refit_interval": 5,
                               "zscore_window": 126})
@@ -35,5 +42,7 @@ async def generate_signals(request: SignalRequest):
             if signal:
                 signals_out.append(signal.to_dict())
         return _resp({"signals": signals_out}, t0)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

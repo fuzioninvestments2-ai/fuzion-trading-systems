@@ -31,7 +31,11 @@ async def analyze_regime(request: RegimeAnalysisRequest):
     t0 = time.time()
     try:
         md = MktData({})
-        bars = md.get_bars(request.symbol, period=request.period)
+        try:
+            bars = md.get_bars(request.symbol, period=request.period)
+        except Exception as data_err:
+            raise HTTPException(status_code=503,
+                detail=f"No se pudo obtener datos para {request.symbol}: {data_err}")
         hmm = HMMEngine({
             "n_candidates": [3, 4, 5], "n_init": 5, "min_train_bars": 252,
             "refit_interval": 5, "zscore_window": 126,
@@ -53,6 +57,8 @@ async def analyze_regime(request: RegimeAnalysisRequest):
             "description": regime.description,
             "all_probabilities": state.all_probabilities.tolist(),
         }, t0)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -62,7 +68,11 @@ async def get_current_regime(symbol: str):
     t0 = time.time()
     try:
         md = MktData({})
-        bars = md.get_bars(symbol, period="2y")
+        try:
+            bars = md.get_bars(symbol, period="2y")
+        except Exception as data_err:
+            raise HTTPException(status_code=503,
+                detail=f"No se pudo obtener datos para {symbol}: {data_err}")
         hmm = HMMEngine({"n_candidates": [3, 4], "n_init": 3, "min_train_bars": 252})
         hmm.fit(bars)
         state = hmm.predict_regime(bars)
@@ -71,5 +81,7 @@ async def get_current_regime(symbol: str):
             "regime": state.current_regime.label.value,
             "probability": round(state.regime_probability, 4),
         }, t0)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -3,8 +3,17 @@ from typing import List, Optional
 
 
 class SignalRequest(BaseModel):
-    symbols: List[str]
+    symbols: Optional[List[str]] = None
+    symbol: Optional[str] = None       # alias para un solo símbolo
     period: str = "2y"
+    equity: Optional[float] = None     # ignorado, para compatibilidad frontend
+
+    def get_symbols(self) -> List[str]:
+        if self.symbols:
+            return self.symbols
+        if self.symbol:
+            return [self.symbol]
+        return []
 
 
 class BrokerConnectRequest(BaseModel):

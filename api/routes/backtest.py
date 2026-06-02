@@ -21,7 +21,11 @@ async def run_backtest(request: BacktestRequest):
     t0 = time.time()
     try:
         md = MktData({})
-        bars = md.get_bars_range(request.symbol, request.start, request.end)
+        try:
+            bars = md.get_bars_range(request.symbol, request.get_start(), request.get_end())
+        except Exception as data_err:
+            raise HTTPException(status_code=503,
+                detail=f"No se pudo obtener datos de mercado para {request.symbol}: {data_err}")
         config = {
             "hmm": {"n_candidates": [3, 4], "n_init": 3, "min_train_bars": 252,
                     "refit_interval": 5, "zscore_window": 126},
@@ -51,6 +55,8 @@ async def run_backtest(request: BacktestRequest):
             "benchmarks": result.benchmarks,
             "windows": result.windows,
         }, t0)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -76,5 +82,7 @@ async def stress_test(request: StressTestRequest):
             "monte_carlo": vars(mc),
             "crash_scenarios": [vars(c) for c in crashes],
         }, t0)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
