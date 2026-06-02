@@ -87,6 +87,40 @@ class EarningsEngine:
             notes="Post-earnings IV crush play",
         )
 
+    def find_earnings_plays(self, candidates: List[dict]) -> List[EarningsSetup]:
+        """
+        Scans candidates for 3 strategies:
+        1. Pre-earnings IV expansion (long straddle 7 DTE before, exit day before)
+        2. Through-earnings iron condor (sell condor into earnings, capture IV crush)
+        3. Post-earnings direction (debit spread after announcement)
+        Always close by morning after announcement.
+        """
+        plays = []
+        for c in candidates:
+            symbol = c.get("symbol")
+            earnings_date = c.get("earnings_date", "")
+            days_until = c.get("days_until", 0)
+            atm_call = c.get("atm_call")
+            atm_put = c.get("atm_put")
+            if atm_call is None or atm_put is None:
+                continue
+
+            expected_move = self.compute_expected_move(atm_call, atm_put)
+            hist_avg = c.get("historical_avg_move", expected_move)
+            iv_rank = c.get("iv_rank", 0)
+
+            if 5 <= days_until <= self.entry_dte and iv_rank >= 20:
+                plays.append(self.build_long_straddle(symbol, earnings_date, atm_call, atm_put))
+
+            call_spread = c.get("call_spread_legs")
+            put_spread = c.get("put_spread_legs")
+            credit = c.get("condor_credit", 0)
+            if call_spread and put_spread and credit > 0 and days_until <= 2:
+                plays.append(self.build_iron_condor_post_earnings(
+                    symbol, earnings_date, call_spread, put_spread, credit))
+
+        return plays
+
     def should_exit(self, setup: EarningsSetup, dte: int, current_pnl: float) -> tuple[bool, str]:
         if dte <= setup.exit_before_dte:
             return True, "approaching_earnings_exit"

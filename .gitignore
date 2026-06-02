@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Credenciales — NUNCA commitear
+.env
+config/credentials.yaml
+
+# Datos generados
+logs/*.log
+logs/*.jsonl
+models/*.pkl
+models/*.joblib
+results/*.json
+results/*.csv
+cache/
+
+# Keep placeholders
+!logs/.gitkeep
+!models/.gitkeep
+!results/.gitkeep
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
