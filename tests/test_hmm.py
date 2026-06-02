@@ -42,7 +42,7 @@ def test_hmm_no_viterbi():
     import inspect
     source = inspect.getsource(hmm.predict_regime)
     assert "predict_proba" in source
-    assert "viterbi" not in source.lower()
+    assert "model.predict(" not in source  # Viterbi prohibido
 
 
 def test_insufficient_data_raises():

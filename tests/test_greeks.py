@@ -37,7 +37,7 @@ def test_put_call_parity():
     g = GreeksCalculator()
     call = g.calculate_all_greeks(100, 100, 0.25, 0.05, 0.20, "call")
     put = g.calculate_all_greeks(100, 100, 0.25, 0.05, 0.20, "put")
-    assert abs(call.delta + put.delta - 1.0) < 0.01
+    assert abs(call.delta - put.delta - 1.0) < 0.01  # Δcall - Δput = 1
 
 
 def test_iv_solver_roundtrip():

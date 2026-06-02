@@ -169,7 +169,11 @@ class HMMEngine:
             s = features[col]
             roll_mean = s.rolling(self.zscore_window, min_periods=30).mean()
             roll_std = s.rolling(self.zscore_window, min_periods=30).std()
-            zscored[col] = (s - roll_mean) / roll_std.replace(0, np.nan)
+            safe_std = roll_std.where(roll_std > 1e-10, other=np.nan)
+            z = (s - roll_mean) / safe_std
+            # Columna constante (std=0) → z=0 en vez de NaN
+            z = z.fillna(0.0).where(roll_mean.notna(), other=np.nan)
+            zscored[col] = z
         return zscored.clip(-5, 5)
 
     # ------------------------------------------------------------------
