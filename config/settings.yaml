@@ -1,0 +1,78 @@
+# === Broker ===
+broker:
+  paper_trading: true
+  primary: "alpaca"         # alpaca | ibkr | bybit | okx
+  host: "127.0.0.1"
+  exchange: "SMART"
+  currency: "USD"
+
+# === Universe ===
+universe:
+  symbols:
+    - SPY
+    - QQQ
+    - IWM
+    - AAPL
+    - MSFT
+    - GOOGL
+    - AMZN
+    - NVDA
+    - TSLA
+    - META
+  timeframe: "1Day"
+  lookback_bars: 1200
+  signal_timeframe: "5Min"
+
+# === HMM ===
+hmm:
+  n_candidates: [3, 4, 5]
+  n_init: 10
+  covariance_type: "full"
+  n_iter: 200
+  random_state: 42
+  min_train_bars: 252
+  refit_interval: 5
+  zscore_window: 126
+  stability_bars: 3
+  flicker_window: 20
+  flicker_threshold: 4
+
+# === Risk ===
+risk:
+  max_risk_per_trade: 0.01
+  max_portfolio_leverage: 1.25
+  daily_loss_halt: -0.02
+  weekly_loss_halt: -0.05
+  monthly_loss_halt: -0.10
+  max_drawdown_halt: -0.15
+
+# === Options ===
+options:
+  data_source: "yfinance"   # o "polygon"
+  polygon_api_key: ""
+  default_dte_range: [30, 45]
+  min_volume: 100
+  min_open_interest: 500
+  max_bid_ask_spread_pct: 0.10
+  default_risk_per_trade: 0.02
+  max_options_allocation: 0.30
+
+# === Backtest ===
+backtest:
+  train_window: 504
+  test_window: 126
+  step_forward: 63
+  commission_per_trade: 1.00
+  slippage_pct: 0.0005
+
+# === API Server ===
+api:
+  host: "0.0.0.0"
+  port: 8000
+  fuzion_url: "https://titan-trading-platfo-ufcgle.abacusai.app"
+
+# === Alerts ===
+alerts:
+  email_enabled: false
+  webhook_url: ""
+  rate_limit_minutes: 5
