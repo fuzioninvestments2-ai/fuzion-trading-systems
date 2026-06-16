@@ -1,0 +1,672 @@
+//@version=5
+// ============================================================================
+//  QUANT BOT v5 — COMPLETO (3 MOTORES + INDICADORES PROFESIONALES)
+//  Motor 1: Scalping intra-vela (1m–5m)
+//  Motor 2: Swing intradía (15m–1h)
+//  Motor 3: Tendencia multi-TF (1h–4h–1D)
+//
+//  Integra: EMA/SMA, MACD, RSI (modo Cardwell), Estocástico, Williams %R, CCI,
+//  Bollinger, Keltner, Squeeze, Donchian (Turtle), ATR, Parabolic SAR,
+//  SuperTrend, ADX/DMI, Volumen, OBV, VWAP, MFI, CMF, Ichimoku, Awesome Osc,
+//  TRIX, Ultimate Oscillator, Fibonacci (zona dorada + extensiones), Pivots.
+//
+//  Salidas: SL/TP por motor, breakeven, trailing (SAR/SuperTrend/ATR), timeout.
+//  Riesgo: tamaño por ATR, Kelly opcional, drawdown diario, sesiones LON/NY.
+//  Webhooks: alertas JSON listas para Cornix/3Commas/Telegram.
+//
+//  NOTA anti-repaint: todas las confirmaciones de TF superior se leen con el
+//  valor de la vela CERRADA ([1]) y lookahead=barmerge.lookahead_off.
+// ============================================================================
+strategy("QUANT BOT v5", "QBv5", overlay=true, pyramiding=0, initial_capital=10000,
+     default_qty_type=strategy.percent_of_equity, default_qty_value=1.0,
+     commission_type=strategy.commission.percent, commission_value=0.075,
+     slippage=3, calc_on_every_tick=true, process_orders_on_close=false,
+     close_entries_rule="ANY")
+
+// ============================================================================
+//  GRUPO 0 · MOTORES (activar / desactivar)
+// ============================================================================
+g0 = "0 · Motores"
+useScalp = input.bool(true,  "Motor 1 · Scalping (1m–5m)",      group=g0)
+useSwing = input.bool(true,  "Motor 2 · Swing intradía (15m–1h)", group=g0)
+useTrend = input.bool(true,  "Motor 3 · Tendencia multi-TF (1h–4h–1D)", group=g0)
+allowShorts = input.bool(true, "Permitir cortos", group=g0)
+
+// ============================================================================
+//  GRUPO A · Medias y Tendencia
+// ============================================================================
+gA = "A · Medias y Tendencia"
+emaFastLen = input.int(9,  "EMA rápida", inline="ema", minval=2, group=gA)
+emaSlowLen = input.int(20, "EMA lenta",  inline="ema", minval=2, group=gA)
+sma50Len   = input.int(50, "SMA media",  inline="sma", minval=5, group=gA)
+useSma200  = input.bool(true, "Filtro SMA 200 (macro)", inline="s2", group=gA)
+sma200Len  = input.int(200, "len", inline="s2", minval=20, group=gA)
+usePullback= input.bool(true, "Exigir pullback a EMA lenta (swing)", group=gA)
+
+// ============================================================================
+//  GRUPO B · Osciladores
+// ============================================================================
+gB = "B · Osciladores"
+rsiScalpLen   = input.int(5,  "RSI scalping len", inline="r1", minval=2, group=gB)
+rsiCrossLevel = input.int(30, "RSI cruce", inline="r1", minval=1, maxval=99, group=gB)
+rsiLen        = input.int(14, "RSI swing len", inline="r2", minval=2, group=gB)
+useCardwell   = input.bool(true, "RSI modo Cardwell (40/60)", inline="r2", group=gB)
+stochLen = input.int(14, "Stoch len", inline="st", minval=2, group=gB)
+stochKsm = input.int(3,  "K", inline="st", minval=1, group=gB)
+stochDsm = input.int(3,  "D", inline="st", minval=1, group=gB)
+stochZone= input.int(20, "Zona <", inline="st", minval=1, maxval=50, group=gB)
+wprLen   = input.int(5,  "Williams %R len", inline="w", minval=2, group=gB)
+cciLen   = input.int(14, "CCI len", inline="c", minval=2, group=gB)
+macdFast = input.int(12, "MACD rápida", inline="m", minval=2, group=gB)
+macdSlow = input.int(26, "lenta", inline="m", minval=2, group=gB)
+macdSig  = input.int(9,  "señal", inline="m", minval=1, group=gB)
+uoFast   = input.int(7,  "Ultimate Osc", inline="uo", minval=1, group=gB)
+uoMid    = input.int(14, "·", inline="uo", minval=1, group=gB)
+uoSlow   = input.int(28, "·", inline="uo", minval=1, group=gB)
+trixLen  = input.int(15, "TRIX len", inline="tx", minval=2, group=gB)
+aoFast   = input.int(5,  "AO rápida", inline="ao", minval=1, group=gB)
+aoSlow   = input.int(34, "lenta", inline="ao", minval=2, group=gB)
+
+// ============================================================================
+//  GRUPO C · Volatilidad y Canales
+// ============================================================================
+gC = "C · Volatilidad y Canales"
+atrLen    = input.int(14, "ATR len", minval=2, group=gC)
+atrMinPct = input.float(0.1, "ATR mínimo (% precio)", step=0.05, group=gC)
+bbLen     = input.int(20, "Bollinger len", inline="bb", minval=2, group=gC)
+bbMult    = input.float(2.0, "mult", inline="bb", step=0.1, group=gC)
+kcLen     = input.int(20, "Keltner len", inline="kc", minval=2, group=gC)
+kcMult    = input.float(1.5, "mult ATR", inline="kc", step=0.1, group=gC)
+useSqueeze= input.bool(false, "Exigir expansión post-squeeze (BB>KC)", group=gC)
+dcLen     = input.int(20, "Donchian len (Turtle)", minval=2, group=gC)
+stTf      = input.timeframe("15", "SuperTrend TF (régimen)", inline="st2", group=gC)
+stFactor  = input.float(3.0, "factor", inline="st2", step=0.1, group=gC)
+stAtrLen  = input.int(10, "ATR", inline="st2", minval=1, group=gC)
+sarStart  = input.float(0.02, "SAR inicio", inline="sar", step=0.01, group=gC)
+sarInc    = input.float(0.02, "inc", inline="sar", step=0.01, group=gC)
+sarMax    = input.float(0.2,  "máx", inline="sar", step=0.01, group=gC)
+
+// ============================================================================
+//  GRUPO D · Volumen y Flujo de Dinero
+// ============================================================================
+gD = "D · Volumen y Flujo"
+useVwap = input.bool(true, "Sesgo VWAP (institucional)", group=gD)
+volLen  = input.int(20, "Media volumen", inline="v", minval=2, group=gD)
+volMult = input.float(1.5, "x mín ruptura", inline="v", step=0.1, group=gD)
+mfiLen  = input.int(14, "MFI len", inline="mf", minval=2, group=gD)
+mfiHi   = input.int(80, "OB", inline="mf", minval=51, maxval=99, group=gD)
+mfiLo   = input.int(20, "OS", inline="mf", minval=1, maxval=49, group=gD)
+cmfLen  = input.int(20, "CMF len", minval=2, group=gD)
+useObv  = input.bool(true, "Confirmación OBV", group=gD)
+
+// ============================================================================
+//  GRUPO E · Niveles (Fibonacci · Pivots · Ichimoku)
+// ============================================================================
+gE = "E · Niveles"
+useFib    = input.bool(true, "Fibonacci zona dorada (swing/tendencia)", group=gE)
+fibLook   = input.int(100, "Lookback swing Fib", minval=10, group=gE)
+pivotType = input.string("Clásico", "Pivots", options=["Clásico","Camarilla","Ambos","Off"], group=gE)
+useIchi   = input.bool(true, "Ichimoku (tendencia)", group=gE)
+ichiTf    = input.timeframe("240", "Ichimoku TF", group=gE)
+
+// ============================================================================
+//  GRUPO F · Gestión de Riesgo y Ejecución
+// ============================================================================
+gF = "F · Riesgo y Ejecución"
+riskPerTrade = input.float(1.0, "Riesgo por operación (%)", step=0.1, minval=0.1, maxval=5, group=gF)
+useKelly     = input.bool(true, "Kelly fraccionado (cap al riesgo base)", group=gF)
+maxLeverage  = input.float(5.0, "Apalancamiento máx", step=0.5, minval=0.1, group=gF)
+maxDailyDD   = input.float(5.0, "Drawdown diario máx (%)", step=0.5, minval=0.1, group=gF)
+ddSoftPct    = input.float(3.0, "DD diario blando → tamaño 50% (%)", step=0.5, minval=0.1, group=gF)
+maxTradesDay = input.int(20, "Máx operaciones por día", minval=1, group=gF)
+// --- Scalp
+scSlAtr  = input.float(0.8, "M1 SL = xATR", inline="m1", step=0.1, group=gF)
+scTp1Pct = input.float(0.3, "M1 TP1 %", inline="m1", step=0.05, group=gF)
+scTp2Pct = input.float(0.6, "M1 TP2 %", inline="m1", step=0.05, group=gF)
+scTimeout= input.int(5, "M1 Timeout (velas)", inline="m1", minval=1, group=gF)
+// --- Swing
+swSlAtr  = input.float(2.0, "M2 SL = xATR", inline="m2", step=0.1, group=gF)
+swRr1    = input.float(3.0, "M2 TP1 (xR)", inline="m2", step=0.1, group=gF)
+swRr2    = input.float(5.0, "M2 TP2 (xR)", inline="m2", step=0.1, group=gF)
+swBe     = input.float(1.5, "M2 BE (xR)", inline="m2", step=0.1, group=gF)
+// --- Trend
+trSlAtr  = input.float(3.0, "M3 SL = xATR(D)", inline="m3", step=0.1, group=gF)
+trFibExt = input.float(1.618, "M3 TP = ext Fib", inline="m3", step=0.001, group=gF)
+trTrailAtr = input.float(3.0, "M3 Trailing xATR", inline="m3", step=0.1, group=gF)
+tp1ClosePct = input.int(45, "Cierre parcial en TP1 (%)", minval=1, maxval=99, group=gF)
+confWindow  = input.int(2, "Ventana confirmación (velas)", minval=0, group=gF, tooltip="Permite que cruces de RSI/Stoch no caigan en la MISMA vela. 0 = estricto.")
+
+// ============================================================================
+//  GRUPO G · Sesiones (Londres / Nueva York)
+// ============================================================================
+gG = "G · Sesiones"
+useLondon = input.bool(true, "Activar sesión Londres", group=gG)
+sessLon   = input.session("0800-1700", "Londres (GMT)", group=gG)
+useNY     = input.bool(true, "Activar sesión NY", group=gG)
+sessNY    = input.session("1300-2200", "Nueva York (GMT)", group=gG)
+closeBeforeEnd = input.bool(true, "Cerrar 15 min antes del fin de sesión", group=gG)
+tz        = input.string("GMT", "Zona horaria", group=gG)
+
+// ============================================================================
+//  GRUPO H · Webhooks
+// ============================================================================
+gH = "H · Webhooks"
+botName = input.string("QBv5", "Nombre del bot (signature)", group=gH)
+
+// ============================================================================
+//  INDICADORES — TIMEFRAME DEL GRÁFICO
+// ============================================================================
+emaFast = ta.ema(close, emaFastLen)
+emaSlow = ta.ema(close, emaSlowLen)
+sma50   = ta.sma(close, sma50Len)
+vwapVal = ta.vwap(hlc3)
+atrVal  = ta.atr(atrLen)
+volMa   = ta.sma(volume, volLen)
+sarVal  = ta.sar(sarStart, sarInc, sarMax)
+
+rsiScalp = ta.rsi(close, rsiScalpLen)
+rsi14    = ta.rsi(close, rsiLen)
+kRaw     = ta.stoch(close, high, low, stochLen)
+kSlow    = ta.sma(kRaw, stochKsm)
+dSlow    = ta.sma(kSlow, stochDsm)
+wprVal   = ta.wpr(wprLen)
+cciVal   = ta.cci(close, cciLen)
+[macdLine, macdSignal, macdHist] = ta.macd(close, macdFast, macdSlow, macdSig)
+mfiVal   = ta.mfi(hlc3, mfiLen)
+
+// Bollinger / Keltner / Squeeze
+[bbMid, bbU, bbL] = ta.bb(close, bbLen, bbMult)
+[kcMid, kcU, kcL] = ta.kc(close, kcLen, kcMult, true)
+squeezeOff = bbU > kcU and bbL < kcL          // expansión (post-squeeze)
+
+// Donchian (Turtle)
+dcHigh = ta.highest(high, dcLen)
+dcLow  = ta.lowest(low, dcLen)
+
+// Awesome Oscillator
+aoVal = ta.sma(hl2, aoFast) - ta.sma(hl2, aoSlow)
+
+// TRIX (triple suavizado exponencial)
+trEma1 = ta.ema(close, trixLen)
+trEma2 = ta.ema(trEma1, trixLen)
+trEma3 = ta.ema(trEma2, trixLen)
+trixVal = nz(trEma3[1]) != 0 ? 10000.0 * (trEma3 - trEma3[1]) / trEma3[1] : 0.0
+
+// Ultimate Oscillator (manual)
+uoBp  = close - math.min(low, close[1])
+uoTr  = math.max(high, close[1]) - math.min(low, close[1])
+uoA7  = math.sum(uoTr, uoFast) != 0 ? math.sum(uoBp, uoFast) / math.sum(uoTr, uoFast) : 0.0
+uoA14 = math.sum(uoTr, uoMid)  != 0 ? math.sum(uoBp, uoMid)  / math.sum(uoTr, uoMid)  : 0.0
+uoA28 = math.sum(uoTr, uoSlow) != 0 ? math.sum(uoBp, uoSlow) / math.sum(uoTr, uoSlow) : 0.0
+uoVal = 100.0 * (4.0 * uoA7 + 2.0 * uoA14 + uoA28) / 7.0
+
+// CMF (Chaikin Money Flow)
+mfMult = (high - low) != 0 ? ((close - low) - (high - close)) / (high - low) : 0.0
+mfVol  = mfMult * volume
+cmfVal = math.sum(volume, cmfLen) != 0 ? math.sum(mfVol, cmfLen) / math.sum(volume, cmfLen) : 0.0
+
+// OBV y su pendiente
+obvVal   = ta.obv
+obvRising = obvVal > ta.sma(obvVal, 10)
+
+// ADX/DMI del gráfico
+[diPlus, diMinus, adxVal] = ta.dmi(14, 14)
+
+// ============================================================================
+//  MULTI-TIMEFRAME (request.security · valor de vela CERRADA · lookahead off)
+// ============================================================================
+// --- SuperTrend de régimen (TF configurable)
+f_stDir() =>
+    [_v, _d] = ta.supertrend(stFactor, stAtrLen)
+    _d[1]
+stDir15 = request.security(syminfo.tickerid, stTf, f_stDir(), lookahead=barmerge.lookahead_off)
+stUp15  = stDir15 < 0   // -1 = alcista (verde)
+
+// --- Tendencia superior: ADX/DMI + RSI de la vela cerrada
+f_htf() =>
+    [dp, dm, ax] = ta.dmi(14, 14)
+    r = ta.rsi(close, rsiLen)
+    [dp[1], dm[1], ax[1], r[1]]
+[h1DiP, h1DiM, h1Adx, h1Rsi] = request.security(syminfo.tickerid, "60",  f_htf(), lookahead=barmerge.lookahead_off)
+[h4DiP, h4DiM, h4Adx, h4Rsi] = request.security(syminfo.tickerid, "240", f_htf(), lookahead=barmerge.lookahead_off)
+
+// --- Diario: SMA200, ATR, Donchian, cierre previo (para pivots)
+f_daily() =>
+    s200 = ta.sma(close, sma200Len)
+    a    = ta.atr(atrLen)
+    dh   = ta.highest(high, dcLen)
+    dl   = ta.lowest(low, dcLen)
+    [s200[1], a[1], dh[1], dl[1], high[1], low[1], close[1]]
+[dSma200, dAtr, dDcHigh, dDcLow, pdHigh, pdLow, pdClose] = request.security(syminfo.tickerid, "D", f_daily(), lookahead=barmerge.lookahead_off)
+
+// --- Ichimoku (TF configurable): nube y cruces
+f_ichi() =>
+    conv  = (ta.highest(high, 9)  + ta.lowest(low, 9))  / 2.0
+    base  = (ta.highest(high, 26) + ta.lowest(low, 26)) / 2.0
+    spanA = (conv + base) / 2.0
+    spanB = (ta.highest(high, 52) + ta.lowest(low, 52)) / 2.0
+    // nube actual = spans proyectados 26 atrás; nube futura = spanA vs spanB hoy
+    [conv[1], base[1], spanA[26], spanB[26], spanA[1], spanB[1]]
+[ichiConv, ichiBase, ichiSpanA0, ichiSpanB0, ichiSpanAf, ichiSpanBf] = request.security(syminfo.tickerid, ichiTf, f_ichi(), lookahead=barmerge.lookahead_off)
+ichiCloudTop = math.max(ichiSpanA0, ichiSpanB0)
+ichiCloudBot = math.min(ichiSpanA0, ichiSpanB0)
+ichiAbove = close > ichiCloudTop
+ichiBelow = close < ichiCloudBot
+ichiBullCross = ichiConv > ichiBase and ichiSpanAf > ichiSpanBf   // tenkan>kijun + nube futura verde
+ichiBearCross = ichiConv < ichiBase and ichiSpanAf < ichiSpanBf
+
+// ============================================================================
+//  PIVOTS (clásicos + Camarilla) desde el día anterior
+// ============================================================================
+pivP  = (pdHigh + pdLow + pdClose) / 3.0
+pivR1 = 2.0 * pivP - pdLow
+pivS1 = 2.0 * pivP - pdHigh
+pivR2 = pivP + (pdHigh - pdLow)
+pivS2 = pivP - (pdHigh - pdLow)
+camRange = pdHigh - pdLow
+camR3 = pdClose + camRange * 1.1 / 4.0
+camS3 = pdClose - camRange * 1.1 / 4.0
+camR4 = pdClose + camRange * 1.1 / 2.0
+camS4 = pdClose - camRange * 1.1 / 2.0
+
+// ============================================================================
+//  FIBONACCI (zona dorada 61.8–78.6% + extensión)
+// ============================================================================
+fibSwingHigh = ta.highest(high, fibLook)
+fibSwingLow  = ta.lowest(low, fibLook)
+fibRange = fibSwingHigh - fibSwingLow
+fib618 = fibSwingHigh - 0.618 * fibRange
+fib786 = fibSwingHigh - 0.786 * fibRange
+inGoldenLong  = fibRange > 0 and close <= fib618 and close >= fib786
+fibExtLong  = fibSwingLow + trFibExt * fibRange
+fibExtShort = fibSwingHigh - trFibExt * fibRange
+// para cortos: zona dorada simétrica desde el mínimo
+fib618s = fibSwingLow + 0.618 * fibRange
+fib786s = fibSwingLow + 0.786 * fibRange
+inGoldenShort = fibRange > 0 and close >= fib618s and close <= fib786s
+
+// ============================================================================
+//  RSI MODO CARDWELL (40 soporte alcista / 60 resistencia bajista)
+// ============================================================================
+rsiBullOk = useCardwell ? (rsi14 > 40 and rsi14 < 80) : (rsi14 > 40 and rsi14 < 70)
+rsiBearOk = useCardwell ? (rsi14 < 60 and rsi14 > 20) : (rsi14 < 60 and rsi14 > 30)
+// RSI embebido: no operar reversión si ADX fuerte y RSI anclado
+rsiEmbeddedLong  = adxVal > 25 and rsi14 > 70
+rsiEmbeddedShort = adxVal > 25 and rsi14 < 30
+
+// ============================================================================
+//  FILTROS COMUNES
+// ============================================================================
+volOk = (na(volMa) or volMa == 0) ? true : volume > volMa * volMult
+atrOk = atrVal > close * (atrMinPct / 100.0)
+expansionOk = not useSqueeze or squeezeOff
+// Filtro de noticias (proxy por anomalía volumen+rango)
+anomVol  = not na(volMa) and volMa > 0 and volume > volMa * 2.0
+bbWidth  = bbMid != 0 ? (bbU - bbL) / bbMid : 0.0
+kcWidth  = kcMid != 0 ? (kcU - kcL) / kcMid : 0.0
+newsAnomaly = anomVol and bbWidth > kcWidth * 1.5
+var int newsPauseUntil = 0
+if newsAnomaly
+    newsPauseUntil := bar_index + 3
+newsPaused = bar_index <= newsPauseUntil
+
+// VWAP / EMA sesgos
+vwapLong  = not useVwap or close > vwapVal
+vwapShort = not useVwap or close < vwapVal
+emaUp   = emaFast > emaSlow
+emaDown = emaFast < emaSlow
+sma200Long  = not useSma200 or close > dSma200
+sma200Short = not useSma200 or close < dSma200
+
+// ============================================================================
+//  GATILLOS (con ventana de confirmación)
+// ============================================================================
+rsiTrigL = ta.crossover(rsiScalp, rsiCrossLevel)
+rsiTrigS = ta.crossunder(rsiScalp, 100 - rsiCrossLevel)
+stochTrigL = ta.crossover(kSlow, dSlow) and dSlow[1] < stochZone
+stochTrigS = ta.crossunder(kSlow, dSlow) and dSlow[1] > (100 - stochZone)
+f_recent(cond) =>
+    bs = ta.barssince(cond)
+    not na(bs) and bs <= confWindow
+recentRsiL   = f_recent(rsiTrigL)
+recentRsiS   = f_recent(rsiTrigS)
+recentStochL = f_recent(stochTrigL)
+recentStochS = f_recent(stochTrigS)
+// Williams %R saliendo de extremos
+wprUpFromOS   = ta.crossover(wprVal, -80)
+wprDownFromOB = ta.crossunder(wprVal, -20)
+// CCI Zero Line Reject (Woodies)
+cciZlrLong  = cciVal[1] < 0 and cciVal > 0 and cciVal < 100
+cciZlrShort = cciVal[1] > 0 and cciVal < 0 and cciVal > -100
+// Pullback a EMA lenta + vela alcista/bajista
+bullCandle = close > open and (close - open) > (high - low) * 0.5
+bearCandle = close < open and (open - close) > (high - low) * 0.5
+pullbackLong  = not usePullback or (low <= emaSlow and bullCandle)
+pullbackShort = not usePullback or (high >= emaSlow and bearCandle)
+
+// ============================================================================
+//  MOTOR 1 · SCALPING (intra-vela)
+// ============================================================================
+m1BiasLong  = vwapLong  and emaUp   and sma200Long  and stUp15
+m1BiasShort = vwapShort and emaDown and sma200Short and not stUp15
+// Gatillo de momentum rápido: RSI, Williams %R o CCI Zero-Line-Reject (cualquiera)
+momoLong  = recentRsiL or wprUpFromOS   or cciZlrLong
+momoShort = recentRsiS or wprDownFromOB or cciZlrShort
+m1Long  = useScalp and m1BiasLong  and momoLong  and recentStochL and volOk and atrOk and expansionOk and not rsiEmbeddedLong
+m1Short = useScalp and m1BiasShort and momoShort and recentStochS and volOk and atrOk and expansionOk and not rsiEmbeddedShort
+
+// ============================================================================
+//  MOTOR 2 · SWING INTRADÍA (15m–1h)
+// ============================================================================
+h1TrendUp   = h1DiP > h1DiM and h1Adx > 25
+h1TrendDown = h1DiM > h1DiP and h1Adx > 25
+h1RsiLong   = h1Rsi > 40 and h1Rsi < 70
+h1RsiShort  = h1Rsi < 60 and h1Rsi > 30
+m2Long  = useSwing and sma200Long  and h1TrendUp   and h1RsiLong  and pullbackLong  and rsiBullOk and macdHist > macdHist[1] and mfiVal < mfiHi and (not useObv or obvRising)
+m2Short = useSwing and sma200Short and h1TrendDown and h1RsiShort and pullbackShort and rsiBearOk and macdHist < macdHist[1] and mfiVal > mfiLo and (not useObv or not obvRising)
+
+// ============================================================================
+//  MOTOR 3 · TENDENCIA MULTI-TF (1h–4h–1D)
+// ============================================================================
+fibLongOk  = not useFib or inGoldenLong
+fibShortOk = not useFib or inGoldenShort
+ichiLongOk  = not useIchi or (ichiAbove and ichiBullCross)
+ichiShortOk = not useIchi or (ichiBelow and ichiBearCross)
+dcBreakLong  = close > dDcHigh
+dcBreakShort = close < dDcLow
+m3Long  = useTrend and sma200Long  and h4Adx > 25 and h4DiP > h4DiM and h4Rsi > 50 and ichiLongOk  and dcBreakLong  and uoVal > 50 and fibLongOk
+m3Short = useTrend and sma200Short and h4Adx > 25 and h4DiM > h4DiP and h4Rsi < 50 and ichiShortOk and dcBreakShort and uoVal < 50 and fibShortOk
+
+// ============================================================================
+//  CONFIANZA (confluencia de filtros 0–100)
+// ============================================================================
+f_b2i(b) => b ? 1 : 0
+confLongCount  = f_b2i(vwapLong)  + f_b2i(emaUp)   + f_b2i(sma200Long)  + f_b2i(stUp15)       + f_b2i(h1TrendUp)   + f_b2i(rsiBullOk) + f_b2i(macdHist > 0) + f_b2i(ichiAbove) + f_b2i(uoVal > 50) + f_b2i(cmfVal > 0) + f_b2i(aoVal > 0) + f_b2i(trixVal > 0)
+confShortCount = f_b2i(vwapShort) + f_b2i(emaDown) + f_b2i(sma200Short) + f_b2i(not stUp15)   + f_b2i(h1TrendDown) + f_b2i(rsiBearOk) + f_b2i(macdHist < 0) + f_b2i(ichiBelow) + f_b2i(uoVal < 50) + f_b2i(cmfVal < 0) + f_b2i(aoVal < 0) + f_b2i(trixVal < 0)
+confidenceLong  = math.round(confLongCount  / 12.0 * 100)
+confidenceShort = math.round(confShortCount / 12.0 * 100)
+
+// ============================================================================
+//  SESIONES (Londres / NY) + cierre anticipado
+// ============================================================================
+inLondon = useLondon and not na(time(timeframe.period, sessLon, tz))
+inNY     = useNY and not na(time(timeframe.period, sessNY, tz))
+inSession = (inLondon or inNY) or (not useLondon and not useNY)
+// Detección robusta de fin de sesión: estábamos en sesión y dejamos de estarlo.
+// Sirve para "cerrar antes del cierre": al perder la sesión, se liquida la posición.
+sessionJustClosed = closeBeforeEnd and inSession[1] and not inSession
+
+// ============================================================================
+//  PROTECCIONES DIARIAS + TAMAÑO POR RIESGO
+// ============================================================================
+isNewDay = nz(ta.change(time("D")), 0) != 0
+var float dayStartEq  = na
+var int   tradesToday = 0
+var bool  haltedToday = false
+if isNewDay
+    dayStartEq  := strategy.equity
+    tradesToday := 0
+    haltedToday := false
+ddPct = na(dayStartEq) or dayStartEq == 0 ? 0.0 : (strategy.equity - dayStartEq) / dayStartEq * 100.0
+if ddPct <= -maxDailyDD
+    haltedToday := true
+ddSoft = ddPct <= -ddSoftPct   // reduce tamaño 50%
+
+// Kelly fraccionado (autocontenido)
+winRate = strategy.closedtrades > 10 ? strategy.wintrades / strategy.closedtrades : 0.5
+avgWin  = strategy.wintrades > 0 ? strategy.grossprofit / strategy.wintrades : 1.0
+avgLoss = (strategy.closedtrades - strategy.wintrades) > 0 ? strategy.grossloss / (strategy.closedtrades - strategy.wintrades) : 1.0
+payoff  = avgLoss > 0 ? avgWin / avgLoss : 1.0
+kellyRaw = payoff > 0 ? winRate - (1 - winRate) / payoff : 0.0
+kellyFrac = math.max(0.0, math.min(kellyRaw, 1.0)) * 0.5   // medio-Kelly
+effRiskPct = riskPerTrade
+if useKelly
+    effRiskPct := math.min(riskPerTrade, math.max(0.25, kellyFrac * 100.0))
+if ddSoft
+    effRiskPct := effRiskPct * 0.5
+
+f_qty(slDist) =>
+    rc = strategy.equity * (effRiskPct / 100.0)
+    q  = slDist > 0 ? rc / slDist : 0.0
+    qCap = close > 0 ? strategy.equity * maxLeverage / close : 0.0
+    math.min(q, qCap)
+
+// ============================================================================
+//  GATING GLOBAL
+// ============================================================================
+canTrade = inSession and not haltedToday and not newsPaused and tradesToday < maxTradesDay and strategy.position_size == 0
+
+// Distancias de stop por motor
+slScalp = math.max(atrVal * scSlAtr, close * 0.0001)
+slSwing = math.max(atrVal * swSlAtr, close * 0.0005)
+slTrend = math.max((na(dAtr) ? atrVal : dAtr) * trSlAtr, close * 0.001)
+
+// Selección de motor (prioridad: Tendencia > Swing > Scalping)
+goLong  = false
+goShort = false
+var string engine = na
+var float  pickSL = na
+if canTrade
+    if m3Long
+        goLong := true
+        engine := "trend"
+        pickSL := slTrend
+    else if m2Long
+        goLong := true
+        engine := "swing"
+        pickSL := slSwing
+    else if m1Long
+        goLong := true
+        engine := "scalp"
+        pickSL := slScalp
+    else if allowShorts and m3Short
+        goShort := true
+        engine := "trend"
+        pickSL := slTrend
+    else if allowShorts and m2Short
+        goShort := true
+        engine := "swing"
+        pickSL := slSwing
+    else if allowShorts and m1Short
+        goShort := true
+        engine := "scalp"
+        pickSL := slScalp
+
+qty = f_qty(pickSL)
+
+// ============================================================================
+//  ALERTAS JSON (Webhook · Cornix / 3Commas / Telegram)
+// ============================================================================
+f_macdTxt() => macdHist > 0 ? "bullish" : "bearish"
+f_ichiTxt() => ichiAbove ? "above_cloud" : ichiBelow ? "below_cloud" : "in_cloud"
+f_vwapTxt() => close > vwapVal ? "above" : "below"
+f_json(side, eng, conf, slp, tp1p, tp2p) =>
+    '{"version":"5.0"' +
+     ',"bot":"' + botName + '"' +
+     ',"timestamp":"' + str.tostring(time) + '"' +
+     ',"ticker":"' + syminfo.ticker + '"' +
+     ',"action":"' + (side == "long" ? "buy" : "sell") + '"' +
+     ',"side":"' + side + '"' +
+     ',"engine":"' + eng + '"' +
+     ',"confidence":' + str.tostring(conf) +
+     ',"entry":{"price":"' + str.tostring(close) + '","type":"market"}' +
+     ',"risk":{"stop_loss":"' + str.tostring(slp) + '","take_profit_1":"' + str.tostring(tp1p) + '","take_profit_2":"' + str.tostring(tp2p) + '","risk_percent":' + str.tostring(effRiskPct, "#.##") + '}' +
+     ',"signals":{"adx":' + str.tostring(adxVal, "#.#") + ',"rsi":' + str.tostring(rsi14, "#.#") + ',"macd":"' + f_macdTxt() + '","ichimoku":"' + f_ichiTxt() + '","vwap_side":"' + f_vwapTxt() + '","cmf":' + str.tostring(cmfVal, "#.###") + '}}'
+alertClosePartial = '{"version":"5.0","bot":"' + botName + '","action":"close_percent","percent":' + str.tostring(tp1ClosePct) + ',"ticker":"' + syminfo.ticker + '"}'
+alertCloseFull    = '{"version":"5.0","bot":"' + botName + '","action":"close","percent":100,"ticker":"' + syminfo.ticker + '"}'
+
+// ============================================================================
+//  ENTRADAS
+// ============================================================================
+// Niveles previstos para el JSON de entrada (se recalculan en firme al abrir)
+preTp1Long  = engine == "scalp" ? close * (1 + scTp1Pct/100.0) : close + pickSL * (engine == "swing" ? swRr1 : trFibExt)
+preTp2Long  = engine == "scalp" ? close * (1 + scTp2Pct/100.0) : close + pickSL * (engine == "swing" ? swRr2 : trFibExt)
+preTp1Short = engine == "scalp" ? close * (1 - scTp1Pct/100.0) : close - pickSL * (engine == "swing" ? swRr1 : trFibExt)
+preTp2Short = engine == "scalp" ? close * (1 - scTp2Pct/100.0) : close - pickSL * (engine == "swing" ? swRr2 : trFibExt)
+
+if goLong and qty > 0
+    strategy.entry("L", strategy.long, qty=qty, alert_message=f_json("long", engine, confidenceLong, close - pickSL, preTp1Long, preTp2Long))
+    tradesToday += 1
+if goShort and qty > 0
+    strategy.entry("S", strategy.short, qty=qty, alert_message=f_json("short", engine, confidenceShort, close + pickSL, preTp1Short, preTp2Short))
+    tradesToday += 1
+
+// Cierre por fin de sesión
+if (sessionJustClosed or haltedToday) and strategy.position_size != 0
+    strategy.close_all(comment="session/halt", alert_message=alertCloseFull)
+
+// ============================================================================
+//  GESTIÓN DE SALIDAS (unificada por motor)
+// ============================================================================
+var float eEntry = na
+var float eRisk  = na
+var float eSL    = na
+var float eTP1   = na
+var float eTP2   = na
+var int   eBar   = na
+var bool  eTp1Done = false
+var string eEng  = na
+
+longOpened  = strategy.position_size > 0 and strategy.position_size[1] <= 0
+shortOpened = strategy.position_size < 0 and strategy.position_size[1] >= 0
+
+if longOpened
+    eEntry := strategy.position_avg_price
+    eEng   := engine
+    eBar   := bar_index
+    eTp1Done := false
+    eRisk  := engine == "scalp" ? slScalp : engine == "swing" ? slSwing : slTrend
+    eSL    := eEntry - eRisk
+    if engine == "scalp"
+        eTP1 := eEntry * (1 + scTp1Pct/100.0)
+        eTP2 := eEntry * (1 + scTp2Pct/100.0)
+    else if engine == "swing"
+        eTP1 := eEntry + eRisk * swRr1
+        eTP2 := eEntry + eRisk * swRr2
+    else
+        eTP1 := fibExtLong
+        eTP2 := na
+if shortOpened
+    eEntry := strategy.position_avg_price
+    eEng   := engine
+    eBar   := bar_index
+    eTp1Done := false
+    eRisk  := engine == "scalp" ? slScalp : engine == "swing" ? slSwing : slTrend
+    eSL    := eEntry + eRisk
+    if engine == "scalp"
+        eTP1 := eEntry * (1 - scTp1Pct/100.0)
+        eTP2 := eEntry * (1 - scTp2Pct/100.0)
+    else if engine == "swing"
+        eTP1 := eEntry - eRisk * swRr1
+        eTP2 := eEntry - eRisk * swRr2
+    else
+        eTP1 := fibExtShort
+        eTP2 := na
+
+// --- LONG management
+if strategy.position_size > 0
+    // Breakeven (swing/trend) tras BE x R
+    if (eEng == "swing" or eEng == "trend") and high >= eEntry + swBe * eRisk
+        eSL := math.max(eSL, eEntry)
+    // Trailing tras TP1 según motor
+    trailCand = eEng == "scalp" ? sarVal : eEng == "swing" ? (stUp15 ? close - atrVal * 2.0 : eSL) : close - atrVal * trTrailAtr
+    if eTp1Done
+        eSL := math.max(eSL, trailCand)
+    runLimit = na(eTP2) ? eTP1 : eTP2
+    strategy.exit("L-TP1", "L", qty_percent=tp1ClosePct, limit=eTP1, alert_message=alertClosePartial)
+    strategy.exit("L-RUN", "L", stop=eSL, limit=runLimit, alert_message=alertCloseFull)
+    if not eTp1Done and high >= eTP1
+        eTp1Done := true
+    // Timeout solo scalping
+    if eEng == "scalp" and not eTp1Done and (bar_index - eBar) >= scTimeout
+        strategy.close("L", comment="timeout", alert_message=alertCloseFull)
+
+// --- SHORT management
+if strategy.position_size < 0
+    if (eEng == "swing" or eEng == "trend") and low <= eEntry - swBe * eRisk
+        eSL := math.min(eSL, eEntry)
+    trailCand = eEng == "scalp" ? sarVal : eEng == "swing" ? (not stUp15 ? close + atrVal * 2.0 : eSL) : close + atrVal * trTrailAtr
+    if eTp1Done
+        eSL := math.min(eSL, trailCand)
+    runLimit = na(eTP2) ? eTP1 : eTP2
+    strategy.exit("S-TP1", "S", qty_percent=tp1ClosePct, limit=eTP1, alert_message=alertClosePartial)
+    strategy.exit("S-RUN", "S", stop=eSL, limit=runLimit, alert_message=alertCloseFull)
+    if not eTp1Done and low <= eTP1
+        eTp1Done := true
+    if eEng == "scalp" and not eTp1Done and (bar_index - eBar) >= scTimeout
+        strategy.close("S", comment="timeout", alert_message=alertCloseFull)
+
+// ============================================================================
+//  VISUAL
+// ============================================================================
+plot(emaFast, "EMA rápida", color.new(color.aqua, 0))
+plot(emaSlow, "EMA lenta",  color.new(color.orange, 0))
+plot(sma50,   "SMA 50",     color.new(color.gray, 30))
+plot(useSma200 ? dSma200 : na, "SMA 200 (D)", color.new(color.red, 0), linewidth=2)
+plot(useVwap ? vwapVal : na, "VWAP", color.new(color.fuchsia, 0))
+// Pivotes (clásicos y/o Camarilla según selección)
+showClassic = pivotType == "Clásico" or pivotType == "Ambos"
+showCam     = pivotType == "Camarilla" or pivotType == "Ambos"
+plot(showClassic ? pivP  : na, "Pivot",  color.new(color.white, 0))
+plot(showClassic ? pivR1 : na, "R1", color.new(color.red, 30))
+plot(showClassic ? pivS1 : na, "S1", color.new(color.green, 30))
+plot(showClassic ? pivR2 : na, "R2", color.new(color.red, 60))
+plot(showClassic ? pivS2 : na, "S2", color.new(color.green, 60))
+plot(showCam ? camR3 : na, "Cam R3", color.new(color.orange, 30))
+plot(showCam ? camS3 : na, "Cam S3", color.new(color.lime, 30))
+plot(showCam ? camR4 : na, "Cam R4", color.new(color.orange, 60))
+plot(showCam ? camS4 : na, "Cam S4", color.new(color.lime, 60))
+plot(strategy.position_size != 0 ? eSL  : na, "SL",  color.new(color.red, 0),   style=plot.style_linebr)
+plot(strategy.position_size != 0 ? eTP1 : na, "TP1", color.new(color.green, 0), style=plot.style_linebr)
+plot(strategy.position_size != 0 and not na(eTP2) ? eTP2 : na, "TP2", color.new(color.teal, 0), style=plot.style_linebr)
+bgcolor(haltedToday ? color.new(color.red, 92) : newsPaused ? color.new(color.yellow, 92) : na)
+
+// ============================================================================
+//  PANEL DE CONTROL
+// ============================================================================
+var table panel = table.new(position.top_right, 2, 14, border_width=1, frame_color=color.gray)
+f_yn(b) => b ? "✅" : "❌"
+if barstate.islast
+    posTxt = strategy.position_size > 0 ? "LONG" : strategy.position_size < 0 ? "SHORT" : "FLAT"
+    posCol = strategy.position_size > 0 ? color.green : strategy.position_size < 0 ? color.red : color.gray
+    sesTxt = inLondon and inNY ? "LON+NY" : inLondon ? "Londres" : inNY ? "NY" : "Fuera"
+    wins = strategy.wintrades
+    losses = strategy.closedtrades - strategy.wintrades
+    wr = strategy.closedtrades > 0 ? wins / strategy.closedtrades * 100.0 : 0.0
+    conf = strategy.position_size > 0 ? confidenceLong : strategy.position_size < 0 ? confidenceShort : math.max(confidenceLong, confidenceShort)
+    table.cell(panel, 0, 0, "QUANT BOT v5", text_color=color.white, bgcolor=color.new(color.blue, 0), text_size=size.small)
+    table.cell(panel, 1, 0, posTxt, text_color=color.white, bgcolor=color.new(posCol, 0), text_size=size.small)
+    table.cell(panel, 0, 1, "Motor activo", text_size=size.small)
+    table.cell(panel, 1, 1, na(eEng) or strategy.position_size == 0 ? (na(engine) ? "-" : engine) : eEng, text_size=size.small)
+    table.cell(panel, 0, 2, "Sesión", text_size=size.small)
+    table.cell(panel, 1, 2, sesTxt, text_size=size.small)
+    table.cell(panel, 0, 3, "DD hoy %", text_size=size.small)
+    table.cell(panel, 1, 3, str.tostring(ddPct, "#.##"), text_color=ddPct < -ddSoftPct ? color.red : color.green, text_size=size.small)
+    table.cell(panel, 0, 4, "Trades hoy", text_size=size.small)
+    table.cell(panel, 1, 4, str.tostring(tradesToday) + "  (" + str.tostring(wins) + "W/" + str.tostring(losses) + "L)", text_size=size.small)
+    table.cell(panel, 0, 5, "Winrate %", text_size=size.small)
+    table.cell(panel, 1, 5, str.tostring(wr, "#.#"), text_size=size.small)
+    table.cell(panel, 0, 6, "Confianza %", text_size=size.small)
+    table.cell(panel, 1, 6, str.tostring(conf), text_size=size.small)
+    table.cell(panel, 0, 7, "VWAP", text_size=size.small)
+    table.cell(panel, 1, 7, f_yn(close > vwapVal), text_size=size.small)
+    table.cell(panel, 0, 8, "EMA 9>20", text_size=size.small)
+    table.cell(panel, 1, 8, f_yn(emaUp), text_size=size.small)
+    table.cell(panel, 0, 9, "ADX>25", text_size=size.small)
+    table.cell(panel, 1, 9, f_yn(adxVal > 25), text_size=size.small)
+    table.cell(panel, 0, 10, "SuperTrend", text_size=size.small)
+    table.cell(panel, 1, 10, f_yn(stUp15), text_size=size.small)
+    table.cell(panel, 0, 11, "Ichimoku", text_size=size.small)
+    table.cell(panel, 1, 11, f_ichiTxt(), text_size=size.small)
+    table.cell(panel, 0, 12, "Volumen", text_size=size.small)
+    table.cell(panel, 1, 12, f_yn(volOk), text_size=size.small)
+    table.cell(panel, 0, 13, "Noticia (pausa)", text_size=size.small)
+    table.cell(panel, 1, 13, newsPaused ? "⏸️" : "—", text_size=size.small)
+
+// ============================================================================
+//  ALERTAS GENÉRICAS (para crear la alerta con "any alert() function call")
+// ============================================================================
+if goLong and qty > 0
+    alert(f_json("long", engine, confidenceLong, close - pickSL, preTp1Long, preTp2Long), alert.freq_once_per_bar)
+if goShort and qty > 0
+    alert(f_json("short", engine, confidenceShort, close + pickSL, preTp1Short, preTp2Short), alert.freq_once_per_bar)
