@@ -30,3 +30,18 @@ class TradeExecutionRequest(BaseModel):
     leverage: float = 1.0
     take_profit: Optional[float] = None
     strategy_name: str = ""
+
+
+class TradingViewWebhook(BaseModel):
+    """JSON que envía el QUANT BOT v5 (Pine) por alerta/webhook."""
+    ticker: str
+    action: str                          # buy | sell | close | close_percent
+    side: Optional[str] = None           # long | short
+    engine: Optional[str] = "swing"      # scalp | swing | trend
+    confidence: Optional[float] = None
+    percent: Optional[float] = None      # para close_percent
+    entry: Optional[dict] = None         # {"price": "...", "type": "..."}
+    risk: Optional[dict] = None          # {"stop_loss": "...", "take_profit_1": "...", ...}
+    signals: Optional[dict] = None
+    bot: Optional[str] = None
+    secret: Optional[str] = None         # token opcional anti-suplantación

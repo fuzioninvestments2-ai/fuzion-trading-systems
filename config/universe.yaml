@@ -1,0 +1,93 @@
+# ============================================================================
+#  UNIVERSO MULTI-ACTIVO — QUANT BOT v5
+#  Tickers en formato yfinance (para backtest/optimizer y data pipeline).
+#  Para ejecución en broker, ver el mapeo en tradingview/UNIVERSE.md.
+# ============================================================================
+
+# --- Acciones "top" (US) ---
+stocks:
+  - NVDA      # NVIDIA
+  - TSLA      # Tesla
+  - AAPL      # Apple
+  - AMZN      # Amazon
+  - META      # Meta
+  - GOOGL     # Alphabet (Google)
+  - NFLX      # Netflix
+  - MSFT      # Microsoft
+  - AMD       # AMD
+  - AVGO      # Broadcom
+
+# --- Índices / ETFs (Nasdaq, S&P, Dow, Russell) ---
+indices:
+  - QQQ       # Nasdaq 100 (ETF)
+  - SPY       # S&P 500 (ETF)
+  - DIA       # Dow Jones (ETF)
+  - IWM       # Russell 2000 (ETF)
+  - "^NDX"    # Nasdaq 100 (índice)
+  - "^GSPC"   # S&P 500 (índice)
+
+# --- Futuros ---
+futures:
+  - ES=F      # S&P 500 futuro
+  - NQ=F      # Nasdaq 100 futuro
+  - YM=F      # Dow futuro
+  - GC=F      # Oro
+  - CL=F      # Petróleo (WTI)
+  - SI=F      # Plata
+
+# --- Forex (pares mayores) ---
+forex:
+  - EURUSD=X
+  - GBPUSD=X
+  - USDJPY=X
+  - AUDUSD=X
+  - USDCAD=X
+  - USDCHF=X
+  - NZDUSD=X
+
+# --- Cripto (top por capitalización) ---
+crypto:
+  - BTC-USD
+  - ETH-USD
+  - SOL-USD
+  - BNB-USD
+  - XRP-USD
+  - ADA-USD
+  - DOGE-USD
+  - AVAX-USD
+
+# ============================================================================
+#  Perfiles por clase de activo (presets de riesgo/ejecución).
+#  El optimizer y el bot usan estos valores como punto de partida.
+# ============================================================================
+profiles:
+  stocks:
+    atr_min_pct: 0.10      # volatilidad mínima para operar (% precio)
+    commission_pct: 0.02   # ~comisión típica acciones (ajústala a tu broker)
+    slippage_pct: 0.02
+    sessions: true         # respeta horario Londres/NY
+    default_engine: swing
+  indices:
+    atr_min_pct: 0.08
+    commission_pct: 0.02
+    slippage_pct: 0.02
+    sessions: true
+    default_engine: trend
+  futures:
+    atr_min_pct: 0.10
+    commission_pct: 0.01
+    slippage_pct: 0.03
+    sessions: true
+    default_engine: trend
+  forex:
+    atr_min_pct: 0.05      # forex se mueve menos en % → umbral más bajo
+    commission_pct: 0.008
+    slippage_pct: 0.01
+    sessions: true
+    default_engine: swing
+  crypto:
+    atr_min_pct: 0.15      # cripto más volátil
+    commission_pct: 0.075
+    slippage_pct: 0.05
+    sessions: false        # 24/7, sin sesiones
+    default_engine: scalp

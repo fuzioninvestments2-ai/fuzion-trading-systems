@@ -31,6 +31,7 @@ useScalp = input.bool(true,  "Motor 1 · Scalping (1m–5m)",      group=g0)
 useSwing = input.bool(true,  "Motor 2 · Swing intradía (15m–1h)", group=g0)
 useTrend = input.bool(true,  "Motor 3 · Tendencia multi-TF (1h–4h–1D)", group=g0)
 allowShorts = input.bool(true, "Permitir cortos", group=g0)
+assetClass = input.string("Auto", "Clase de activo (preset)", options=["Auto","Acciones","Índices","Futuros","Forex","Cripto"], group=g0, tooltip="Ajusta umbral de volatilidad y sesiones según el mercado. Cripto = 24/7 (ignora sesiones). Auto = usa tus inputs manuales.")
 
 // ============================================================================
 //  GRUPO A · Medias y Tendencia
@@ -312,7 +313,10 @@ rsiEmbeddedShort = adxVal > 25 and rsi14 < 30
 //  FILTROS COMUNES
 // ============================================================================
 volOk = (na(volMa) or volMa == 0) ? true : volume > volMa * volMult
-atrOk = atrVal > close * (atrMinPct / 100.0)
+// Umbral de volatilidad efectivo según preset de clase de activo
+effAtrMinPct = assetClass == "Acciones" ? 0.10 : assetClass == "Índices" ? 0.08 : assetClass == "Futuros" ? 0.10 : assetClass == "Forex" ? 0.05 : assetClass == "Cripto" ? 0.15 : atrMinPct
+isCrypto = assetClass == "Cripto"
+atrOk = atrVal > close * (effAtrMinPct / 100.0)
 expansionOk = not useSqueeze or squeezeOff
 // Filtro de noticias (proxy por anomalía volumen+rango)
 anomVol  = not na(volMa) and volMa > 0 and volume > volMa * 2.0
@@ -405,7 +409,8 @@ confidenceShort = math.round(confShortCount / 12.0 * 100)
 // ============================================================================
 inLondon = useLondon and not na(time(timeframe.period, sessLon, tz))
 inNY     = useNY and not na(time(timeframe.period, sessNY, tz))
-inSession = (inLondon or inNY) or (not useLondon and not useNY)
+// Cripto opera 24/7 (ignora sesiones); el resto respeta Londres/NY si están activas
+inSession = isCrypto ? true : ((inLondon or inNY) or (not useLondon and not useNY))
 // Detección robusta de fin de sesión: estábamos en sesión y dejamos de estarlo.
 // Sirve para "cerrar antes del cierre": al perder la sesión, se liquida la posición.
 sessionJustClosed = closeBeforeEnd and inSession[1] and not inSession

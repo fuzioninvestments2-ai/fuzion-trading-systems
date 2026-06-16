@@ -9,6 +9,7 @@ from api.routes.backtest import router as backtest_router
 from api.routes.signals import router as signals_router
 from api.routes.broker import router as broker_router
 from api.routes.health import router as health_router
+from api.routes.webhook import router as webhook_router
 
 app = FastAPI(
     title="FUZION Trading Systems API",
@@ -34,6 +35,7 @@ app.include_router(backtest_router, prefix="/api/backtest", tags=["Backtest"])
 app.include_router(signals_router, prefix="/api/signals", tags=["Signals"])
 app.include_router(broker_router, prefix="/api/broker", tags=["Broker"])
 app.include_router(health_router, prefix="/api/health", tags=["Health"])
+app.include_router(webhook_router, prefix="/api/webhook", tags=["Webhook"])
 
 
 if __name__ == "__main__":

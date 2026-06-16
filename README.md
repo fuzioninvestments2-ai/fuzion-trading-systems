@@ -377,6 +377,31 @@ plotly>=5.18.0
 
 ---
 
+## QUANT BOT v5 (TradingView) + herramientas de crecimiento
+
+Además del backend de opciones/HMM, el repo incluye el ecosistema **QUANT BOT v5**:
+
+| Componente | Ruta | Qué hace |
+|---|---|---|
+| Estrategia Pine | `tradingview/quant_bot_v5.pine` | Bot de 3 motores (scalp/swing/trend) con preset por clase de activo y alertas JSON |
+| Universo | `config/universe.yaml` · `tradingview/UNIVERSE.md` | Acciones (NVDA, TSLA, AAPL, AMZN, META, GOOGL, NFLX…), índices/Nasdaq, futuros, forex y cripto top |
+| Optimizador | `tools/` · `scripts/run_optimizer.py` | Busca parámetros por **expectativa y drawdown** (no win rate) sobre el universo |
+| Webhook receiver | `api/routes/webhook.py` → `POST /api/webhook/tradingview` | Recibe el JSON del Pine, lo pasa por el **Risk Manager** y ejecuta (paper por defecto) |
+| Noticias/sentimiento | `data/news_sentiment.py` | VADER + NewsAPI opcional; flag de alto impacto para override de estrategia |
+
+**Flujo autónomo:** Pine genera la señal → webhook → Risk Manager (veto) →
+broker. El módulo de noticias permite pausar/cerrar ante eventos de alto impacto.
+
+```bash
+# Optimizar parámetros para cripto
+python scripts/run_optimizer.py --class crypto
+
+# Levantar el receptor de webhooks (incluido en el server FastAPI)
+python main.py   # POST /api/webhook/tradingview
+```
+
+Detalle en `tradingview/README.md` y `tools/README.md`.
+
 ## Integración con FUZION Web
 
 Este backend se integra con el frontend desplegado en `titan-trading-platfo-ufcgle.abacusai.app`.
