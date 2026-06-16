@@ -137,6 +137,20 @@ tp1ClosePct = input.int(45, "Cierre parcial en TP1 (%)", minval=1, maxval=99, gr
 confWindow  = input.int(2, "Ventana confirmación (velas)", minval=0, group=gF, tooltip="Permite que cruces de RSI/Stoch no caigan en la MISMA vela. 0 = estricto.")
 
 // ============================================================================
+//  GRUPO Q · Calidad y Crecimiento  (reduce pérdidas, bloquea ganancias)
+// ============================================================================
+gQ = "Q · Calidad y Crecimiento"
+minConfidence  = input.int(70, "Confianza mínima para entrar (%)", minval=0, maxval=100, group=gQ, tooltip="Solo opera cuando la confluencia de filtros supera este umbral. Subirlo = menos trades pero de más calidad (más win rate).")
+minBarsBetween = input.int(3, "Velas mínimas entre operaciones", minval=0, group=gQ, tooltip="Evita el sobre-trading y entradas en racimo.")
+useLossCooldown= input.bool(true, "Pausa tras racha de pérdidas", inline="cd", group=gQ)
+maxLossStreak  = input.int(3, "tras N pérdidas", inline="cd", minval=1, group=gQ)
+cooldownBars   = input.int(20, "pausa velas", inline="cd", minval=1, group=gQ)
+useDailyTarget = input.bool(true, "Bloquear día tras objetivo de ganancia", inline="dt", group=gQ)
+dailyTargetPct = input.float(3.0, "objetivo % día", inline="dt", step=0.5, minval=0.5, group=gQ, tooltip="Al alcanzar +X% en el día, deja de abrir trades y conserva las ganancias.")
+scBe           = input.float(1.0, "M1 Breakeven scalp (xR)", step=0.1, minval=0.1, group=gQ, tooltip="Mueve el stop a entrada cuando el scalp gana este múltiplo de R.")
+useConfirmedBT = input.bool(false, "Backtest honesto (entrar en vela cerrada)", group=gQ, tooltip="ON para backtest realista sin repintado. OFF para scalping intra-vela en vivo.")
+
+// ============================================================================
 //  GRUPO G · Sesiones (Londres / Nueva York)
 // ============================================================================
 gG = "G · Sesiones"
@@ -403,14 +417,33 @@ isNewDay = nz(ta.change(time("D")), 0) != 0
 var float dayStartEq  = na
 var int   tradesToday = 0
 var bool  haltedToday = false
+var bool  lockedToday = false   // objetivo de ganancia alcanzado
 if isNewDay
     dayStartEq  := strategy.equity
     tradesToday := 0
     haltedToday := false
+    lockedToday := false
 ddPct = na(dayStartEq) or dayStartEq == 0 ? 0.0 : (strategy.equity - dayStartEq) / dayStartEq * 100.0
 if ddPct <= -maxDailyDD
     haltedToday := true
-ddSoft = ddPct <= -ddSoftPct   // reduce tamaño 50%
+if useDailyTarget and ddPct >= dailyTargetPct
+    lockedToday := true          // conserva las ganancias: no más entradas hoy
+ddSoft = ddPct <= -ddSoftPct     // reduce tamaño 50%
+
+// --- Racha de pérdidas → cooldown (corta los días malos) ---
+var int  lossStreak    = 0
+var int  cooldownUntil = 0
+newClosed = strategy.closedtrades > nz(strategy.closedtrades[1], 0)
+if newClosed
+    lastPnl = strategy.closedtrades.profit(strategy.closedtrades - 1)
+    lossStreak := lastPnl < 0 ? lossStreak + 1 : 0
+    if useLossCooldown and lossStreak >= maxLossStreak
+        cooldownUntil := bar_index + cooldownBars
+        lossStreak    := 0
+inCooldown = bar_index <= cooldownUntil
+
+// --- Velas mínimas entre operaciones (anti sobre-trading) ---
+var int lastTradeBar = -100000
 
 // Kelly fraccionado (autocontenido)
 winRate = strategy.closedtrades > 10 ? strategy.wintrades / strategy.closedtrades : 0.5
@@ -434,7 +467,12 @@ f_qty(slDist) =>
 // ============================================================================
 //  GATING GLOBAL
 // ============================================================================
-canTrade = inSession and not haltedToday and not newsPaused and tradesToday < maxTradesDay and strategy.position_size == 0
+// En backtest honesto solo se permite abrir con la vela cerrada (sin repintado).
+barOk      = not useConfirmedBT or barstate.isconfirmed
+spacingOk  = (bar_index - lastTradeBar) >= minBarsBetween
+confOkLong  = confidenceLong  >= minConfidence
+confOkShort = confidenceShort >= minConfidence
+canTrade = inSession and not haltedToday and not lockedToday and not newsPaused and not inCooldown and barOk and spacingOk and tradesToday < maxTradesDay and strategy.position_size == 0
 
 // Distancias de stop por motor
 slScalp = math.max(atrVal * scSlAtr, close * 0.0001)
@@ -442,32 +480,33 @@ slSwing = math.max(atrVal * swSlAtr, close * 0.0005)
 slTrend = math.max((na(dAtr) ? atrVal : dAtr) * trSlAtr, close * 0.001)
 
 // Selección de motor (prioridad: Tendencia > Swing > Scalping)
+// Cada motor solo dispara si supera el umbral de confianza (calidad mínima).
 goLong  = false
 goShort = false
 var string engine = na
 var float  pickSL = na
 if canTrade
-    if m3Long
+    if m3Long and confOkLong
         goLong := true
         engine := "trend"
         pickSL := slTrend
-    else if m2Long
+    else if m2Long and confOkLong
         goLong := true
         engine := "swing"
         pickSL := slSwing
-    else if m1Long
+    else if m1Long and confOkLong
         goLong := true
         engine := "scalp"
         pickSL := slScalp
-    else if allowShorts and m3Short
+    else if allowShorts and m3Short and confOkShort
         goShort := true
         engine := "trend"
         pickSL := slTrend
-    else if allowShorts and m2Short
+    else if allowShorts and m2Short and confOkShort
         goShort := true
         engine := "swing"
         pickSL := slSwing
-    else if allowShorts and m1Short
+    else if allowShorts and m1Short and confOkShort
         goShort := true
         engine := "scalp"
         pickSL := slScalp
@@ -507,9 +546,11 @@ preTp2Short = engine == "scalp" ? close * (1 - scTp2Pct/100.0) : close - pickSL 
 if goLong and qty > 0
     strategy.entry("L", strategy.long, qty=qty, alert_message=f_json("long", engine, confidenceLong, close - pickSL, preTp1Long, preTp2Long))
     tradesToday += 1
+    lastTradeBar := bar_index
 if goShort and qty > 0
     strategy.entry("S", strategy.short, qty=qty, alert_message=f_json("short", engine, confidenceShort, close + pickSL, preTp1Short, preTp2Short))
     tradesToday += 1
+    lastTradeBar := bar_index
 
 // Cierre por fin de sesión
 if (sessionJustClosed or haltedToday) and strategy.position_size != 0
@@ -568,6 +609,9 @@ if strategy.position_size > 0
     // Breakeven (swing/trend) tras BE x R
     if (eEng == "swing" or eEng == "trend") and high >= eEntry + swBe * eRisk
         eSL := math.max(eSL, eEntry)
+    // Breakeven scalp tras scBe x R (riesgo casi nulo cuando va a favor)
+    if eEng == "scalp" and high >= eEntry + scBe * eRisk
+        eSL := math.max(eSL, eEntry)
     // Trailing tras TP1 según motor
     trailCand = eEng == "scalp" ? sarVal : eEng == "swing" ? (stUp15 ? close - atrVal * 2.0 : eSL) : close - atrVal * trTrailAtr
     if eTp1Done
@@ -584,6 +628,8 @@ if strategy.position_size > 0
 // --- SHORT management
 if strategy.position_size < 0
     if (eEng == "swing" or eEng == "trend") and low <= eEntry - swBe * eRisk
+        eSL := math.min(eSL, eEntry)
+    if eEng == "scalp" and low <= eEntry - scBe * eRisk
         eSL := math.min(eSL, eEntry)
     trailCand = eEng == "scalp" ? sarVal : eEng == "swing" ? (not stUp15 ? close + atrVal * 2.0 : eSL) : close + atrVal * trTrailAtr
     if eTp1Done
@@ -619,12 +665,12 @@ plot(showCam ? camS4 : na, "Cam S4", color.new(color.lime, 60))
 plot(strategy.position_size != 0 ? eSL  : na, "SL",  color.new(color.red, 0),   style=plot.style_linebr)
 plot(strategy.position_size != 0 ? eTP1 : na, "TP1", color.new(color.green, 0), style=plot.style_linebr)
 plot(strategy.position_size != 0 and not na(eTP2) ? eTP2 : na, "TP2", color.new(color.teal, 0), style=plot.style_linebr)
-bgcolor(haltedToday ? color.new(color.red, 92) : newsPaused ? color.new(color.yellow, 92) : na)
+bgcolor(haltedToday ? color.new(color.red, 92) : lockedToday ? color.new(color.green, 92) : (newsPaused or inCooldown) ? color.new(color.yellow, 92) : na)
 
 // ============================================================================
 //  PANEL DE CONTROL
 // ============================================================================
-var table panel = table.new(position.top_right, 2, 14, border_width=1, frame_color=color.gray)
+var table panel = table.new(position.top_right, 2, 16, border_width=1, frame_color=color.gray)
 f_yn(b) => b ? "✅" : "❌"
 if barstate.islast
     posTxt = strategy.position_size > 0 ? "LONG" : strategy.position_size < 0 ? "SHORT" : "FLAT"
@@ -662,6 +708,12 @@ if barstate.islast
     table.cell(panel, 1, 12, f_yn(volOk), text_size=size.small)
     table.cell(panel, 0, 13, "Noticia (pausa)", text_size=size.small)
     table.cell(panel, 1, 13, newsPaused ? "⏸️" : "—", text_size=size.small)
+    estadoTxt = haltedToday ? "HALT (DD)" : lockedToday ? "META ✅" : inCooldown ? "COOLDOWN" : "OPERANDO"
+    estadoCol = haltedToday ? color.red : lockedToday ? color.green : inCooldown ? color.orange : color.teal
+    table.cell(panel, 0, 14, "Estado", text_size=size.small)
+    table.cell(panel, 1, 14, estadoTxt, text_color=color.white, bgcolor=color.new(estadoCol, 0), text_size=size.small)
+    table.cell(panel, 0, 15, "Racha pérdidas", text_size=size.small)
+    table.cell(panel, 1, 15, str.tostring(lossStreak), text_size=size.small)
 
 // ============================================================================
 //  ALERTAS GENÉRICAS (para crear la alerta con "any alert() function call")

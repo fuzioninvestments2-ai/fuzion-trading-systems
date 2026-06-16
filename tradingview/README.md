@@ -31,6 +31,14 @@ Ichimoku, Awesome Oscillator, TRIX, Ultimate Oscillator, Fibonacci (zona dorada
 velas), sesiones Londres/NY con cierre anticipado, panel de control y confianza
 0–100 por confluencia.
 
+**Grupo Q · Calidad y Crecimiento** (lo que reduce pérdidas de verdad):
+- **Confianza mínima** para entrar → solo opera setups de alta confluencia.
+- **Velas mínimas entre trades** → evita el sobre-trading.
+- **Cooldown por racha de pérdidas** → tras N pérdidas seguidas, pausa.
+- **Bloqueo diario por objetivo** → al llegar a +X% en el día, conserva ganancias.
+- **Breakeven scalp** → mueve el stop a entrada rápido (riesgo casi nulo).
+- **Backtest honesto** → entradas en vela cerrada (sin repintado) para medir real.
+
 ---
 
 ## Instalación
@@ -94,6 +102,32 @@ permiten al backend cruzar la señal con el régimen HMM antes de ejecutar.
   a tu broker real antes de fiarte de las métricas.
 
 ---
+
+## Ajuste para reducir pérdidas (no existe el 90% mágico)
+
+Un win rate del 90% sostenido **no es realista** y, sobre todo, **no es lo que
+te hace crecer**: lo que importa es la *expectativa* (aciertos × ganancia media
+> fallos × pérdida media) y el *drawdown*. Mira siempre **Profit Factor** y
+**Max Drawdown** juntos en el Strategy Tester, no solo el % de aciertos.
+
+Orden recomendado para afinar (cambia UNA cosa a la vez y re-testea):
+
+1. **Sube `Confianza mínima`** (70 → 75 → 80). Menos trades, mejor calidad.
+   Subir win rate honestamente sale casi siempre de aquí.
+2. **Activa `Backtest honesto`** para medir sin repintado. Si los números se
+   caen mucho al activarlo, el resultado "bonito" era irreal.
+3. **Reduce motores**: empieza solo con **Swing** (el más estable). Scalping
+   pierde más por costes/ruido; actívalo solo si tu spread es bajo.
+4. **Aprieta el stop con breakeven**: baja `M1 Breakeven scalp` y `M2 BE (xR)`
+   para llevar el stop a entrada antes → muchas operaciones acaban en 0 en vez
+   de en pérdida.
+5. **Cooldown y objetivo diario**: deja `Pausa tras racha` y `Bloqueo por
+   objetivo` activos. Cortan los días malos y fijan los buenos.
+6. **Ajusta `ATR mínimo`** por activo: si entra en mercados planos, súbelo.
+7. **Comisión y slippage reales** de tu bróker antes de creer cualquier métrica.
+
+Regla de oro: si una versión solo mejora subiendo el riesgo por operación, no
+mejoró — solo apostó más fuerte.
 
 ## Limitaciones honestas (lo que Pine NO puede hacer)
 
