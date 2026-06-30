@@ -16,6 +16,7 @@ env/
 config/credentials.yaml
 
 # Datos generados
+*.log
 logs/*.log
 logs/*.jsonl
 models/*.pkl
