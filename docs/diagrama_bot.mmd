@@ -1,0 +1,35 @@
+flowchart TD
+    subgraph PO["1 - Pocket Option (cuenta DEMO)"]
+        M["Precios OTC en vivo<br/>via WebSocket"]
+    end
+
+    subgraph CORE["2 - Motor del Bot en Python (YA CONSTRUIDO)"]
+        WS["Cliente WebSocket<br/>reconexion automatica (backoff)"]
+        IND["Indicadores en vivo<br/>EMA + RSI + Estocastico"]
+        STR["Estrategia de confluencia<br/>decide CALL / PUT / NADA"]
+        GUARD["Guardia de reloj<br/>descarta si deriva mayor a 500ms"]
+        LOG["Registro 24/7<br/>logging Catch-All"]
+    end
+
+    subgraph IMPROVE["3 - Mejoras (SIGUIENTE FASE)"]
+        CFG["Configuracion + presets<br/>conservador / agresivo"]
+        RISK["Gestion de riesgo<br/>stop diario, limite de operaciones"]
+        FILT["Filtros de calidad<br/>fuerza de tendencia, evitar mercado plano"]
+        BT["Backtest<br/>medir con datos"]
+    end
+
+    subgraph CONTROL["4 - Tus controles (OBJETIVO)"]
+        TG["Bot de Telegram<br/>/start /stop /estado /señal"]
+        APP["App / panel<br/>botones y graficos"]
+    end
+
+    M --> WS --> IND --> STR --> GUARD --> SIG["Señal validada"]
+    SIG --> LOG
+    SIG --> TG
+    SIG --> APP
+    CFG -. ajusta .-> STR
+    FILT -. filtra .-> STR
+    RISK -. protege .-> SIG
+    BT -. mide .-> STR
+    TG -->|comandos: arrancar/parar| CORE
+    APP -->|comandos| CORE
