@@ -17,6 +17,9 @@ config/credentials.yaml
 
 # Datos generados
 *.log
+*.db
+*.sqlite
+*.sqlite3
 logs/*.log
 logs/*.jsonl
 models/*.pkl
