@@ -26,6 +26,7 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from bot.telegram_controller import BotController
+from bot.motor_service import MotorService
 
 
 def run():
@@ -47,7 +48,14 @@ def run():
     from telegram.ext import (Application, CommandHandler, MessageHandler,
                               filters, ContextTypes)
 
-    controller = BotController()
+    # Motor en segundo plano (simulado, seguro) controlado por los comandos.
+    motor = MotorService(preset="moderado")
+    controller = BotController(
+        start_fn=motor.start,
+        stop_fn=motor.stop,
+        status_fn=motor.status,
+        signal_fn=motor.last_signal,
+    )
 
     async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Traducimos el texto recibido a una respuesta del controlador.

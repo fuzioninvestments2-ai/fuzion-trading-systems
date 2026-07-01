@@ -27,10 +27,11 @@ class BotController:
     """
 
     def __init__(self, start_fn=None, stop_fn=None, status_fn=None,
-                 preset="moderado"):
+                 signal_fn=None, preset="moderado"):
         self._start_fn = start_fn
         self._stop_fn = stop_fn
         self._status_fn = status_fn
+        self._signal_fn = signal_fn         # devuelve la última señal del motor
         self.running = False
         self.preset = preset
         self.cfg = get_preset(preset)
@@ -68,9 +69,11 @@ class BotController:
                 f"{linea_stats}")
 
     def cmd_signal(self):
-        if self.last_signal is None:
+        # Si hay un motor conectado, preguntamos su última señal; si no, la local.
+        señal = self._signal_fn() if self._signal_fn else self.last_signal
+        if señal is None:
             return "Aún no hay señales."
-        return f"Última señal: {self.last_signal}"
+        return f"Última señal: {señal}"
 
     def cmd_preset(self, name):
         try:

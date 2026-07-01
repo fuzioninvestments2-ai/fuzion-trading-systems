@@ -36,13 +36,18 @@ class SessionManager:
     payout : float (ej. 0.92)
     """
 
-    def __init__(self, cfg, strategy, risk, execute_fn, logger=None, payout=0.92):
+    def __init__(self, cfg, strategy, risk, execute_fn, logger=None, payout=0.92,
+                 on_trade=None):
         self.cfg = cfg
         self.strategy = strategy
         self.risk = risk
         self.execute_fn = execute_fn
         self.log = logger or logging.getLogger("session")
         self.payout = payout
+        # Gancho opcional: se llama tras cada operación con su resultado. Sirve
+        # para registrar/notificar (p. ej. base de datos o Telegram) sin acoplar
+        # esta clase a esos detalles.
+        self.on_trade = on_trade
 
         self.active = False
         self.stop_reason = None
@@ -90,6 +95,13 @@ class SessionManager:
         self.log.info("%s $%.2f -> %s | profit sesión=$%.2f",
                       signal, amount, "WIN" if is_win else "LOSS",
                       self.risk.session_profit)
+
+        # Notificar el resultado por el gancho (si se inyectó).
+        if self.on_trade:
+            try:
+                self.on_trade(signal, amount, is_win, pnl, confidence)
+            except Exception:
+                self.log.exception("Fallo en on_trade (se ignora)")
 
         # 6) ¿Alcanzamos el objetivo de ganancia? -> fin de sesión.
         if self.risk.session_profit >= self.cfg.target_profit:
