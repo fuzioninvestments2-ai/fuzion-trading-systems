@@ -221,12 +221,17 @@ class PocketService:
                      "fuerza": 0.0, "por_tiempo": {}}, seg, len(ticks))
 
         # ESCALERA COMPLETA de tiempos (lee toda la línea de tiempo, lo clave es
-        # la ALINEACIÓN). OTC incluye sub-minuto; real empieza en 1m.
+        # la ALINEACIÓN). OTC incluye sub-minuto; real empieza en 1m. Cubrimos
+        # 15s → 30m SIN saltos (incluye 2m y 4m) para un análisis completo.
         is_otc = asset_code.endswith("_otc")
         if is_otc:
-            tfs = (15, 30, 60, 180, 300, 600, 900, 1800)   # 15s..30m
+            tfs = (15, 30, 60, 120, 180, 240, 300, 600, 900, 1800)  # 15s..30m
         else:
-            tfs = (60, 180, 300, 900, 1800)                # 1m..30m
+            tfs = (60, 120, 180, 240, 300, 600, 900, 1800)          # 1m..30m
+        # Garantizamos que la temporalidad ELEGIDA por el usuario esté siempre
+        # en el panel (p.ej. si pide M2 = 120s, que aparezca su línea de 2m).
+        if tf_seconds not in tfs:
+            tfs = tuple(sorted(set(tfs) | {tf_seconds}))
 
         # CALIBRACIÓN que aprende: buscamos en el historial de ESTE activo el
         # umbral que mejor habría funcionado, y lo usamos. Se cachea y se
