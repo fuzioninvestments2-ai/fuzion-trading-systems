@@ -22,6 +22,8 @@ SRP: solo registra/resuelve/consulta señales. Reutiliza la conexión y el lock 
 HistoryRepository (una sola conexión SQLite = sin contención de bloqueos).
 """
 
+import json
+
 CALL = "CALL"
 PUT = "PUT"
 
@@ -46,28 +48,40 @@ class SignalTracker:
                     entry_ts   INTEGER,     -- ms
                     expiry_ts  INTEGER,     -- ms (cuándo se decide el resultado)
                     result     TEXT,        -- win / loss / tie / NULL (pendiente)
-                    resolved   INTEGER DEFAULT 0
+                    resolved   INTEGER DEFAULT 0,
+                    votes      TEXT          -- JSON {indicador: CALL/PUT/HOLD}
                 )""")
             self.conn.execute("""CREATE INDEX IF NOT EXISTS idx_signals_pend
                                  ON signals (resolved, expiry_ts)""")
+            # Migración: si la tabla es antigua y no tiene 'votes', la añadimos.
+            cols = [r[1] for r in self.conn.execute(
+                "PRAGMA table_info(signals)").fetchall()]
+            if "votes" not in cols:
+                self.conn.execute("ALTER TABLE signals ADD COLUMN votes TEXT")
             self.conn.commit()
 
     def record(self, asset, timeframe, direction, entry_price, entry_ts_ms,
-               expiry_seconds):
+               expiry_seconds, votes=None):
         """
         Guarda una señal PENDIENTE. `direction` debe ser CALL o PUT (las señales
         HOLD/NO OPERAR no se registran: no hay predicción que medir).
+
+        votes: dict opcional {indicador: CALL/PUT/HOLD} en el momento de la señal.
+        Se guarda para poder aprender, al resolverla, QUÉ indicadores acertaron
+        de verdad (no solo el backtest).
         """
         if direction not in (CALL, PUT):
             return None
         expiry_ts = int(entry_ts_ms) + int(expiry_seconds) * 1000
+        votes_json = json.dumps(votes) if votes else None
         with self._lock:
             cur = self.conn.execute(
                 """INSERT INTO signals
-                   (asset, timeframe, direction, entry_price, entry_ts, expiry_ts)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   (asset, timeframe, direction, entry_price, entry_ts, expiry_ts,
+                    votes)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (asset, timeframe, direction, float(entry_price),
-                 int(entry_ts_ms), expiry_ts))
+                 int(entry_ts_ms), expiry_ts, votes_json))
             self.conn.commit()
             return cur.lastrowid
 
@@ -110,6 +124,50 @@ class SignalTracker:
             if n:
                 self.conn.commit()
             return n
+
+    def learned_multipliers(self, asset, min_signals=15, min_votes=10):
+        """
+        Multiplicadores de peso APRENDIDOS de las señales REALES ya resueltas de
+        un activo (no del backtest). Para cada señal resuelta se reconstruye la
+        dirección real del precio a partir de (dirección, resultado):
+            subió = (dirección==CALL) == (resultado==win)
+        y se puntúa cada voto de indicador guardado. Devuelve
+        {multipliers, stats, señales} o None si no hay muestra suficiente.
+        """
+        from bot.weight_learning import multipliers_from_tally
+        from bot.scoring_strategy import BASE_WEIGHTS
+
+        with self._lock:
+            rows = self.conn.execute(
+                """SELECT direction, result, votes FROM signals
+                   WHERE resolved=1 AND asset=? AND votes IS NOT NULL
+                     AND result IN ('win','loss')""", (asset,)).fetchall()
+        if len(rows) < min_signals:
+            return None
+
+        hits = {k: 0 for k in BASE_WEIGHTS}
+        total = {k: 0 for k in BASE_WEIGHTS}
+        for direction, result, votes_json in rows:
+            try:
+                votes = json.loads(votes_json)
+            except (TypeError, ValueError):
+                continue
+            subio = (direction == CALL) == (result == "win")
+            for name, side in votes.items():
+                if name not in total:
+                    continue
+                if side == CALL:
+                    total[name] += 1
+                    if subio:
+                        hits[name] += 1
+                elif side == PUT:
+                    total[name] += 1
+                    if not subio:
+                        hits[name] += 1
+
+        out = multipliers_from_tally(hits, total, min_votes=min_votes)
+        out["señales"] = len(rows)
+        return out
 
     def stats(self, asset=None):
         """

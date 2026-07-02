@@ -29,6 +29,30 @@ from bot.scoring_strategy import ScoringStrategy, BASE_WEIGHTS, CALL, PUT
 from bot.config import get_preset
 
 
+def multipliers_from_tally(hits, total, min_votes=12, max_mult=1.6, min_mult=0.5):
+    """
+    Convierte aciertos/votos por indicador en MULTIPLICADORES de peso.
+    Compartido por el aprendizaje de backtest y el de señales reales (DRY).
+
+    Mapa lineal: 50% de acierto (azar) -> 1.0; cada 25% sobre el azar = ±0.5.
+    Con muestra insuficiente (< min_votes) se deja neutro (1.0) para no
+    sobreajustar. Devuelve {multipliers: {...}, stats: {...}}.
+    """
+    multipliers, stats = {}, {}
+    for name in BASE_WEIGHTS:
+        t = total.get(name, 0)
+        if t < min_votes:
+            multipliers[name] = 1.0
+            stats[name] = {"hit_rate": None, "votos": t}
+            continue
+        hr = hits.get(name, 0) / t
+        mult = 1.0 + (hr - 0.5) * 2.0
+        mult = max(min_mult, min(max_mult, mult))
+        multipliers[name] = round(mult, 3)
+        stats[name] = {"hit_rate": round(hr, 3), "votos": t}
+    return {"multipliers": multipliers, "stats": stats}
+
+
 def learn_weights(candles_df, expiry_horizon=1, min_history=30, min_votes=12,
                   max_mult=1.6, min_mult=0.5):
     """
@@ -71,18 +95,5 @@ def learn_weights(candles_df, expiry_horizon=1, min_history=30, min_votes=12,
                 if not subio:
                     hits[name] += 1
 
-    multipliers, stats = {}, {}
-    for name in BASE_WEIGHTS:
-        t = total[name]
-        if t < min_votes:
-            multipliers[name] = 1.0
-            stats[name] = {"hit_rate": None, "votos": t}
-            continue
-        hr = hits[name] / t
-        # Mapa lineal: 0.5 -> 1.0; cada 25% de acierto sobre el azar = ±0.5.
-        mult = 1.0 + (hr - 0.5) * 2.0
-        mult = max(min_mult, min(max_mult, mult))
-        multipliers[name] = round(mult, 3)
-        stats[name] = {"hit_rate": round(hr, 3), "votos": t}
-
-    return {"multipliers": multipliers, "stats": stats}
+    return multipliers_from_tally(hits, total, min_votes=min_votes,
+                                  max_mult=max_mult, min_mult=min_mult)

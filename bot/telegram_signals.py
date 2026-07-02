@@ -191,7 +191,10 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
     pesos_top = result.get("pesos_top")
     if pesos_top:
         detalle = ", ".join(f"{_NOM.get(n, n)} {hr:.0%}" for n, hr in pesos_top)
-        aprendido += f"\n🧠 Mejores indicadores aquí: {detalle}"
+        fuente = result.get("pesos_fuente")
+        etiqueta = (" _(de señales reales)_" if fuente == "real"
+                    else " _(de backtest)_" if fuente == "backtest" else "")
+        aprendido += f"\n🧠 Mejores indicadores aquí: {detalle}{etiqueta}"
 
     # Win-rate REAL del bot (de sus propias señales ya resueltas), no del backtest.
     wrr = result.get("win_rate_real")

@@ -194,6 +194,7 @@ class PocketService:
         # que la calibración (~30 velas nuevas) porque es costoso (recorre el
         # historial re-evaluando indicadores).
         learned = None
+        learned_stats = None
         if m1_cal is not None and len(m1_cal) >= 60:
             wcache = self._weights.get(asset_code)
             if wcache is None or len(m1_cal) - wcache.get("count", 0) >= 30:
@@ -205,6 +206,20 @@ class PocketService:
             wcache = self._weights.get(asset_code)
             if wcache:
                 learned = wcache["multipliers"]
+                learned_stats = wcache["stats"]
+
+        # PREFERIR el aprendizaje de señales REALES cuando ya hay bastantes
+        # resueltas: es la verdad del bot (no un backtest). Si no, se queda el de
+        # backtest. Reemplaza (no promedia) porque mide exactamente lo que pasó.
+        learned_source = "backtest" if learned else None
+        try:
+            real = self.tracker.learned_multipliers(asset_code)
+            if real:
+                learned = real["multipliers"]
+                learned_stats = real["stats"]
+                learned_source = "real"
+        except Exception:
+            self.log.exception("No se pudo aprender de señales reales")
 
         # LECTURA CONTINUA: los tiempos largos usan las velas ACUMULADAS en el
         # historial (cuanto más ha leído el bot, más profundo analiza); los
@@ -248,15 +263,17 @@ class PocketService:
             resultado["adx"] = round(adxv, 1)
 
         # Pesos aprendidos: mostramos los indicadores que MÁS aciertan en este
-        # activo (los que el bot ha "aprendido" a valorar) para que se vea el
+        # activo (los que el bot ha "aprendido" a valorar), de la FUENTE activa
+        # (señales reales si las hay, si no backtest), para que se vea el
         # aprendizaje continuo en acción.
-        wcache = self._weights.get(asset_code)
-        if wcache:
-            top = [(n, s["hit_rate"]) for n, s in wcache["stats"].items()
+        if learned_stats:
+            top = [(n, s["hit_rate"]) for n, s in learned_stats.items()
                    if s.get("hit_rate") is not None]
             top.sort(key=lambda x: x[1], reverse=True)
             if top:
                 resultado["pesos_top"] = top[:3]        # 3 mejores (ind, hit_rate)
+        if learned_source:
+            resultado["pesos_fuente"] = learned_source   # "real" o "backtest"
 
         # GRÁFICO: velas M1 recientes para dibujar en Telegram.
         chart_df = self.repo.get_recent(asset_code, "M1", 45)
@@ -386,9 +403,16 @@ class PocketService:
             ultimo = self._last_signal.get(asset_code, 0)
             if now_ms - ultimo >= tf_seconds * 1000:
                 entry_price = ticks[-1][1]
+                # Votos del tiempo de ENTRADA (el más corto) para poder aprender
+                # luego qué indicadores acertaron de verdad.
+                por_tiempo = resultado.get("por_tiempo", {})
+                votos = None
+                if corto is not None and corto in por_tiempo:
+                    votos = por_tiempo[corto].get("votes") or None
                 try:
                     self.tracker.record(asset_code, self._tf_label(tf_seconds),
-                                        lado, entry_price, now_ms, tf_seconds)
+                                        lado, entry_price, now_ms, tf_seconds,
+                                        votes=votos)
                     self._last_signal[asset_code] = now_ms
                 except Exception:
                     self.log.exception("No se pudo registrar la señal")
