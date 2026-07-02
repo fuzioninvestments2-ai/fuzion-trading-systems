@@ -30,7 +30,8 @@ if ROOT not in sys.path:
 import websockets
 
 # Endpoint DEMO de Pocket Option (socket.io v4).
-DEMO_URL = "wss://demo-api-v3.po.market/socket.io/?EIO=4&transport=websocket"
+# Confirmado desde el navegador (Headers -> Request URL).
+DEMO_URL = "wss://demo-api-eu.po.market/socket.io/?EIO=4&transport=websocket"
 
 
 def _build_auth(ssid):
@@ -46,10 +47,18 @@ def _build_auth(ssid):
     return '42["auth",{"session":"%s","isDemo":1,"uid":0,"platform":2}]' % ssid
 
 
-async def _listen(ws, auth_msg):
-    """Lee mensajes, responde al handshake/ping, y los imprime todos."""
+async def _listen(ws, auth_msg, asset="EURUSD_otc"):
+    """Lee mensajes, responde al handshake/ping, autentica, pide precios y los
+    imprime todos (incluidos los binarios, como longitud/preview)."""
+    ya_suscrito = False
     async for raw in ws:
-        texto = raw if isinstance(raw, str) else raw.decode("utf-8", "replace")
+        if isinstance(raw, bytes):
+            # Los binarios llevan los datos reales (payload de eventos 451-).
+            preview = raw[:120]
+            print(f"<< [BINARIO {len(raw)} bytes] {preview!r}")
+            continue
+
+        texto = raw
         print("<<", texto[:400])
 
         # socket.io v4:
@@ -61,6 +70,13 @@ async def _listen(ws, auth_msg):
         elif texto.startswith("40"):
             await ws.send(auth_msg)            # autenticación (SSID)
             print(">> enviado: auth (SSID)")
+        elif "successauth" in texto and not ya_suscrito:
+            # Autenticados: probamos a pedir el flujo de precios de un activo.
+            ya_suscrito = True
+            for msg in (f'42["subfor","{asset}"]',
+                        f'42["changeSymbol",{{"asset":"{asset}","period":60}}]'):
+                await ws.send(msg)
+                print(">> enviado:", msg)
 
 
 def _load_ssid():
