@@ -195,6 +195,14 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
                    + " → feed no fiable, NO operes")
     if result.get("indecision_vela"):
         alerta += "\n🕯️ *DOJI:* vela de indecisión → espera dirección clara"
+    na = result.get("nivel_alerta")
+    if na:
+        if na[0] == "techo":
+            alerta += (f"\n🧱 *PEGADO AL TECHO* ({na[1]}): zona de resistencia → "
+                       "puede rechazar a la baja")
+        else:
+            alerta += (f"\n🧱 *PEGADO AL PISO* ({na[1]}): zona de soporte → "
+                       "puede rebotar al alza")
 
     explicacion = result.get("explicacion", "")
     expl = f"\n🧭 *Lectura:* _{explicacion}_" if explicacion else ""
@@ -302,6 +310,10 @@ def run():
                     f"la mejor lectura._", parse_mode="Markdown")
                 code = to_po_code(asset_display)
                 period = _TF_SECONDS.get(tf, 60)
+                # Le decimos al colector que priorice este activo: así sus tiempos
+                # largos se llenan antes para la próxima lectura.
+                if collector:
+                    collector.set_focus(code)
                 result, seg, n = await service.analyze(code, period)
                 text = _format_deep(asset_display, tf, result, seg,
                                     service.balance, n)

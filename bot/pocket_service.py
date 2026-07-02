@@ -241,6 +241,17 @@ class PocketService:
             lv = detect_levels(chart_df)
             if lv["soportes"] or lv["resistencias"]:
                 resultado["levels"] = lv
+                # ALERTA DE PROXIMIDAD: si el precio está MUY cerca (<0.05%) de un
+                # techo o piso, es zona de rebote/rechazo -> avisamos. Cerca del
+                # techo conviene PUT (rechazo); cerca del piso, CALL (rebote).
+                precio_actual = float(chart_df["close"].iloc[-1])
+                cerca = precio_actual * 0.0005          # 0.05% del precio
+                techo = lv["resistencias"][0] if lv["resistencias"] else None
+                piso = lv["soportes"][0] if lv["soportes"] else None
+                if techo is not None and abs(precio_actual - techo) <= cerca:
+                    resultado["nivel_alerta"] = ("techo", round(techo, 6))
+                elif piso is not None and abs(precio_actual - piso) <= cerca:
+                    resultado["nivel_alerta"] = ("piso", round(piso, 6))
 
         # PATRONES DE VELA sobre el tiempo más corto (el de la ENTRADA): la FORMA
         # de la vela cuenta lo que los indicadores no ven. Un doji = indecisión
