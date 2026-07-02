@@ -50,6 +50,10 @@ _EXPLICA = {
     ("stochastic", PUT): "estocástico girando a la baja",
     ("donchian", CALL): "precio en el PISO del canal (soporte, posible rebote)",
     ("donchian", PUT): "precio en el TECHO del canal (resistencia, posible rechazo)",
+    ("vwap", CALL): "precio por ENCIMA del VWAP (compradores al mando)",
+    ("vwap", PUT): "precio por DEBAJO del VWAP (vendedores al mando)",
+    ("patterns", CALL): "patrón de vela alcista (martillo/envolvente)",
+    ("patterns", PUT): "patrón de vela bajista (estrella/envolvente)",
 }
 
 

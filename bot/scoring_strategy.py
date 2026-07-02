@@ -50,6 +50,8 @@ BASE_WEIGHTS = {
     "moving_averages": 2.0,
     "stochastic": 1.0,
     "donchian": 2.0,       # techo/piso (soporte-resistencia)
+    "vwap": 2.0,           # precio "justo" (nivel de referencia profesional)
+    "patterns": 1.5,       # forma de la vela (confirmación/reversión)
 }
 # Alias por compatibilidad con código/tests que aún usan WEIGHTS.
 WEIGHTS = BASE_WEIGHTS
@@ -75,22 +77,32 @@ def _factor_por_tiempo(tf_seconds):
     if tf_seconds is None:
         return {}
     if tf_seconds < 60:                 # corto: 5s..30s
+        # En la entrada, la FORMA de la vela (patrones) informa mucho; el VWAP
+        # es más ruidoso en tiempos muy cortos.
         return {"rsi": 1.3, "stochastic": 1.4, "bollinger": 1.2,
-                "moving_averages": 0.5, "macd": 0.9}
+                "moving_averages": 0.5, "macd": 0.9,
+                "patterns": 1.3, "vwap": 0.9}
     if tf_seconds <= 300:               # medio: 1m..5m (equilibrado)
         return {}
     return {"moving_averages": 1.3, "macd": 1.2, "donchian": 1.2,  # largo: >5m
-            "stochastic": 0.6, "rsi": 0.9}
+            "stochastic": 0.6, "rsi": 0.9,
+            "vwap": 1.1, "patterns": 0.8}
 
 
 # Por RÉGIMEN (de scoring_strategy.regime()).
 def _factor_por_regimen(regimen):
     if regimen == "slide":              # tendencia: seguir, no revertir
+        # El VWAP confirma el lado de la tendencia; los patrones de reversión
+        # pesan menos (pelean contra la corriente).
         return {"macd": 1.3, "moving_averages": 1.3, "donchian": 1.2,
-                "rsi": 0.6, "bollinger": 0.6, "stochastic": 0.6}
+                "rsi": 0.6, "bollinger": 0.6, "stochastic": 0.6,
+                "vwap": 1.2, "patterns": 0.9}
     if regimen == "oscillate":          # rango: operar rebotes techo/piso
+        # Los patrones de reversión en los extremos son oro; el VWAP se cruza
+        # mucho en rango, así que pesa menos.
         return {"rsi": 1.3, "bollinger": 1.3, "stochastic": 1.3,
-                "donchian": 1.2, "macd": 0.6, "moving_averages": 0.6}
+                "donchian": 1.2, "macd": 0.6, "moving_averages": 0.6,
+                "patterns": 1.2, "vwap": 0.8}
     return {}                           # mixto/None: sin ajuste
 
 
@@ -227,6 +239,36 @@ def _donchian_signal(high, low, close, period=20):
     return HOLD, 0.5
 
 
+def _vwap_vote(df):
+    """
+    Voto del VWAP: precio por encima del 'precio justo' -> CALL; por debajo ->
+    PUT. La fuerza crece con la distancia (más lejos = sesgo más marcado), con
+    tope para no exagerar. Reutiliza bot/vwap (no reimplementa).
+    """
+    from bot.vwap import vwap_signal
+    v = vwap_signal(df)
+    side = v["side"]
+    if side == HOLD:
+        return HOLD, 0.5
+    fuerza = min(0.85, 0.6 + abs(v["dist_pct"]) * 0.4)   # 0.6..0.85
+    return side, fuerza
+
+
+def _pattern_vote(df):
+    """
+    Voto por PATRÓN de vela: martillo/envolvente alcista -> CALL; estrella/
+    envolvente bajista -> PUT. El doji NO vota (es indecisión). Reutiliza
+    bot/candle_patterns (no reimplementa).
+    """
+    from bot.candle_patterns import detect_patterns
+    p = detect_patterns(df)
+    if p["indecision"] or p["bias"] is None:
+        return HOLD, 0.5
+    # Marubozu/envolvente son señales más fuertes que martillo/estrella sueltos.
+    fuerte = any(("Marubozu" in x or "Envolvente" in x) for x in p["patrones"])
+    return p["bias"], (0.8 if fuerte else 0.7)
+
+
 def regime(high, low, close, period=14):
     """
     Detecta el RÉGIMEN del mercado con ADX (fuerza de tendencia):
@@ -279,6 +321,8 @@ class ScoringStrategy:
             "moving_averages": _ma_signal(close),
             "stochastic": _stochastic_signal(high, low, close),
             "donchian": _donchian_signal(high, low, close),
+            "vwap": _vwap_vote(df),
+            "patterns": _pattern_vote(df),
         }
 
         call_score = put_score = 0.0

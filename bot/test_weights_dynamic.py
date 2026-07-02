@@ -9,7 +9,8 @@ import numpy as np
 import pandas as pd
 
 from bot.scoring_strategy import (BASE_WEIGHTS, weights_for, ScoringStrategy,
-                                  _factor_por_tiempo, _factor_por_regimen)
+                                  _factor_por_tiempo, _factor_por_regimen,
+                                  _vwap_vote, _pattern_vote, CALL, PUT, HOLD)
 from bot.config import TradingConfig
 
 
@@ -66,10 +67,55 @@ def test_analyze_acepta_pesos():
     print(f"OK analyze con pesos custom (conf base={c1:.3f}, ajustada={c2:.3f})")
 
 
+def test_vwap_y_patterns_son_indicadores():
+    # Ambos nuevos votantes deben estar en los pesos base.
+    assert "vwap" in BASE_WEIGHTS and "patterns" in BASE_WEIGHTS
+    print("OK vwap y patterns están en los pesos base")
+
+
+def test_vwap_vota():
+    # Serie que sube: precio por encima del VWAP -> voto CALL.
+    velas = [(100 + i, 100 + i, 100 + i, 100 + i) for i in range(12)]
+    df = pd.DataFrame(velas, columns=["open", "high", "low", "close"])
+    side, fuerza = _vwap_vote(df)
+    assert side == CALL and fuerza > 0.5
+    print(f"OK VWAP vota (CALL, fuerza={fuerza:.2f})")
+
+
+def test_patterns_vota_y_doji_no():
+    # Martillo -> voto CALL.
+    mar = pd.DataFrame([(100.0, 100.15, 98.0, 100.1)],
+                       columns=["open", "high", "low", "close"])
+    side, _ = _pattern_vote(mar)
+    assert side == CALL
+    # Doji -> NO vota (indecisión).
+    doji = pd.DataFrame([(100, 101, 99, 100.02)],
+                        columns=["open", "high", "low", "close"])
+    side_d, _ = _pattern_vote(doji)
+    assert side_d == HOLD
+    print("OK patrones votan; el doji se abstiene (indecisión)")
+
+
+def test_analyze_incluye_nuevos_votos():
+    rng = pd.Series(range(60))
+    close = 100 + rng * 0.1
+    df = pd.DataFrame({"open": close, "high": close + 0.05,
+                       "low": close - 0.05, "close": close,
+                       "volume": [3] * 60})
+    _, _, det = ScoringStrategy(TradingConfig()).analyze(df)
+    assert "vwap" in det["votes"] and "patterns" in det["votes"]
+    print(f"OK analyze incluye votos vwap={det['votes']['vwap']} "
+          f"patterns={det['votes']['patterns']}")
+
+
 if __name__ == "__main__":
     test_base_sin_ajuste()
     test_por_tiempo_corto_vs_largo()
     test_por_regimen_slide_vs_oscillate()
     test_combinado_multiplica()
     test_analyze_acepta_pesos()
+    test_vwap_y_patterns_son_indicadores()
+    test_vwap_vota()
+    test_patterns_vota_y_doji_no()
+    test_analyze_incluye_nuevos_votos()
     print("\nTODOS OK — configuración de indicadores por tiempo/régimen")
