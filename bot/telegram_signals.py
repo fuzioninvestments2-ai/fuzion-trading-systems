@@ -193,6 +193,12 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
         detalle = ", ".join(f"{_NOM.get(n, n)} {hr:.0%}" for n, hr in pesos_top)
         aprendido += f"\n🧠 Mejores indicadores aquí: {detalle}"
 
+    # Win-rate REAL del bot (de sus propias señales ya resueltas), no del backtest.
+    wrr = result.get("win_rate_real")
+    if wrr is not None:
+        aprendido += (f"\n📈 Acierto REAL del bot aquí: {wrr:.0%} "
+                      f"_({result.get('senales_reales', 0)} señales medidas)_")
+
     # Alerta anti-manipulación (si el mercado se comportó raro).
     manip = result.get("manipulacion")
     alerta = (f"\n🛡️ *ALERTA:* mercado raro ({', '.join(manip)}) → mejor NO operar"

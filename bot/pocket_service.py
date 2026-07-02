@@ -24,6 +24,7 @@ from bot.manipulation import ManipulationGuard
 from bot.market_hours import is_open
 from bot.calibration import calibrate
 from bot.weight_learning import learn_weights
+from bot.signal_log import SignalTracker, CALL as _SIG_CALL, PUT as _SIG_PUT
 from bot.scoring_strategy import regime as _regime
 from bot.void_detector import detect_void
 from bot.payout import parse_assets
@@ -55,6 +56,8 @@ class PocketService:
         self._weights = {}           # asset -> pesos aprendidos por indicador
         self._payouts = {}           # asset -> % de pago (payout) de Pocket Option
         self._last_dir = {}          # asset -> (direccion, ts) para estabilidad
+        self._last_signal = {}       # asset -> ts_ms de la última señal registrada
+        self.tracker = SignalTracker(self.repo)   # ciclo de aprendizaje real
         self.balance = None
         self.connected = False
 
@@ -360,7 +363,54 @@ class PocketService:
             resultado["veredicto"] = "🚫 NO OPERAR"
             resultado["manipulacion"] = alerta["reasons"]
 
+        # CICLO DE APRENDIZAJE REAL. Se hace al FINAL, tras todas las barreras, así
+        # solo registramos lo que el bot de verdad recomendaría:
+        #   1) Resolvemos señales pasadas ya vencidas (con el historial acumulado).
+        #   2) Si el veredicto final es operable (OPERAR/OPCIONAL) con dirección
+        #      clara, registramos esta señal para medir después si acierta.
+        now_ms = int((self._last_tick.get(asset_code) or 0) * 1000)
+        if now_ms:
+            try:
+                self.tracker.resolve_pending(now_ms)
+            except Exception:
+                self.log.exception("No se pudieron resolver señales pendientes")
+
+        dfin = resultado.get("direccion", "")
+        lado = (_SIG_CALL if "CALL" in dfin
+                else (_SIG_PUT if "PUT" in dfin else None))
+        vfin = resultado.get("veredicto", "")
+        operable = ("OPERAR" in vfin) or ("OPCIONAL" in vfin)
+        if operable and lado and now_ms and ticks:
+            # Anti-duplicado: no registrar dos veces dentro del mismo horizonte
+            # (si el usuario pulsa "Analizar de nuevo" varias veces seguidas).
+            ultimo = self._last_signal.get(asset_code, 0)
+            if now_ms - ultimo >= tf_seconds * 1000:
+                entry_price = ticks[-1][1]
+                try:
+                    self.tracker.record(asset_code, self._tf_label(tf_seconds),
+                                        lado, entry_price, now_ms, tf_seconds)
+                    self._last_signal[asset_code] = now_ms
+                except Exception:
+                    self.log.exception("No se pudo registrar la señal")
+
+        # Win-rate REAL del bot (de señales ya resueltas) para mostrarlo.
+        try:
+            st = self.tracker.stats(asset=asset_code)
+            if st["decididas"] >= 5:
+                resultado["win_rate_real"] = st["win_rate"]
+                resultado["senales_reales"] = st["decididas"]
+        except Exception:
+            pass
+
         return resultado, seg, len(ticks)
+
+    def _tf_label(self, tf_seconds):
+        """Etiqueta legible de un timeframe en segundos (para guardar la señal)."""
+        if tf_seconds < 60:
+            return f"{tf_seconds}s"
+        if tf_seconds < 3600:
+            return f"{tf_seconds // 60}m"
+        return f"{tf_seconds // 3600}h"
 
     def _aggregate_m1(self, asset, tf_seconds):
         """
