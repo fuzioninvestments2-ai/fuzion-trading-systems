@@ -1,0 +1,10 @@
+# Dependencias del BOT de señales de Pocket Option OTC (Telegram).
+# Es un subconjunto ligero: el requirements.txt raíz trae librerías pesadas
+# (hmmlearn, brokers, etc.) que este bot NO necesita.
+
+pandas>=2.0.0
+numpy>=1.24.0
+websockets>=12.0            # conexión en tiempo real a Pocket Option
+python-telegram-bot>=22.0  # bot de Telegram con botones
+matplotlib>=3.7.0          # gráfico de velas que se envía por Telegram
+python-dotenv>=1.0.0       # leer el token desde .env
