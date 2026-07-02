@@ -22,6 +22,7 @@ from bot.history import HistoryRepository
 from bot.deep_analysis import DeepAnalyzer
 from bot.manipulation import ManipulationGuard
 from bot.market_hours import is_open
+from bot.calibration import calibrate
 
 
 class PocketService:
@@ -38,6 +39,7 @@ class PocketService:
         self._builders = {}          # asset -> CandleBuilder (para guardar historial)
         self._ticks = {}             # asset -> deque de (ts_seg, precio) para análisis profundo
         self._last_tick = {}         # asset -> último timestamp (segundos, hora real de PO)
+        self._calib = {}             # asset -> umbral aprendido (calibración)
         self.balance = None
         self.connected = False
 
@@ -141,10 +143,27 @@ class PocketService:
         else:
             tfs = tuple(sorted({max(60, tf_seconds), tf_seconds * 3, tf_seconds * 5}))
 
+        # CALIBRACIÓN que aprende: buscamos en el historial de ESTE activo el
+        # umbral que mejor habría funcionado, y lo usamos. Se cachea y se
+        # recalcula cuando hay ~30 velas nuevas (entrenamiento continuo).
+        min_conf, win_rate = 0.25, None
+        m1_cal = self.repo.get_recent(asset_code, "M1", 600)
+        if m1_cal is not None and len(m1_cal) >= 60:
+            cache = self._calib.get(asset_code)
+            if cache is None or len(m1_cal) - cache.get("count", 0) >= 30:
+                best = calibrate(m1_cal)
+                if best:
+                    self._calib[asset_code] = {
+                        "min_conf": best["min_confidence"],
+                        "win_rate": best["win_rate"], "count": len(m1_cal)}
+            cache = self._calib.get(asset_code)
+            if cache:
+                min_conf, win_rate = cache["min_conf"], cache["win_rate"]
+
         # LECTURA CONTINUA: los tiempos largos usan las velas ACUMULADAS en el
         # historial (cuanto más ha leído el bot, más profundo analiza); los
         # cortos usan los ticks recientes (con ruido filtrado).
-        analyzer = DeepAnalyzer(timeframes=tfs)
+        analyzer = DeepAnalyzer(timeframes=tfs, min_conf=min_conf)
         suaves = analyzer._filtrar_ruido(ticks)
         frames = {}
         for tf in tfs:
@@ -164,6 +183,9 @@ class PocketService:
                 frames[tf] = agg
 
         resultado = analyzer.analyze_frames(frames)
+        resultado["umbral"] = min_conf
+        if win_rate is not None:
+            resultado["win_rate_hist"] = win_rate
 
         # BARRERA ANTI-MANIPULACIÓN: si el mercado se comporta raro (spike,
         # congelado, estallido), forzamos NO OPERAR sin importar la señal.

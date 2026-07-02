@@ -37,15 +37,19 @@ ALL_TIMEFRAMES = {
 
 class DeepAnalyzer:
     def __init__(self, timeframes=DEFAULT_TIMEFRAMES, noise_alpha=0.35,
-                 min_candles=6):
+                 min_candles=6, min_conf=0.25):
         """
         timeframes : tuple de segundos (de menor a mayor).
         noise_alpha: suavizado del filtro de ruido (0-1). Más bajo = más suave.
         min_candles: velas mínimas para que una temporalidad "opine".
+        min_conf   : confianza mínima para que un tiempo dé dirección (por debajo
+                     de esto opina NEUTRAL). Es el umbral que la CALIBRACIÓN
+                     ajusta con el historial de cada activo.
         """
         self.timeframes = tuple(timeframes)
         self.noise_alpha = float(noise_alpha)
         self.min_candles = int(min_candles)
+        self.min_conf = float(min_conf)
         cfg = TradingConfig(stack_method="aggressive")
         cfg.min_confidence = 0.25
         self.cfg = cfg
@@ -71,7 +75,11 @@ class DeepAnalyzer:
         _, _, d = ScoringStrategy(self.cfg).analyze(df)
         call_s, put_s = d.get("call_score", 0.0), d.get("put_score", 0.0)
         conf = d.get("confidence", 0.0)
-        direction = CALL if call_s > put_s else PUT if put_s > call_s else "NEUTRAL"
+        # Solo opina dirección si supera el umbral aprendido; si no, NEUTRAL.
+        if conf < self.min_conf:
+            direction = "NEUTRAL"
+        else:
+            direction = CALL if call_s > put_s else PUT if put_s > call_s else "NEUTRAL"
         return {"dir": direction, "conf": round(conf, 3), "velas": velas}
 
     def _opinar_temporalidad(self, tf_seconds, ticks_suaves):

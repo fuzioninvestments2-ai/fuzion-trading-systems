@@ -155,6 +155,15 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
     bal = f"\n💰 Balance demo: ${balance:.2f}" if balance else ""
     coin = f"  ({coinciden})" if coinciden else ""
 
+    # Calibración aprendida (si existe).
+    umbral = result.get("umbral")
+    wr = result.get("win_rate_hist")
+    if umbral is not None and wr is not None:
+        aprendido = (f"\n🎓 Umbral aprendido: {umbral:.0%} "
+                     f"_(win-rate histórico {wr:.0%})_")
+    else:
+        aprendido = ""
+
     # Alerta anti-manipulación (si el mercado se comportó raro).
     manip = result.get("manipulacion")
     alerta = (f"\n🛡️ *ALERTA:* mercado raro ({', '.join(manip)}) → mejor NO operar"
@@ -165,7 +174,7 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
             f"\n{veredicto}  →  {direccion}{coin}\n"
             f"Fuerza de acuerdo: *{fuerza:.0%}*\n\n"
             f"🔎 *Panel por tiempo:*\n{desglose}\n"
-            f"{timing}{bal}\n\n"
+            f"{timing}{bal}{aprendido}\n\n"
             f"⚠️ _No es recomendación; ningún bot acierta siempre. Demo._")
 
 
