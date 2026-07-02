@@ -345,7 +345,8 @@ class PocketService:
                 cbf.add_tick(p, t * 1000.0)
             chart_df = cbf.to_dataframe(include_forming=True)
         else:
-            chart_df = self._aggregate_m1(asset_code, tf_seconds)
+            chart_df = self._aggregate_m1(asset_code, tf_seconds,
+                                          incluir_formacion=True)
             if chart_df is None or len(chart_df) < 5:
                 # Sin historial suficiente todavía -> construir desde ticks.
                 cbf = CandleBuilder(tf_seconds)
@@ -521,18 +522,28 @@ class PocketService:
             return f"{tf_seconds // 60}m"
         return f"{tf_seconds // 3600}h"
 
-    def _aggregate_m1(self, asset, tf_seconds):
+    def _aggregate_m1(self, asset, tf_seconds, incluir_formacion=False):
         """
         Agrega las velas M1 ACUMULADAS en el historial a un timeframe mayor.
         Cuantas más velas M1 haya guardado el bot, más velas del tiempo largo
         se pueden formar (la "lectura continua"). Devuelve un DataFrame OHLC.
+
+        incluir_formacion=True: añade la vela M1 EN FORMACIÓN (el minuto en curso)
+        antes de agregar, para que el gráfico llegue hasta AHORA y no vaya atrás.
         """
         import pandas as pd
         m1 = self.repo.get_recent(asset, "M1", 5000)
         if m1 is None or len(m1) == 0:
             return None
-        tf_ms = tf_seconds * 1000
         m1 = m1.copy()
+        if incluir_formacion:
+            b = self._builders.get(asset)
+            f = b.forming_candle() if b is not None else None
+            if f is not None:
+                last_ts = int(m1["timestamp"].iloc[-1]) if len(m1) else None
+                if last_ts is None or int(f["timestamp"]) > last_ts:
+                    m1 = pd.concat([m1, pd.DataFrame([f])], ignore_index=True)
+        tf_ms = tf_seconds * 1000
         m1["bucket"] = (m1["timestamp"] // tf_ms) * tf_ms
         agg = (m1.groupby("bucket")
                .agg(open=("open", "first"), high=("high", "max"),

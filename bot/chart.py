@@ -12,27 +12,38 @@ import matplotlib
 matplotlib.use("Agg")          # sin ventana (para servidor/segundo plano)
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
-def _etiquetas_hora(d):
+def _etiquetas_hora(d, ahora=None):
     """
-    Calcula (posiciones, etiquetas) de hora para el eje X a partir de la columna
-    'timestamp' (ms). Muestra ~7 marcas repartidas. Si las velas son de menos de
-    un minuto usa HH:MM:SS; si no, HH:MM. Devuelve (None, None) si no hay hora.
+    Calcula (posiciones, etiquetas) de hora para el eje X.
+
+    EL PORQUÉ de anclar a AHORA: los timestamps de Pocket Option vienen en la
+    zona horaria del bróker y no coincidían con el reloj del usuario ("tiempos
+    fuera de lugar"). En un gráfico en vivo, la vela de la DERECHA es "ahora";
+    así que ponemos la última vela = hora actual del usuario y retrocedemos por
+    el intervalo entre velas. Resultado: las horas SIEMPRE cuadran con su reloj.
+
+    `ahora`: datetime de referencia (por defecto datetime.now, la hora local del
+    usuario). Parametrizable para poder probarlo sin depender del reloj.
     """
-    if "timestamp" not in d.columns or len(d) == 0:
+    n = len(d)
+    if n == 0:
         return None, None
-    ts = [int(x) for x in d["timestamp"]]
-    # Intervalo típico entre velas (para decidir el formato de hora).
-    difs = [b - a for a, b in zip(ts, ts[1:]) if b > a]
-    intervalo = min(difs) if difs else 60000
-    fmt = "%H:%M:%S" if intervalo < 60000 else "%H:%M"
-    paso = max(1, len(d) // 7)
-    pos = list(range(0, len(d), paso))
-    # datetime.fromtimestamp usa la hora LOCAL de la máquina (la del usuario),
-    # así la hora del gráfico coincide con su reloj.
-    lab = [datetime.fromtimestamp(ts[i] / 1000.0).strftime(fmt) for i in pos]
+    # Intervalo típico entre velas (segundos), de los timestamps si los hay.
+    intervalo = 60.0
+    if "timestamp" in d.columns and n >= 2:
+        ts = [int(x) for x in d["timestamp"]]
+        difs = [(b - a) / 1000.0 for a, b in zip(ts, ts[1:]) if b > a]
+        if difs:
+            intervalo = min(difs)
+    fmt = "%H:%M:%S" if intervalo < 60 else "%H:%M"
+    ref = ahora or datetime.now()
+    paso = max(1, n // 7)
+    pos = list(range(0, n, paso))
+    lab = [(ref - timedelta(seconds=(n - 1 - i) * intervalo)).strftime(fmt)
+           for i in pos]
     return pos, lab
 
 
