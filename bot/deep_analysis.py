@@ -145,6 +145,15 @@ class DeepAnalyzer:
         return self._opinar_df(cb.to_dataframe(include_forming=True),
                                tf=tf_seconds, regimen=regimen)
 
+    @staticmethod
+    def _tf_txt(tf_seconds):
+        """Etiqueta legible de una temporalidad en segundos (p.ej. 1800 -> '30m')."""
+        if tf_seconds < 60:
+            return f"{tf_seconds}s"
+        if tf_seconds < 3600:
+            return f"{tf_seconds // 60}m"
+        return f"{tf_seconds // 3600}h"
+
     def _combinar(self, por_tiempo):
         """
         La ECUACIÓN. Métrica CLARA (0-100%): ALINEACIÓN = % de tiempos que
@@ -192,10 +201,35 @@ class DeepAnalyzer:
             else:
                 veredicto = "🚫 NO OPERAR"
             flecha = "⬆️ UP (CALL)" if side == CALL else "⬇️ DOWN (PUT)"
+            explicacion = _explicar(por_tiempo, side)
+
+            # FILTRO DE TENDENCIA MAYOR ("ecuación de tiempo"): la entrada corta
+            # debe ir A FAVOR de la temporalidad más LARGA. Si la señal PELEA
+            # contra la tendencia mayor (el tiempo más largo confirmado apunta al
+            # lado contrario), es una entrada de alto riesgo -> bajamos de
+            # categoría y avisamos. EL PORQUÉ: operar contra la tendencia mayor
+            # es justo lo que hace que "casi no se logre".
+            confirmados = ups_c + downs_c
+            trend_tf = max(confirmados)                 # el tiempo más largo
+            trend_dir = CALL if trend_tf in ups_c else PUT
+            contra = False
+            if trend_dir != side and trend_tf > min(confirmados):
+                contra = True
+                if veredicto == "✅ OPERAR":
+                    veredicto = "🟡 OPCIONAL"
+                elif veredicto == "🟡 OPCIONAL":
+                    veredicto = "🚫 NO OPERAR"
+                tl = self._tf_txt(trend_tf)
+                hacia = "al alza" if trend_dir == CALL else "a la baja"
+                explicacion = (f"⚠️ Va CONTRA la tendencia mayor ({tl} apunta "
+                               f"{hacia}). Entrar en contra es de ALTO RIESGO; "
+                               f"mejor esperar o operar a favor de la tendencia. "
+                               + explicacion)
+
             base.update(veredicto=veredicto, direccion=flecha,
                         fuerza=round(alignment, 3),
                         coinciden=f"{win}/{opinan_c} tiempos",
-                        explicacion=_explicar(por_tiempo, side))
+                        explicacion=explicacion, contra_tendencia=contra)
             return base
 
         # CASO 2: hay inclinación pero DÉBIL (no confirmada) -> mostrarla, no operar.

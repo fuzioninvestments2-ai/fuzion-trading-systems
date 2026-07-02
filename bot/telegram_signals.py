@@ -215,6 +215,9 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
                    + " → feed no fiable, NO operes")
     if result.get("indecision_vela"):
         alerta += "\n🕯️ *DOJI:* vela de indecisión → espera dirección clara"
+    if result.get("contra_tendencia"):
+        alerta += ("\n📉 *CONTRA TENDENCIA:* la señal va contra el tiempo mayor "
+                   "→ ALTO RIESGO, mejor operar a favor de la tendencia")
     na = result.get("nivel_alerta")
     if na:
         if na[0] == "techo":
