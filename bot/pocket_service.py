@@ -28,6 +28,7 @@ from bot.void_detector import detect_void
 from bot.payout import parse_assets
 from bot.candle_patterns import detect_patterns
 from bot.vwap import vwap_signal
+from bot.levels import detect_levels
 
 # Umbral de PAGO BAJO (%): por debajo de esto avisamos "no entrar", según la
 # regla del usuario ("EurUsdOTC está el % de pago bajo, yo no entro a ese
@@ -234,6 +235,12 @@ class PocketService:
             vw = vwap_signal(chart_df)
             if vw["vwap"] is not None:
                 resultado["vwap"] = vw
+
+            # SOPORTE/RESISTENCIA (techo y piso) para dibujar en el gráfico y
+            # avisar si el precio está pegado a un nivel (posible rebote/rechazo).
+            lv = detect_levels(chart_df)
+            if lv["soportes"] or lv["resistencias"]:
+                resultado["levels"] = lv
 
         # PATRONES DE VELA sobre el tiempo más corto (el de la ENTRADA): la FORMA
         # de la vela cuenta lo que los indicadores no ven. Un doji = indecisión

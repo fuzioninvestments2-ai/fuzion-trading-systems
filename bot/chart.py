@@ -14,10 +14,13 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 
 
-def draw_candles(df, asset, tf, path, direccion="", n=40):
+def draw_candles(df, asset, tf, path, direccion="", n=40, levels=None):
     """
     Dibuja las últimas `n` velas del DataFrame (open/high/low/close) y guarda el
     PNG en `path`. Devuelve `path`.
+
+    levels: dict opcional {soportes: [...], resistencias: [...]} para dibujar
+            líneas de techo (resistencia, roja) y piso (soporte, verde).
     """
     d = df.tail(n).reset_index(drop=True)
     if len(d) == 0:
@@ -37,6 +40,16 @@ def draw_candles(df, asset, tf, path, direccion="", n=40):
         alto = abs(c - o) or (h - l) * 0.001 or 1e-9
         ax.add_patch(Rectangle((i - 0.32, min(o, c)), 0.64, alto,
                                color=color, zorder=2))
+
+    # Líneas de SOPORTE (piso, verde) y RESISTENCIA (techo, rojo): zonas donde
+    # el precio suele rebotar o rechazar. Ayudan a ver "techo y piso" de un vistazo.
+    if levels:
+        for r in levels.get("resistencias", []):
+            ax.axhline(r, color="#ef5350", linestyle="--", linewidth=0.8,
+                       alpha=0.6, zorder=0)
+        for s in levels.get("soportes", []):
+            ax.axhline(s, color="#26a69a", linestyle="--", linewidth=0.8,
+                       alpha=0.6, zorder=0)
 
     titulo = f"{asset}   {tf}"
     if direccion:

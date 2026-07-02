@@ -225,11 +225,20 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
     else:
         vwap_txt = ""
 
+    # Techo/piso más cercanos (soporte/resistencia): dónde puede rebotar/rechazar.
+    lv = result.get("levels")
+    if lv and (lv.get("resistencias") or lv.get("soportes")):
+        techo = f"{lv['resistencias'][0]:.5f}" if lv.get("resistencias") else "—"
+        piso = f"{lv['soportes'][0]:.5f}" if lv.get("soportes") else "—"
+        niveles_txt = f"\n🧱 *Techo:* {techo}  ·  *Piso:* {piso}"
+    else:
+        niveles_txt = ""
+
     return (f"📈 *{asset_display}*   ⏱️ *{tf}*   (REALES ✅)\n"
             f"{alerta}\n"
             f"\n*{veredicto}*\n"
             f"Dirección: {direccion}{modo}\n"
-            f"🎯 Alineación: *{fuerza:.0%}*  ({coinciden}){expl}{patrones}{vwap_txt}\n\n"
+            f"🎯 Alineación: *{fuerza:.0%}*  ({coinciden}){expl}{patrones}{vwap_txt}{niveles_txt}\n\n"
             f"🔎 *Panel de tiempos:*\n{desglose}\n"
             f"{timing}{pago}{bal}{aprendido}\n\n"
             f"⚠️ _No es recomendación; ningún bot acierta siempre. Demo._")
@@ -305,7 +314,8 @@ def run():
                         from bot.chart import draw_candles
                         path = os.path.join(ROOT, "charts_tmp.png")
                         draw_candles(chart_df, asset_display, tf, path,
-                                     direccion=result.get("direccion", ""))
+                                     direccion=result.get("direccion", ""),
+                                     levels=result.get("levels"))
                         with open(path, "rb") as fimg:
                             await query.message.reply_photo(
                                 photo=fimg, caption=f"📈 {asset_display}  {tf}")
