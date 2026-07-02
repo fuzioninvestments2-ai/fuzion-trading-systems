@@ -126,7 +126,14 @@ class PocketService:
 
         # La "ecuación de tiempo": alrededor del tiempo elegido tomamos uno más
         # corto (entrada) y uno más largo (tendencia).
-        corto = max(5, tf_seconds // 4)
-        tfs = tuple(sorted({corto, tf_seconds, tf_seconds * 5}))
+        #  - OTC: permite sub-minuto (PO lo ofrece de 5s a 1m).
+        #  - Real: NO usa sub-minuto (como en Pocket Option); mínimo 1m.
+        is_otc = asset_code.endswith("_otc")
+        if is_otc:
+            corto = max(5, tf_seconds // 4)
+            tfs = tuple(sorted({corto, tf_seconds, tf_seconds * 5}))
+        else:
+            corto = max(60, tf_seconds)          # real: nunca por debajo de 1m
+            tfs = tuple(sorted({corto, tf_seconds * 3, tf_seconds * 5}))
         resultado = DeepAnalyzer(timeframes=tfs).analyze(ticks)
         return resultado, seg, len(ticks)

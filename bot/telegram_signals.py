@@ -27,8 +27,10 @@ from bot.signal_menu import SignalMenu, TIMEFRAMES, _reason_from_votes
 from bot.scoring_strategy import CALL, PUT, HOLD
 from bot.pocket_probe import _load_ssid
 
-# Segundos por timeframe (para pedirle a Pocket Option las velas correctas).
-_TF_SECONDS = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600}
+# Segundos por timeframe (para el timing y la ecuación de tiempos).
+_TF_SECONDS = {"S5": 5, "S10": 10, "S15": 15, "S30": 30,
+               "M1": 60, "M2": 120, "M3": 180, "M5": 300, "M10": 600,
+               "M15": 900, "M30": 1800, "H1": 3600, "H4": 14400, "D1": 86400}
 
 
 def to_po_code(display):

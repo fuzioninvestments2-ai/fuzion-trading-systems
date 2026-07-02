@@ -72,7 +72,17 @@ MARKETS = {
         "Australia 200 OTC", "Hong Kong 33 OTC"]},
 }
 
-TIMEFRAMES = ["M1", "M5", "M15", "M30", "H1"]
+# Tiempos según el mercado (como en Pocket Option):
+#  - OTC: incluye SEGUNDOS (5s..30s) porque PO los ofrece 24/7.
+#  - Real: NO hay sub-minuto; empieza en M1 (como notaste en tus capturas).
+TIMEFRAMES_OTC = ["S5", "S10", "S15", "S30", "M1", "M2", "M3", "M5",
+                  "M10", "M15", "M30", "H1", "H4", "D1"]
+TIMEFRAMES_REAL = ["M1", "M3", "M5", "M15", "M30", "H1", "H4"]
+TIMEFRAMES = TIMEFRAMES_OTC        # por compatibilidad
+
+
+def timeframes_for(market_key):
+    return TIMEFRAMES_REAL if market_key == "real" else TIMEFRAMES_OTC
 
 
 def _simulate_candles(asset, timeframe, n=260):
@@ -140,10 +150,12 @@ class SignalMenu:
 
     def asset_menu(self, user_id, asset):
         self._st(user_id)["asset"] = asset
+        market = self._st(user_id).get("market", "otc")
+        tfs = timeframes_for(market)      # OTC trae segundos; real no
         rows = []
-        # Tiempos en filas de 3.
-        for i in range(0, len(TIMEFRAMES), 3):
-            fila = [(tf, f"tf:{tf}") for tf in TIMEFRAMES[i:i + 3]]
+        # Tiempos en filas de 4 (más compacto con tantos tiempos).
+        for i in range(0, len(tfs), 4):
+            fila = [(tf, f"tf:{tf}") for tf in tfs[i:i + 4]]
             rows.append(fila)
         rows.append([("⬅️ Volver", "back:market")])
         return f"Activo: *{asset}*\nElige el tiempo de expiración:", rows
