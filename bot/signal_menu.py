@@ -22,21 +22,54 @@ from bot.config import TradingConfig
 from bot.candles import CandleBuilder
 from bot.scoring_strategy import ScoringStrategy, CALL, PUT, HOLD
 
-# Mercados y algunos activos representativos (como en las capturas).
+# Mercados y activos de Pocket Option (lista amplia y estándar).
+# NOTA: la disponibilidad exacta varía por día/país/hora. Los OTC funcionan 24/7.
 MARKETS = {
-    "otc": {"label": "🔄 OTC Market", "assets": [
-        "EUR/USD OTC", "GBP/USD OTC", "AUD/USD OTC", "USD/JPY OTC",
-        "EUR/JPY OTC", "AUD/JPY OTC", "USD/CAD OTC", "EUR/GBP OTC",
-        "GBP/JPY OTC", "NZD/USD OTC", "EUR/CHF OTC", "CAD/JPY OTC"]},
-    "real": {"label": "🌐 Real Market", "assets": [
-        "EUR/USD", "GBP/USD", "AUD/USD", "USD/JPY", "EUR/JPY",
-        "USD/CAD", "EUR/GBP", "GBP/JPY"]},
-    "crypto": {"label": "💎 Cryptocurrencies OTC", "assets": [
-        "BTC/USD OTC", "ETH/USD OTC", "LTC/USD OTC", "XRP/USD OTC"]},
+    "otc": {"label": "🔄 OTC Market (Forex)", "assets": [
+        # Majors OTC
+        "EUR/USD OTC", "GBP/USD OTC", "USD/JPY OTC", "USD/CHF OTC",
+        "USD/CAD OTC", "AUD/USD OTC", "NZD/USD OTC",
+        # Crosses OTC
+        "EUR/GBP OTC", "EUR/JPY OTC", "EUR/CHF OTC", "EUR/CAD OTC",
+        "EUR/AUD OTC", "EUR/NZD OTC", "GBP/JPY OTC", "GBP/AUD OTC",
+        "GBP/CAD OTC", "GBP/CHF OTC", "AUD/JPY OTC", "AUD/CAD OTC",
+        "AUD/CHF OTC", "AUD/NZD OTC", "CAD/JPY OTC", "CAD/CHF OTC",
+        "CHF/JPY OTC", "NZD/JPY OTC", "NZD/CAD OTC",
+        # Exóticos OTC (típicos de Pocket Option)
+        "USD/INR OTC", "USD/EGP OTC", "USD/BRL OTC", "USD/PKR OTC",
+        "USD/BDT OTC", "USD/NGN OTC", "USD/ARS OTC", "USD/COP OTC",
+        "USD/PHP OTC", "USD/IDR OTC", "USD/MXN OTC", "USD/DZD OTC",
+        "USD/CLP OTC", "USD/THB OTC", "USD/MYR OTC", "USD/SGD OTC",
+        "USD/CNH OTC", "USD/TRY OTC", "MAD/USD OTC", "ZAR/USD OTC",
+        "KES/USD OTC", "TND/USD OTC", "YER/USD OTC", "JOD/USD OTC",
+        "LBP/USD OTC", "BHD/CNY OTC", "OMR/CNY OTC", "AED/CNY OTC",
+        "SAR/CNY OTC", "QAR/CNY OTC"]},
+    "real": {"label": "🌐 Real Market (Forex)", "assets": [
+        "EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "USD/CAD", "AUD/USD",
+        "NZD/USD", "EUR/GBP", "EUR/JPY", "EUR/CHF", "EUR/CAD", "EUR/AUD",
+        "GBP/JPY", "GBP/AUD", "GBP/CAD", "GBP/CHF", "AUD/JPY", "AUD/CAD",
+        "AUD/NZD", "CAD/JPY", "CHF/JPY", "NZD/JPY"]},
+    "crypto": {"label": "💎 Cryptocurrencies", "assets": [
+        "Bitcoin OTC", "Ethereum OTC", "Litecoin OTC", "Ripple OTC",
+        "Bitcoin Cash OTC", "Dogecoin OTC", "Cardano OTC", "Polkadot OTC",
+        "Chainlink OTC", "Solana OTC", "TRON OTC", "BNB OTC",
+        "Avalanche OTC", "Polygon OTC", "Stellar OTC", "Monero OTC",
+        "EOS OTC", "Dash OTC", "Toncoin OTC", "Shiba Inu OTC"]},
     "stocks": {"label": "📈 Stocks OTC", "assets": [
-        "Apple OTC", "Tesla OTC", "Microsoft OTC", "Amazon OTC"]},
+        "Apple OTC", "Tesla OTC", "Microsoft OTC", "Amazon OTC",
+        "Alphabet (Google) OTC", "Meta OTC", "Netflix OTC", "Nvidia OTC",
+        "Intel OTC", "AMD OTC", "McDonald's OTC", "Coca-Cola OTC",
+        "Pfizer OTC", "Johnson & Johnson OTC", "Boeing OTC", "Visa OTC",
+        "Mastercard OTC", "American Express OTC", "Citigroup OTC",
+        "JPMorgan OTC", "Alibaba OTC", "Baidu OTC", "Snapchat OTC",
+        "Ford OTC", "FedEx OTC", "Twitter (X) OTC"]},
     "commodities": {"label": "🛢️ Commodities OTC", "assets": [
-        "Gold OTC", "Silver OTC", "Brent Oil OTC", "Natural Gas OTC"]},
+        "Gold OTC", "Silver OTC", "Platinum OTC", "Palladium OTC",
+        "Brent Oil OTC", "WTI Crude Oil OTC", "Natural Gas OTC"]},
+    "indices": {"label": "📊 Indices OTC", "assets": [
+        "US 500 OTC", "US 30 OTC", "US 100 OTC", "Germany 30 OTC",
+        "UK 100 OTC", "Japan 225 OTC", "Euro 50 OTC", "France 40 OTC",
+        "Australia 200 OTC", "Hong Kong 33 OTC"]},
 }
 
 TIMEFRAMES = ["M1", "M5", "M15", "M30", "H1"]
