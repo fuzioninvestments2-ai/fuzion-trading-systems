@@ -215,11 +215,21 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
     pats = result.get("patrones")
     patrones = f"\n🕯️ *Patrones:* {', '.join(pats)}" if pats else ""
 
+    # VWAP: de qué lado del "precio justo" estamos (contexto profesional).
+    vw = result.get("vwap")
+    if vw and vw.get("vwap") is not None:
+        lado = {"CALL": "por ENCIMA (sesgo alcista)",
+                "PUT": "por DEBAJO (sesgo bajista)",
+                "HOLD": "pegado al VWAP (neutral)"}.get(vw["side"], "")
+        vwap_txt = f"\n📏 *VWAP:* precio {lado} _({vw['dist_pct']:+.2f}%)_"
+    else:
+        vwap_txt = ""
+
     return (f"📈 *{asset_display}*   ⏱️ *{tf}*   (REALES ✅)\n"
             f"{alerta}\n"
             f"\n*{veredicto}*\n"
             f"Dirección: {direccion}{modo}\n"
-            f"🎯 Alineación: *{fuerza:.0%}*  ({coinciden}){expl}{patrones}\n\n"
+            f"🎯 Alineación: *{fuerza:.0%}*  ({coinciden}){expl}{patrones}{vwap_txt}\n\n"
             f"🔎 *Panel de tiempos:*\n{desglose}\n"
             f"{timing}{pago}{bal}{aprendido}\n\n"
             f"⚠️ _No es recomendación; ningún bot acierta siempre. Demo._")

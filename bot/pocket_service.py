@@ -27,6 +27,7 @@ from bot.scoring_strategy import regime as _regime
 from bot.void_detector import detect_void
 from bot.payout import parse_assets
 from bot.candle_patterns import detect_patterns
+from bot.vwap import vwap_signal
 
 # Umbral de PAGO BAJO (%): por debajo de esto avisamos "no entrar", según la
 # regla del usuario ("EurUsdOTC está el % de pago bajo, yo no entro a ese
@@ -223,7 +224,16 @@ class PocketService:
             resultado["adx"] = round(adxv, 1)
 
         # GRÁFICO: velas M1 recientes para dibujar en Telegram.
-        resultado["chart"] = self.repo.get_recent(asset_code, "M1", 45)
+        chart_df = self.repo.get_recent(asset_code, "M1", 45)
+        resultado["chart"] = chart_df
+
+        # VWAP: nivel de referencia (precio "justo") ponderado por actividad.
+        # Indica de qué lado del precio justo estamos: por encima = sesgo alcista,
+        # por debajo = bajista. Es contexto, no una orden.
+        if chart_df is not None and len(chart_df) >= 5:
+            vw = vwap_signal(chart_df)
+            if vw["vwap"] is not None:
+                resultado["vwap"] = vw
 
         # PATRONES DE VELA sobre el tiempo más corto (el de la ENTRADA): la FORMA
         # de la vela cuenta lo que los indicadores no ven. Un doji = indecisión
