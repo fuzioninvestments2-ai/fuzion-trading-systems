@@ -37,7 +37,7 @@ ALL_TIMEFRAMES = {
 
 class DeepAnalyzer:
     def __init__(self, timeframes=DEFAULT_TIMEFRAMES, noise_alpha=0.35,
-                 min_candles=8):
+                 min_candles=6):
         """
         timeframes : tuple de segundos (de menor a mayor).
         noise_alpha: suavizado del filtro de ruido (0-1). Más bajo = más suave.

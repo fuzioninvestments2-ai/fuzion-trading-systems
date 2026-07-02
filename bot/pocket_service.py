@@ -124,16 +124,18 @@ class PocketService:
             return ({"veredicto": "🚫 NO OPERAR", "direccion": "⏸️ pocos datos",
                      "fuerza": 0.0, "por_tiempo": {}}, seg, len(ticks))
 
-        # La "ecuación de tiempo": alrededor del tiempo elegido tomamos uno más
-        # corto (entrada) y uno más largo (tendencia).
+        # La "ecuación de tiempo" ADAPTATIVA: elegimos 3 temporalidades que
+        # DE VERDAD tengan suficientes velas con los datos disponibles. Así el
+        # panel opina en serio (no "neutral" por falta de datos).
         #  - OTC: permite sub-minuto (PO lo ofrece de 5s a 1m).
-        #  - Real: NO usa sub-minuto (como en Pocket Option); mínimo 1m.
+        #  - Real: nunca baja de 1m (como en Pocket Option).
+        span = (ticks[-1][0] - ticks[0][0]) if len(ticks) >= 2 else 0
         is_otc = asset_code.endswith("_otc")
-        if is_otc:
-            corto = max(5, tf_seconds // 4)
-            tfs = tuple(sorted({corto, tf_seconds, tf_seconds * 5}))
-        else:
-            corto = max(60, tf_seconds)          # real: nunca por debajo de 1m
-            tfs = tuple(sorted({corto, tf_seconds * 3, tf_seconds * 5}))
+        floor = 5 if is_otc else 60
+        # El tiempo LARGO se limita para tener ~12 velas con los datos que hay.
+        slow = max(floor * 6, int(span // 12)) if span else floor * 6
+        mid = max(floor * 2, slow // 3)
+        fast = max(floor, slow // 9)
+        tfs = tuple(sorted({fast, mid, slow}))
         resultado = DeepAnalyzer(timeframes=tfs).analyze(ticks)
         return resultado, seg, len(ticks)
