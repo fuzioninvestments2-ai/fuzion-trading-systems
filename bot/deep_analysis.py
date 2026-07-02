@@ -127,52 +127,44 @@ class DeepAnalyzer:
 
     def _combinar(self, por_tiempo):
         """
-        La ECUACIÓN: combina las opiniones de TODA la escalera de tiempos por
-        MAYORÍA/alineación, y genera una explicación educativa.
+        La ECUACIÓN: combina toda la escalera de tiempos y calcula una métrica
+        CLARA de 0 a 100%: la ALINEACIÓN = % de tiempos que coinciden en la
+        dirección. Bandas: >=75% OPERAR, >=60% OPCIONAL, si no NO OPERAR.
         """
         ups = [tf for tf, v in por_tiempo.items() if v["dir"] == CALL]
         downs = [tf for tf, v in por_tiempo.items() if v["dir"] == PUT]
         opinan = len(ups) + len(downs)
-        u, dn = len(ups), len(downs)
-
-        def _avg(tfs):
-            vals = [por_tiempo[t]["conf"] for t in tfs]
-            return round(sum(vals) / len(vals), 3) if vals else 0.0
-
         base = {"por_tiempo": por_tiempo}
 
         if opinan == 0:
             base.update(veredicto="🚫 NO OPERAR", direccion="⏸️ sin datos",
-                        fuerza=0.0, explicacion="Aún no hay lectura clara.")
+                        fuerza=0.0, coinciden="0/0",
+                        explicacion="Aún no hay suficientes datos para leer.")
             return base
 
-        # ¿Hay una dirección dominante y alineada?
-        if u > 0 and dn > 0:
-            # Mezcla: solo pasa si una lado DOMINA claramente (3x y >=3 tiempos).
-            if u >= 3 and u >= 3 * dn:
-                return self._resultado(base, CALL, ups, opinan, "🟡 OPCIONAL",
-                                       por_tiempo)
-            if dn >= 3 and dn >= 3 * u:
-                return self._resultado(base, PUT, downs, opinan, "🟡 OPCIONAL",
-                                       por_tiempo)
-            base.update(veredicto="🚫 NO OPERAR", direccion="⚠️ conflicto",
-                        fuerza=0.0,
-                        explicacion="Los tiempos se contradicen: no hay "
-                                    "alineación. Mejor esperar.")
+        u, dn = len(ups), len(downs)
+        if u >= dn:
+            side, tfs, win = CALL, ups, u
+        else:
+            side, tfs, win = PUT, downs, dn
+        lose = opinan - win
+        alignment = win / opinan          # 0..1 -> métrica clara
+
+        if lose == 0 and win >= 3 and alignment >= 0.75:
+            veredicto = "✅ OPERAR"
+        elif lose <= 1 and alignment >= 0.60 and win >= 2:
+            veredicto = "🟡 OPCIONAL"
+        else:
+            base.update(veredicto="🚫 NO OPERAR", direccion="⚠️ sin alineación",
+                        fuerza=round(alignment, 3), coinciden=f"{win}/{opinan}",
+                        explicacion="Los tiempos no están suficientemente "
+                                    "alineados. Mejor esperar.")
             return base
 
-        # Todos los que opinan van al mismo lado.
-        if u > 0:
-            v = "✅ OPERAR" if u >= max(3, int(opinan * 0.6)) else "🟡 OPCIONAL"
-            return self._resultado(base, CALL, ups, opinan, v, por_tiempo)
-        v = "✅ OPERAR" if dn >= max(3, int(opinan * 0.6)) else "🟡 OPCIONAL"
-        return self._resultado(base, PUT, downs, opinan, v, por_tiempo)
-
-    def _resultado(self, base, side, tfs, opinan, veredicto, por_tiempo):
-        conf = round(sum(por_tiempo[t]["conf"] for t in tfs) / len(tfs), 3)
         flecha = "⬆️ UP (CALL)" if side == CALL else "⬇️ DOWN (PUT)"
-        base.update(veredicto=veredicto, direccion=flecha, fuerza=conf,
-                    coinciden=f"{len(tfs)}/{opinan} tiempos",
+        base.update(veredicto=veredicto, direccion=flecha,
+                    fuerza=round(alignment, 3),
+                    coinciden=f"{win}/{opinan} tiempos",
                     explicacion=_explicar(por_tiempo, side))
         return base
 

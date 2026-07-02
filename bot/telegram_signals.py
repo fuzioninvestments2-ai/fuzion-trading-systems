@@ -141,10 +141,19 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
     por = result.get("por_tiempo", {})
     emo = {"CALL": "⬆️", "PUT": "⬇️", "NEUTRAL": "⏸️"}
 
+    def _dot(conf):
+        return "🟢" if conf >= 0.35 else ("🟡" if conf >= 0.15 else "▫️")
+
     filas = []
     for tfs, v in sorted(por.items()):
-        filas.append(f"  {_tf_label(tfs):>4}  {emo.get(v['dir'], '⏸️')}  "
-                     f"_(conf {v['conf']:.0%}, {v['velas']}v)_")
+        flecha = emo.get(v["dir"], "⏸️")
+        if v["velas"] < 6:
+            estado = "·  _(pocos datos)_"
+        elif v["dir"] == "NEUTRAL":
+            estado = "▫️ neutral"
+        else:
+            estado = f"{_dot(v['conf'])} {v['conf']:.0%}"
+        filas.append(f"`{_tf_label(tfs):>4}`  {flecha}  {estado}")
     desglose = "\n".join(filas) if filas else "  (sin datos suficientes)"
 
     if seg is not None:
@@ -172,11 +181,12 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
     explicacion = result.get("explicacion", "")
     expl = f"\n🧭 *Lectura:* _{explicacion}_" if explicacion else ""
 
-    return (f"📈 *{asset_display}*  |  ⏱️ *{tf}*   (PRECIOS REALES ✅)\n"
+    return (f"📈 *{asset_display}*   ⏱️ *{tf}*   (REALES ✅)\n"
             f"{alerta}\n"
-            f"\n{veredicto}  →  {direccion}{coin}\n"
-            f"Fuerza de acuerdo: *{fuerza:.0%}*{expl}\n\n"
-            f"🔎 *Panel por tiempo:*\n{desglose}\n"
+            f"\n*{veredicto}*\n"
+            f"Dirección: {direccion}\n"
+            f"🎯 Alineación: *{fuerza:.0%}*  ({coinciden}){expl}\n\n"
+            f"🔎 *Panel de tiempos:*\n{desglose}\n"
             f"{timing}{bal}{aprendido}\n\n"
             f"⚠️ _No es recomendación; ningún bot acierta siempre. Demo._")
 
