@@ -58,9 +58,16 @@ class PocketOptionClient:
         self._pending_event = None      # nombre del evento cuyo binario esperamos
         self._asset = "EURUSD_otc"
         self._period = 60
+        self._ws = None                 # websocket activo (para cambiar de activo)
 
     def stop(self):
         self._stopped = True
+
+    async def set_asset(self, asset, period=60):
+        """Cambia el activo escuchado en caliente (si hay conexión)."""
+        self._asset, self._period = asset, period
+        if self._ws is not None:
+            await self.change_asset(self._ws, asset, period)
 
     async def run(self, asset="EURUSD_otc", period=60):
         """Conecta y escucha, reconectando con backoff ante caídas."""
@@ -72,6 +79,7 @@ class PocketOptionClient:
                         self.url, additional_headers=_HEADERS,
                         ping_interval=None, max_size=None) as ws:
                     attempt = 0
+                    self._ws = ws
                     self.log.info("Conectado a Pocket Option (%s).",
                                   "demo" if "demo" in self.url else "real")
                     await self._listen(ws)

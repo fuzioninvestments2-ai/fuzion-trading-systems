@@ -3,16 +3,17 @@ bot/telegram_signals.py
 =======================
 Bot de Telegram con MENÚ DE BOTONES (señales manuales), estilo Dewbot/Baloo.
 
-Flujo: /start -> botones de mercado -> activo -> tiempo -> Start Analysis -> señal.
+Flujo: /start -> mercado -> activo -> tiempo -> Start Analysis -> señal.
 
-Toda la lógica está en signal_menu.py (probada). Aquí solo traducimos a botones
-reales de Telegram (InlineKeyboard) y editamos el mensaje al pulsar.
+Si existe tu SSID (archivo ssid.txt), el análisis usa PRECIOS REALES de Pocket
+Option (demo, solo lectura). Si no hay SSID, usa datos simulados (para probar la
+interfaz). Toda la lógica de menú está en signal_menu.py (probada).
 
-CÓMO USARLO:
-  1. Ten tu token en .env (TELEGRAM_BOT_TOKEN=...), igual que antes.
-  2. pip install python-telegram-bot
-  3. python3 bot/telegram_signals.py
-  4. En Telegram, abre tu bot y pulsa /start.
+Uso:
+  1. .env con TELEGRAM_BOT_TOKEN=...  (para Telegram)
+  2. ssid.txt con 42["auth",{...}]    (opcional, para precios reales)
+  3. pip install python-telegram-bot
+  4. python3 bot/telegram_signals.py  ->  en Telegram, /start
 """
 
 import os
@@ -22,19 +23,55 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from bot.signal_menu import SignalMenu
+from bot.signal_menu import SignalMenu, TIMEFRAMES, _reason_from_votes
+from bot.scoring_strategy import CALL, PUT, HOLD
+from bot.pocket_probe import _load_ssid
+
+# Segundos por timeframe (para pedirle a Pocket Option las velas correctas).
+_TF_SECONDS = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600}
+
+
+def to_po_code(display):
+    """
+    Convierte el nombre bonito del menú al código de Pocket Option.
+      "EUR/USD OTC" -> "EURUSD_otc"   |   "EUR/USD" -> "EURUSD"
+    (Funciona perfecto para forex; cripto/acciones pueden necesitar ajuste.)
+    """
+    s = display.strip()
+    otc = s.upper().endswith("OTC")
+    if otc:
+        s = s[:-3].strip()
+    s = s.replace("/", "").replace(" ", "")
+    return s + "_otc" if otc else s
 
 
 def _keyboard(rows):
-    """Convierte nuestras filas (etiqueta, dato) en botones de Telegram."""
     from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     kb = [[InlineKeyboardButton(text=label, callback_data=data)
            for (label, data) in fila] for fila in rows]
     return InlineKeyboardMarkup(kb)
 
 
+def _format_real_signal(asset_display, tf, signal, conf, details, n, balance):
+    if signal == CALL:
+        direccion, side = "⬆️ *UP* (CALL)", CALL
+    elif signal == PUT:
+        direccion, side = "⬇️ *DOWN* (PUT)", PUT
+    else:
+        direccion, side = "⏸️ *Sin señal clara* (espera)", HOLD
+    votes = details.get("votes", {})
+    motivo = (_reason_from_votes(votes, side) if side != HOLD
+              else "los indicadores no coinciden")
+    bal = f"\n💰 Balance demo: ${balance:.2f}" if balance else ""
+    return (f"📈 *{asset_display}*  |  ⏱️ *{tf}*   (PRECIOS REALES ✅)\n"
+            f"Dirección: {direccion}\n"
+            f"Confianza: *{conf:.0%}*\n"
+            f"Motivo: {motivo}\n"
+            f"Velas analizadas: {n}{bal}\n\n"
+            f"⚠️ _No es recomendación; ningún bot acierta siempre. Cuenta demo._")
+
+
 def run():
-    # Cargar .env si está disponible.
     try:
         from dotenv import load_dotenv
         load_dotenv()
@@ -43,8 +80,7 @@ def run():
 
     token = os.getenv("TELEGRAM_BOT_TOKEN", "")
     if not token:
-        raise RuntimeError(
-            "Falta TELEGRAM_BOT_TOKEN en tu .env (créalo con @BotFather).")
+        raise RuntimeError("Falta TELEGRAM_BOT_TOKEN en tu .env (con @BotFather).")
 
     from telegram import Update
     from telegram.ext import (Application, CommandHandler, CallbackQueryHandler,
@@ -53,29 +89,72 @@ def run():
 
     menu = SignalMenu()
 
+    # Si hay SSID -> preparamos el servicio de precios REALES.
+    ssid = _load_ssid()
+    service = None
+    if ssid:
+        from bot.pocket_service import PocketService
+        service = PocketService(ssid, demo=True)
+
     async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        modo = "PRECIOS REALES ✅" if service else "datos simulados (sin SSID)"
         text, rows = menu.main_menu()
-        await update.message.reply_text(text, reply_markup=_keyboard(rows),
-                                        parse_mode="Markdown")
+        await update.message.reply_text(
+            f"{text}\n_Modo: {modo}_", reply_markup=_keyboard(rows),
+            parse_mode="Markdown")
 
     async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
-        await query.answer()               # quita el "reloj" del botón
+        await query.answer()
         uid = query.from_user.id
+
+        if query.data == "analyze":
+            st = menu._st(uid)
+            asset_display = st.get("asset")
+            tf = st.get("timeframe")
+            if not asset_display or not tf:
+                await query.answer("Elige activo y tiempo primero", show_alert=True)
+                return
+            if service is None:
+                # Sin SSID: usamos la simulación del menú (interfaz).
+                text, rows = menu.analyze(uid)
+            else:
+                await query.edit_message_text(
+                    f"🔎 Analizando *{asset_display}* ({tf}) con precios "
+                    f"reales… espera unos segundos.", parse_mode="Markdown")
+                code = to_po_code(asset_display)
+                period = _TF_SECONDS.get(tf, 60)
+                signal, conf, details, n = await service.analyze(code, period)
+                text = _format_real_signal(asset_display, tf, signal, conf,
+                                           details, n, service.balance)
+                rows = [[("🔁 Analizar de nuevo", "analyze")],
+                        [("📊 Otro activo", "back:market"), ("🏠 Menú", "back:main")]]
+            await _safe_edit(query, text, rows)
+            return
+
         text, rows = menu.handle_callback(uid, query.data)
+        await _safe_edit(query, text, rows)
+
+    async def _safe_edit(query, text, rows):
+        from telegram.error import BadRequest
         try:
             await query.edit_message_text(text, reply_markup=_keyboard(rows),
                                           parse_mode="Markdown")
         except BadRequest as e:
-            # Si el texto es idéntico, Telegram se queja: lo ignoramos.
             if "not modified" not in str(e).lower():
                 raise
 
-    app = Application.builder().token(token).build()
+    async def _post_init(app):
+        if service:
+            await service.start()      # arranca la conexión a PO en segundo plano
+            print("🔌 Conectando a Pocket Option (precios reales)...")
+
+    app = Application.builder().token(token).post_init(_post_init).build()
     app.add_handler(CommandHandler(["start", "menu"], start))
     app.add_handler(CallbackQueryHandler(on_button))
 
-    print("🤖 Bot de SEÑALES (menú con botones) en marcha. Abre tu bot y pulsa /start.")
+    modo = "PRECIOS REALES" if service else "SIMULADO (sin ssid.txt)"
+    print(f"🤖 Bot de SEÑALES en marcha [{modo}]. Abre tu bot y pulsa /start.")
     app.run_polling()
 
 
