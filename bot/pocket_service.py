@@ -41,6 +41,7 @@ class PocketService:
         self._last_tick = {}         # asset -> último timestamp (segundos, hora real de PO)
         self._calib = {}             # asset -> umbral aprendido (calibración)
         self._payouts = {}           # asset -> % de pago (payout) de Pocket Option
+        self._last_dir = {}          # asset -> (direccion, ts) para estabilidad
         self.balance = None
         self.connected = False
 
@@ -225,6 +226,22 @@ class PocketService:
             resultado["payout"] = payout
             if payout < 80:
                 resultado["pago_bajo"] = True
+
+        # GUARDIÁN DE ESTABILIDAD (indecisión): si la señal acaba de cambiar de
+        # dirección en pocos segundos, el mercado está indeciso -> NO OPERAR
+        # hasta que se estabilice.
+        now_ts = self._last_tick.get(asset_code)
+        dtxt = resultado.get("direccion", "")
+        cur = "UP" if "UP" in dtxt else ("DOWN" if "DOWN" in dtxt else None)
+        if cur and now_ts:
+            last = self._last_dir.get(asset_code)
+            if last and (now_ts - last[1]) < 25 and last[0] != cur:
+                resultado["veredicto"] = "🚫 NO OPERAR"
+                resultado["explicacion"] = ("Indecisión: la señal acaba de "
+                                            "cambiar de dirección. Espera a que "
+                                            "se estabilice antes de entrar.")
+                resultado["inestable"] = True
+            self._last_dir[asset_code] = (cur, now_ts)
 
         # BARRERA ANTI-MANIPULACIÓN: si el mercado se comporta raro (spike,
         # congelado, estallido), forzamos NO OPERAR sin importar la señal.

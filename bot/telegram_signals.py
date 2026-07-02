@@ -187,6 +187,8 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
     manip = result.get("manipulacion")
     alerta = (f"\n🛡️ *ALERTA:* mercado raro ({', '.join(manip)}) → mejor NO operar"
               if manip else "")
+    if result.get("inestable"):
+        alerta += "\n🔄 *INDECISIÓN:* la señal cambió de dirección → espera"
 
     explicacion = result.get("explicacion", "")
     expl = f"\n🧭 *Lectura:* _{explicacion}_" if explicacion else ""
