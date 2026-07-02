@@ -293,6 +293,14 @@ class PocketService:
                     [chart_df, _pd.DataFrame([forming])], ignore_index=True)
         resultado["chart"] = chart_df
 
+        # COBERTURA DE DATOS: cuántas velas M1 lleva acumuladas este activo. Es
+        # transparencia: los tiempos largos (15m, 30m) necesitan muchas velas y
+        # se van llenando con el uso (el historial se GUARDA entre reinicios).
+        try:
+            resultado["m1_count"] = self.repo.count(asset_code, "M1")
+        except Exception:
+            pass
+
         # VWAP: nivel de referencia (precio "justo") ponderado por actividad.
         # Indica de qué lado del precio justo estamos: por encima = sesgo alcista,
         # por debajo = bajista. Es contexto, no una orden.

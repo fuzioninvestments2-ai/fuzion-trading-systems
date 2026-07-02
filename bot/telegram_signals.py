@@ -260,13 +260,23 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
     else:
         niveles_txt = ""
 
+    # Cobertura de datos (transparencia): cuántas velas M1 lleva el activo. Los
+    # tiempos largos se llenan con el uso; el historial se guarda entre reinicios.
+    m1 = result.get("m1_count")
+    if m1 is not None:
+        cobertura = (f"\n📚 Historial: {m1} velas M1 acumuladas"
+                     + ("" if m1 >= 400 else
+                        " _(los tiempos largos se llenan con el tiempo)_"))
+    else:
+        cobertura = ""
+
     return (f"📈 *{asset_display}*   ⏱️ *{tf}*   (REALES ✅)\n"
             f"{alerta}\n"
             f"\n*{veredicto}*\n"
             f"Dirección: {direccion}{modo}\n"
             f"🎯 Alineación: *{fuerza:.0%}*  ({coinciden}){expl}{patrones}{vwap_txt}{niveles_txt}\n\n"
             f"🔎 *Panel de tiempos:*\n{desglose}\n"
-            f"{timing}{pago}{bal}{aprendido}\n\n"
+            f"{timing}{pago}{bal}{aprendido}{cobertura}\n\n"
             f"⚠️ _No es recomendación; ningún bot acierta siempre. Demo._")
 
 
