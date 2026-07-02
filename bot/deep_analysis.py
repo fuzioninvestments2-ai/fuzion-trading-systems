@@ -35,6 +35,41 @@ ALL_TIMEFRAMES = {
 }
 
 
+# Frases educativas por indicador y dirección (para explicar la lectura, como
+# hacen los bots que "enseñan" al trader).
+_EXPLICA = {
+    ("rsi", CALL): "RSI en sobreventa (posible rebote al alza)",
+    ("rsi", PUT): "RSI en sobrecompra (posible caída)",
+    ("macd", CALL): "MACD con impulso alcista",
+    ("macd", PUT): "MACD con impulso bajista",
+    ("bollinger", CALL): "precio en la banda BAJA de Bollinger (rebote)",
+    ("bollinger", PUT): "precio en la banda ALTA de Bollinger (rechazo)",
+    ("moving_averages", CALL): "medias móviles apuntando al alza",
+    ("moving_averages", PUT): "medias móviles apuntando a la baja",
+    ("stochastic", CALL): "estocástico girando al alza",
+    ("stochastic", PUT): "estocástico girando a la baja",
+}
+
+
+def _explicar(por_tiempo, side):
+    """
+    Arma una explicación en palabras de POR QUÉ el bot ve esa dirección,
+    juntando los indicadores que apoyan `side` en los tiempos alineados.
+    """
+    razones = []
+    for tf, v in por_tiempo.items():
+        if v.get("dir") != side:
+            continue
+        for ind, voto in v.get("votes", {}).items():
+            if voto == side and (ind, side) in _EXPLICA:
+                frase = _EXPLICA[(ind, side)]
+                if frase not in razones:
+                    razones.append(frase)
+    if not razones:
+        return "Varios tiempos coinciden en la dirección."
+    return "; ".join(razones[:4]) + "."
+
+
 class DeepAnalyzer:
     def __init__(self, timeframes=DEFAULT_TIMEFRAMES, noise_alpha=0.35,
                  min_candles=6, min_conf=0.25):
@@ -71,7 +106,7 @@ class DeepAnalyzer:
         """Un 'analista' opina sobre un DataFrame de velas ya construido."""
         velas = 0 if df is None else len(df)
         if df is None or velas < self.min_candles:
-            return {"dir": "NEUTRAL", "conf": 0.0, "velas": velas}
+            return {"dir": "NEUTRAL", "conf": 0.0, "velas": velas, "votes": {}}
         _, _, d = ScoringStrategy(self.cfg).analyze(df)
         call_s, put_s = d.get("call_score", 0.0), d.get("put_score", 0.0)
         conf = d.get("confidence", 0.0)
@@ -80,7 +115,8 @@ class DeepAnalyzer:
             direction = "NEUTRAL"
         else:
             direction = CALL if call_s > put_s else PUT if put_s > call_s else "NEUTRAL"
-        return {"dir": direction, "conf": round(conf, 3), "velas": velas}
+        return {"dir": direction, "conf": round(conf, 3), "velas": velas,
+                "votes": d.get("votes", {})}
 
     def _opinar_temporalidad(self, tf_seconds, ticks_suaves):
         """Construye las velas de SU tiempo desde ticks y opina."""
@@ -90,33 +126,55 @@ class DeepAnalyzer:
         return self._opinar_df(cb.to_dataframe(include_forming=True))
 
     def _combinar(self, por_tiempo):
-        """La ECUACIÓN: combina las opiniones por tiempo en un veredicto."""
+        """
+        La ECUACIÓN: combina las opiniones de TODA la escalera de tiempos por
+        MAYORÍA/alineación, y genera una explicación educativa.
+        """
         ups = [tf for tf, v in por_tiempo.items() if v["dir"] == CALL]
         downs = [tf for tf, v in por_tiempo.items() if v["dir"] == PUT]
-        total = len(por_tiempo)
+        opinan = len(ups) + len(downs)
+        u, dn = len(ups), len(downs)
 
         def _avg(tfs):
             vals = [por_tiempo[t]["conf"] for t in tfs]
             return round(sum(vals) / len(vals), 3) if vals else 0.0
 
-        if ups and downs:
-            return {"veredicto": "🚫 NO OPERAR", "direccion": "⚠️ conflicto",
-                    "fuerza": 0.0, "motivo": "las temporalidades no coinciden",
-                    "por_tiempo": por_tiempo}
-        if len(ups) >= 2:
-            v = "✅ OPERAR" if len(ups) == total else "🟡 OPCIONAL"
-            return {"veredicto": v, "direccion": "⬆️ UP (CALL)",
-                    "fuerza": _avg(ups), "coinciden": f"{len(ups)}/{total} tiempos",
-                    "por_tiempo": por_tiempo}
-        if len(downs) >= 2:
-            v = "✅ OPERAR" if len(downs) == total else "🟡 OPCIONAL"
-            return {"veredicto": v, "direccion": "⬇️ DOWN (PUT)",
-                    "fuerza": _avg(downs), "coinciden": f"{len(downs)}/{total} tiempos",
-                    "por_tiempo": por_tiempo}
-        return {"veredicto": "🚫 NO OPERAR", "direccion": "⏸️ sin confluencia",
-                "fuerza": _avg(ups + downs),
-                "motivo": "pocas temporalidades de acuerdo o pocos datos",
-                "por_tiempo": por_tiempo}
+        base = {"por_tiempo": por_tiempo}
+
+        if opinan == 0:
+            base.update(veredicto="🚫 NO OPERAR", direccion="⏸️ sin datos",
+                        fuerza=0.0, explicacion="Aún no hay lectura clara.")
+            return base
+
+        # ¿Hay una dirección dominante y alineada?
+        if u > 0 and dn > 0:
+            # Mezcla: solo pasa si una lado DOMINA claramente (3x y >=3 tiempos).
+            if u >= 3 and u >= 3 * dn:
+                return self._resultado(base, CALL, ups, opinan, "🟡 OPCIONAL",
+                                       por_tiempo)
+            if dn >= 3 and dn >= 3 * u:
+                return self._resultado(base, PUT, downs, opinan, "🟡 OPCIONAL",
+                                       por_tiempo)
+            base.update(veredicto="🚫 NO OPERAR", direccion="⚠️ conflicto",
+                        fuerza=0.0,
+                        explicacion="Los tiempos se contradicen: no hay "
+                                    "alineación. Mejor esperar.")
+            return base
+
+        # Todos los que opinan van al mismo lado.
+        if u > 0:
+            v = "✅ OPERAR" if u >= max(3, int(opinan * 0.6)) else "🟡 OPCIONAL"
+            return self._resultado(base, CALL, ups, opinan, v, por_tiempo)
+        v = "✅ OPERAR" if dn >= max(3, int(opinan * 0.6)) else "🟡 OPCIONAL"
+        return self._resultado(base, PUT, downs, opinan, v, por_tiempo)
+
+    def _resultado(self, base, side, tfs, opinan, veredicto, por_tiempo):
+        conf = round(sum(por_tiempo[t]["conf"] for t in tfs) / len(tfs), 3)
+        flecha = "⬆️ UP (CALL)" if side == CALL else "⬇️ DOWN (PUT)"
+        base.update(veredicto=veredicto, direccion=flecha, fuerza=conf,
+                    coinciden=f"{len(tfs)}/{opinan} tiempos",
+                    explicacion=_explicar(por_tiempo, side))
+        return base
 
     def analyze(self, ticks):
         """ticks: [(timestamp_segundos, precio), ...] en orden cronológico."""

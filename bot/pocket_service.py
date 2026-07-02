@@ -134,14 +134,13 @@ class PocketService:
             return ({"veredicto": "🚫 NO OPERAR", "direccion": "⏸️ pocos datos",
                      "fuerza": 0.0, "por_tiempo": {}}, seg, len(ticks))
 
-        # La "ecuación de tiempo": un tiempo corto (entrada), uno medio y uno
-        # largo (tendencia). OTC permite sub-minuto; real nunca baja de 1m.
+        # ESCALERA COMPLETA de tiempos (lee toda la línea de tiempo, lo clave es
+        # la ALINEACIÓN). OTC incluye sub-minuto; real empieza en 1m.
         is_otc = asset_code.endswith("_otc")
         if is_otc:
-            corto = max(5, tf_seconds // 4)
-            tfs = tuple(sorted({corto, max(60, tf_seconds), max(300, tf_seconds * 5)}))
+            tfs = (15, 30, 60, 180, 300, 600, 900, 1800)   # 15s..30m
         else:
-            tfs = tuple(sorted({max(60, tf_seconds), tf_seconds * 3, tf_seconds * 5}))
+            tfs = (60, 180, 300, 900, 1800)                # 1m..30m
 
         # CALIBRACIÓN que aprende: buscamos en el historial de ESTE activo el
         # umbral que mejor habría funcionado, y lo usamos. Se cachea y se
