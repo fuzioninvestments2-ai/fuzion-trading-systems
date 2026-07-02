@@ -171,6 +171,24 @@ def _donchian_signal(high, low, close, period=20):
     return HOLD, 0.5
 
 
+def regime(high, low, close, period=14):
+    """
+    Detecta el RÉGIMEN del mercado con ADX (fuerza de tendencia):
+      - ADX alto  (>=25) -> 'slide'     : hay TENDENCIA fuerte (seguir).
+      - ADX bajo  (<=18) -> 'oscillate' : mercado en RANGO (rebotes techo/piso).
+      - intermedio        -> 'mixto'.
+    Devuelve (regimen, valor_adx).
+    """
+    adx_v = _last(Indicators.adx(high, low, close, period))
+    if adx_v is None:
+        return None, None
+    if adx_v >= 25:
+        return "slide", adx_v
+    if adx_v <= 18:
+        return "oscillate", adx_v
+    return "mixto", adx_v
+
+
 class ScoringStrategy:
     """
     Estrategia principal. `analyze(df)` -> (señal, confianza, detalles).

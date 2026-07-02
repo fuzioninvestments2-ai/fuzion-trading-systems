@@ -23,6 +23,7 @@ from bot.deep_analysis import DeepAnalyzer
 from bot.manipulation import ManipulationGuard
 from bot.market_hours import is_open
 from bot.calibration import calibrate
+from bot.scoring_strategy import regime as _regime
 
 
 class PocketService:
@@ -204,6 +205,19 @@ class PocketService:
         resultado["umbral"] = min_conf
         if win_rate is not None:
             resultado["win_rate_hist"] = win_rate
+
+        # RÉGIMEN (Oscillate/Slide) desde un tiempo medio con datos.
+        for tfm in (60, 180, 300):
+            fm = frames.get(tfm)
+            if fm is not None and len(fm) >= 20:
+                reg, adxv = _regime(fm["high"], fm["low"], fm["close"])
+                if reg:
+                    resultado["regime"] = reg
+                    resultado["adx"] = round(adxv, 1)
+                break
+
+        # GRÁFICO: velas M1 recientes para dibujar en Telegram.
+        resultado["chart"] = self.repo.get_recent(asset_code, "M1", 45)
 
         # DETECTOR DE MERCADO PLANO: si el precio casi no se mueve, cualquier
         # "señal" es ruido -> avisamos claro para que el usuario elija otro activo.

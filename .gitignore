@@ -46,3 +46,6 @@ htmlcov/
 
 # SSID de Pocket Option (sensible, nunca versionar)
 ssid.txt
+
+# Graficos temporales
+charts_tmp*.png

@@ -194,10 +194,17 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
     explicacion = result.get("explicacion", "")
     expl = f"\n🧭 *Lectura:* _{explicacion}_" if explicacion else ""
 
+    reg = result.get("regime")
+    adxv = result.get("adx")
+    reg_map = {"slide": "📈 Slide (tendencia)", "oscillate": "🔁 Oscillate (rango)",
+               "mixto": "🔀 mixto"}
+    modo = (f"\n📐 Modo: {reg_map.get(reg, '')}"
+            + (f" _(ADX {adxv})_" if adxv is not None else "")) if reg else ""
+
     return (f"📈 *{asset_display}*   ⏱️ *{tf}*   (REALES ✅)\n"
             f"{alerta}\n"
             f"\n*{veredicto}*\n"
-            f"Dirección: {direccion}\n"
+            f"Dirección: {direccion}{modo}\n"
             f"🎯 Alineación: *{fuerza:.0%}*  ({coinciden}){expl}\n\n"
             f"🔎 *Panel de tiempos:*\n{desglose}\n"
             f"{timing}{pago}{bal}{aprendido}\n\n"
@@ -267,6 +274,19 @@ def run():
                                     service.balance, n)
                 rows = [[("🔁 Analizar de nuevo", "analyze")],
                         [("📊 Otro activo", "back:market"), ("🏠 Menú", "back:main")]]
+                # 📈 GRÁFICO: dibujamos las velas y lo enviamos como foto.
+                chart_df = result.get("chart")
+                if chart_df is not None and len(chart_df) >= 5:
+                    try:
+                        from bot.chart import draw_candles
+                        path = os.path.join(ROOT, "charts_tmp.png")
+                        draw_candles(chart_df, asset_display, tf, path,
+                                     direccion=result.get("direccion", ""))
+                        with open(path, "rb") as fimg:
+                            await query.message.reply_photo(
+                                photo=fimg, caption=f"📈 {asset_display}  {tf}")
+                    except Exception:
+                        pass          # si falla el gráfico, seguimos con el texto
             await _safe_edit(query, text, rows)
             return
 
