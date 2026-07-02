@@ -48,6 +48,8 @@ _EXPLICA = {
     ("moving_averages", PUT): "medias móviles apuntando a la baja",
     ("stochastic", CALL): "estocástico girando al alza",
     ("stochastic", PUT): "estocástico girando a la baja",
+    ("donchian", CALL): "precio en el PISO del canal (soporte, posible rebote)",
+    ("donchian", PUT): "precio en el TECHO del canal (resistencia, posible rechazo)",
 }
 
 

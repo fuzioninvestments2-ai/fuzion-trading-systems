@@ -49,6 +49,7 @@ WEIGHTS = {
     "bollinger": 2.0,
     "moving_averages": 2.0,
     "stochastic": 1.0,
+    "donchian": 2.0,       # techo/piso (soporte-resistencia)
 }
 
 
@@ -144,6 +145,32 @@ def _stochastic_signal(high, low, close):
     return HOLD, 0.5
 
 
+def _donchian_signal(high, low, close, period=20):
+    """
+    Canal de Donchian = TECHO (máx) y PISO (mín) de las últimas `period` velas.
+    El porqué: mide dónde está el precio dentro de su rango — soporte/resistencia.
+      - cerca del PISO -> posible rebote al alza (CALL)
+      - cerca del TECHO -> posible rechazo a la baja (PUT)
+    """
+    if close is None or len(close) < period:
+        return HOLD, 0.5
+    hh_v = _last(high.rolling(period).max())
+    ll_v = _last(low.rolling(period).min())
+    price = _last(close)
+    if None in (hh_v, ll_v, price) or hh_v == ll_v:
+        return HOLD, 0.5
+    pos = (price - ll_v) / (hh_v - ll_v)      # 0 = piso, 1 = techo
+    if pos <= 0.10:
+        return CALL, 0.8
+    if pos >= 0.90:
+        return PUT, 0.8
+    if pos <= 0.25:
+        return CALL, 0.6
+    if pos >= 0.75:
+        return PUT, 0.6
+    return HOLD, 0.5
+
+
 class ScoringStrategy:
     """
     Estrategia principal. `analyze(df)` -> (señal, confianza, detalles).
@@ -170,6 +197,7 @@ class ScoringStrategy:
             "bollinger": _bollinger_signal(close),
             "moving_averages": _ma_signal(close),
             "stochastic": _stochastic_signal(high, low, close),
+            "donchian": _donchian_signal(high, low, close),
         }
 
         call_score = put_score = 0.0
