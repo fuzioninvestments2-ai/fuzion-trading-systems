@@ -205,8 +205,9 @@ def run():
                 text, rows = menu.analyze(uid)
             else:
                 await query.edit_message_text(
-                    f"🔎 Analizando *{asset_display}* ({tf}) con precios "
-                    f"reales… espera unos segundos.", parse_mode="Markdown")
+                    f"🧘 Leyendo *{asset_display}* ({tf}) con atención…\n"
+                    f"_Concentrándome en el mercado unos segundos para darte "
+                    f"la mejor lectura._", parse_mode="Markdown")
                 code = to_po_code(asset_display)
                 period = _TF_SECONDS.get(tf, 60)
                 result, seg, n = await service.analyze(code, period)

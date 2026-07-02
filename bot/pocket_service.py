@@ -24,7 +24,7 @@ from bot.deep_analysis import DeepAnalyzer
 
 class PocketService:
     def __init__(self, ssid, demo=True, period=60, logger=None,
-                 db_path=None, wait_seconds=3.0):
+                 db_path=None, wait_seconds=10.0):
         self.ssid = ssid
         self.period = period
         self.log = logger or logging.getLogger("pocket_service")
