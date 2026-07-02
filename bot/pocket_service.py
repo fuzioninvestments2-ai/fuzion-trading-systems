@@ -84,24 +84,40 @@ class PocketService:
 
     async def analyze(self, asset_code, period=60):
         """
-        Cambia al activo pedido, espera datos y analiza. Devuelve
-        (señal, confianza, detalles, nº_velas).
+        Cambia al activo pedido, espera datos y analiza usando TODO el historial
+        acumulado (que crece con el uso). Devuelve (señal, confianza, detalles,
+        nº_velas).
         """
         try:
-            await self.client.set_asset(asset_code, period)
+            # Pedimos siempre velas de 1 minuto (M1) para tener buena resolución;
+            # el 'tiempo' que elige el usuario es la expiración, no el análisis.
+            await self.client.set_asset(asset_code, 60)
         except Exception:
             self.log.exception("No se pudo cambiar de activo")
         # Damos tiempo a que lleguen historial + primeros ticks.
         await asyncio.sleep(self.wait_seconds)
 
+        # Analizamos con TODO lo acumulado en el historial (más datos = mejor),
+        # más la vela que se está formando ahora mismo.
+        df = self.repo.get_recent(asset_code, "M1", 400)
         cb = self._builders.get(asset_code)
-        if cb is None:
-            return HOLD, 0.0, {"motivo": "sin datos aún"}, 0
-        df = cb.to_dataframe(include_forming=True)
-        if len(df) < 5:
-            return HOLD, 0.0, {"motivo": "pocas velas"}, len(df)
+        if cb is not None:
+            live = cb.to_dataframe(include_forming=True)
+            if len(live) and len(df):
+                # Unimos y quitamos duplicados por timestamp (nos quedamos con
+                # la última versión de cada vela).
+                import pandas as pd
+                df = (pd.concat([df, live])
+                      .drop_duplicates(subset="timestamp", keep="last")
+                      .sort_values("timestamp").reset_index(drop=True))
+            elif len(live):
+                df = live
+
+        n = len(df) if df is not None else 0
+        if n < 5:
+            return HOLD, 0.0, {"motivo": "pocas velas todavía"}, n
 
         cfg = TradingConfig(stack_method="aggressive")
-        cfg.min_confidence = 0.25     # sensible para dar dirección en modo manual
+        cfg.min_confidence = 0.25
         signal, conf, d = ScoringStrategy(cfg).analyze(df)
-        return signal, conf, d, len(df)
+        return signal, conf, d, n

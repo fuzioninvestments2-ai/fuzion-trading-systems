@@ -53,21 +53,34 @@ def _keyboard(rows):
 
 
 def _format_real_signal(asset_display, tf, signal, conf, details, n, balance):
-    if signal == CALL:
+    # Dirección = hacia dónde se inclinan más los indicadores (siempre da UP/DOWN
+    # salvo empate perfecto). Así el usuario ve una tendencia, no un "nada".
+    call_s = details.get("call_score", 0.0)
+    put_s = details.get("put_score", 0.0)
+    if call_s > put_s:
         direccion, side = "⬆️ *UP* (CALL)", CALL
-    elif signal == PUT:
+    elif put_s > call_s:
         direccion, side = "⬇️ *DOWN* (PUT)", PUT
     else:
-        direccion, side = "⏸️ *Sin señal clara* (espera)", HOLD
+        direccion, side = "⏸️ *Neutral*", HOLD
+
+    # Fuerza HONESTA según la confianza: no engañamos, decimos si es débil.
+    if conf >= 0.60:
+        fuerza = "🟢 fuerte"
+    elif conf >= 0.35:
+        fuerza = "🟡 media"
+    else:
+        fuerza = "🔴 débil (mejor esperar)"
+
     votes = details.get("votes", {})
     motivo = (_reason_from_votes(votes, side) if side != HOLD
-              else "los indicadores no coinciden")
+              else "indicadores equilibrados")
     bal = f"\n💰 Balance demo: ${balance:.2f}" if balance else ""
     return (f"📈 *{asset_display}*  |  ⏱️ *{tf}*   (PRECIOS REALES ✅)\n"
             f"Dirección: {direccion}\n"
-            f"Confianza: *{conf:.0%}*\n"
+            f"Fuerza: {fuerza}  _(confianza {conf:.0%})_\n"
             f"Motivo: {motivo}\n"
-            f"Velas analizadas: {n}{bal}\n\n"
+            f"Velas: {n}{bal}\n\n"
             f"⚠️ _No es recomendación; ningún bot acierta siempre. Cuenta demo._")
 
 
