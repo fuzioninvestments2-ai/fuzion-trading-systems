@@ -16,6 +16,7 @@ Uso:
   4. python3 bot/telegram_signals.py  ->  en Telegram, /start
 """
 
+import asyncio
 import os
 import sys
 
@@ -224,9 +225,13 @@ def run():
     # Si hay SSID -> preparamos el servicio de precios REALES.
     ssid = _load_ssid()
     service = None
+    collector = None
     if ssid:
         from bot.pocket_service import PocketService
+        from bot.collector import Collector
         service = PocketService(ssid, demo=True)
+        # Colector 24/7 que comparte el mismo historial (aprendizaje continuo).
+        collector = Collector(ssid, service.repo, demo=True)
 
     async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         modo = "PRECIOS REALES ✅" if service else "datos simulados (sin SSID)"
@@ -281,6 +286,9 @@ def run():
         if service:
             await service.start()      # arranca la conexión a PO en segundo plano
             print("🔌 Conectando a Pocket Option (precios reales)...")
+        if collector:
+            asyncio.create_task(collector.run())
+            print("📚 Colector 24/7 aprendiendo en segundo plano...")
 
     app = Application.builder().token(token).post_init(_post_init).build()
     app.add_handler(CommandHandler(["start", "menu"], start))
