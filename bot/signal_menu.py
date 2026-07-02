@@ -130,10 +130,10 @@ class SignalMenu:
         self._st(user_id)["market"] = market_key
         self._st(user_id).pop("asset", None)
         assets = MARKETS[market_key]["assets"]
-        # Dos activos por fila.
+        # Tres activos por fila -> se ve más "cuadrado" y compacto.
         rows = []
-        for i in range(0, len(assets), 2):
-            fila = [(a, f"asset:{a}") for a in assets[i:i + 2]]
+        for i in range(0, len(assets), 3):
+            fila = [(a, f"asset:{a}") for a in assets[i:i + 3]]
             rows.append(fila)
         rows.append([("⬅️ Volver", "back:main")])
         return f"Mercado: *{MARKETS[market_key]['label']}*\nAhora elige el activo:", rows
