@@ -148,7 +148,13 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
     bal = f"\n💰 Balance demo: ${balance:.2f}" if balance else ""
     coin = f"  ({coinciden})" if coinciden else ""
 
+    # Alerta anti-manipulación (si el mercado se comportó raro).
+    manip = result.get("manipulacion")
+    alerta = (f"\n🛡️ *ALERTA:* mercado raro ({', '.join(manip)}) → mejor NO operar"
+              if manip else "")
+
     return (f"📈 *{asset_display}*  |  ⏱️ *{tf}*   (PRECIOS REALES ✅)\n"
+            f"{alerta}\n"
             f"\n{veredicto}  →  {direccion}{coin}\n"
             f"Fuerza de acuerdo: *{fuerza:.0%}*\n\n"
             f"🔎 *Panel por tiempo:*\n{desglose}\n"

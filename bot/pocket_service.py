@@ -20,6 +20,7 @@ from bot.pocket_client import PocketOptionClient
 from bot.candles import CandleBuilder
 from bot.history import HistoryRepository
 from bot.deep_analysis import DeepAnalyzer
+from bot.manipulation import ManipulationGuard
 
 
 class PocketService:
@@ -156,6 +157,15 @@ class PocketService:
                 frames[tf] = agg
 
         resultado = analyzer.analyze_frames(frames)
+
+        # BARRERA ANTI-MANIPULACIÓN: si el mercado se comporta raro (spike,
+        # congelado, estallido), forzamos NO OPERAR sin importar la señal.
+        precios = [p for _, p in ticks[-300:]]
+        alerta = ManipulationGuard().check(precios)
+        if alerta["suspicious"]:
+            resultado["veredicto"] = "🚫 NO OPERAR"
+            resultado["manipulacion"] = alerta["reasons"]
+
         return resultado, seg, len(ticks)
 
     def _aggregate_m1(self, asset, tf_seconds):
