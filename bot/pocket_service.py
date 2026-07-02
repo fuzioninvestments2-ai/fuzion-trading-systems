@@ -275,22 +275,24 @@ class PocketService:
         if learned_source:
             resultado["pesos_fuente"] = learned_source   # "real" o "backtest"
 
-        # GRÁFICO: velas M1 recientes para dibujar en Telegram. Añadimos la vela
-        # EN FORMACIÓN (la del minuto en curso) que aún no está guardada en el
-        # historial, para que el gráfico NO vaya una vela atrás respecto a la
-        # lectura en vivo (era la "vela de menos" que se notaba).
-        chart_df = self.repo.get_recent(asset_code, "M1", 45)
-        forming = self._builders.get(asset_code)
-        forming = forming.forming_candle() if forming is not None else None
-        if forming is not None and chart_df is not None:
-            ult_ts = (int(chart_df["timestamp"].iloc[-1])
-                      if len(chart_df) else None)
-            # Solo la añadimos si es MÁS reciente que la última cerrada (evita
-            # duplicar el mismo minuto).
-            if ult_ts is None or int(forming["timestamp"]) > ult_ts:
-                import pandas as _pd
-                chart_df = _pd.concat(
-                    [chart_df, _pd.DataFrame([forming])], ignore_index=True)
+        # GRÁFICO: velas del TIEMPO ELEGIDO por el usuario (¡no siempre M1!). Así
+        # el gráfico coincide con la temporalidad que se está analizando (si pides
+        # M5, ves velas de 5 min). Incluye la vela EN FORMACIÓN para no ir atrás.
+        if tf_seconds < 60:
+            cbf = CandleBuilder(tf_seconds)
+            for t, p in suaves:
+                cbf.add_tick(p, t * 1000.0)
+            chart_df = cbf.to_dataframe(include_forming=True)
+        else:
+            chart_df = self._aggregate_m1(asset_code, tf_seconds)
+            if chart_df is None or len(chart_df) < 5:
+                # Sin historial suficiente todavía -> construir desde ticks.
+                cbf = CandleBuilder(tf_seconds)
+                for t, p in suaves:
+                    cbf.add_tick(p, t * 1000.0)
+                chart_df = cbf.to_dataframe(include_forming=True)
+        if chart_df is not None and len(chart_df) > 45:
+            chart_df = chart_df.tail(45).reset_index(drop=True)
         resultado["chart"] = chart_df
 
         # COBERTURA DE DATOS: cuántas velas M1 lleva acumuladas este activo. Es

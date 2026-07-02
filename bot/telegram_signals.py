@@ -143,7 +143,9 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
     emo = {"CALL": "⬆️", "PUT": "⬇️", "NEUTRAL": "⏸️"}
 
     def _dot(conf):
-        return "🟢" if conf >= 0.35 else ("🟡" if conf >= 0.15 else "▫️")
+        # 25% o más = buena entrada (verde), según la lectura del usuario; 15-25%
+        # aceptable (amarillo); por debajo, débil.
+        return "🟢" if conf >= 0.25 else ("🟡" if conf >= 0.15 else "▫️")
 
     filas = []
     for tfs, v in sorted(por.items()):

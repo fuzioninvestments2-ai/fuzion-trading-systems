@@ -12,12 +12,36 @@ import matplotlib
 matplotlib.use("Agg")          # sin ventana (para servidor/segundo plano)
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
+from datetime import datetime
+
+
+def _etiquetas_hora(d):
+    """
+    Calcula (posiciones, etiquetas) de hora para el eje X a partir de la columna
+    'timestamp' (ms). Muestra ~7 marcas repartidas. Si las velas son de menos de
+    un minuto usa HH:MM:SS; si no, HH:MM. Devuelve (None, None) si no hay hora.
+    """
+    if "timestamp" not in d.columns or len(d) == 0:
+        return None, None
+    ts = [int(x) for x in d["timestamp"]]
+    # Intervalo típico entre velas (para decidir el formato de hora).
+    difs = [b - a for a, b in zip(ts, ts[1:]) if b > a]
+    intervalo = min(difs) if difs else 60000
+    fmt = "%H:%M:%S" if intervalo < 60000 else "%H:%M"
+    paso = max(1, len(d) // 7)
+    pos = list(range(0, len(d), paso))
+    # datetime.fromtimestamp usa la hora LOCAL de la máquina (la del usuario),
+    # así la hora del gráfico coincide con su reloj.
+    lab = [datetime.fromtimestamp(ts[i] / 1000.0).strftime(fmt) for i in pos]
+    return pos, lab
 
 
 def draw_candles(df, asset, tf, path, direccion="", n=40, levels=None):
     """
     Dibuja las últimas `n` velas del DataFrame (open/high/low/close) y guarda el
     PNG en `path`. Devuelve `path`.
+
+    Estilo Pocket Option: precios a la DERECHA, hora abajo, fondo oscuro.
 
     levels: dict opcional {soportes: [...], resistencias: [...]} para dibujar
             líneas de techo (resistencia, roja) y piso (soporte, verde).
@@ -59,6 +83,19 @@ def draw_candles(df, asset, tf, path, direccion="", n=40, levels=None):
     ax.tick_params(colors="#8899a6", labelsize=8)
     for s in ax.spines.values():
         s.set_color("#2a3a4a")
+
+    # PRECIOS a la DERECHA (como Pocket Option): más natural para leer el precio
+    # actual, que está al borde derecho del gráfico.
+    ax.yaxis.tick_right()
+    ax.yaxis.set_label_position("right")
+
+    # HORA en el eje X (en vez de números de vela) para que se lea como una
+    # plataforma real.
+    pos, lab = _etiquetas_hora(d)
+    if pos is not None:
+        ax.set_xticks(pos)
+        ax.set_xticklabels(lab, rotation=0)
+
     ax.set_xlim(-1, len(d))
     fig.tight_layout()
     fig.savefig(path, dpi=95, facecolor=fig.get_facecolor())
