@@ -447,9 +447,10 @@ def run():
         if service:
             await service.start()      # arranca la conexión a PO en segundo plano
             print("🔌 Conectando a Pocket Option (precios reales)...")
-        if collector:
+            print("📚 Colector integrado activo (misma conexión, aprendizaje 24/7).")
+        if collector:                  # colector aparte (opcional, ENABLE_COLLECTOR)
             asyncio.create_task(collector.run())
-            print("📚 Colector 24/7 aprendiendo en segundo plano...")
+            print("📚 Colector 24/7 (2ª conexión) aprendiendo en segundo plano...")
 
     app = Application.builder().token(token).post_init(_post_init).build()
     app.add_handler(CommandHandler(["start", "menu"], start))

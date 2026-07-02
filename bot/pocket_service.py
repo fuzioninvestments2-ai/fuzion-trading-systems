@@ -61,6 +61,17 @@ class PocketService:
         self.balance = None
         self.connected = False
 
+        # COLECTOR INTEGRADO (una sola conexión): en los ratos libres el bot rota
+        # por la watchlist acumulando historial; cuando llega un análisis, le cede
+        # el paso al instante (mediante _conn_lock + _want_analysis). Así tenemos
+        # aprendizaje 24/7 SIN abrir una segunda conexión (que era lo inestable).
+        from bot.collector import WATCHLIST
+        self._watchlist = list(WATCHLIST)
+        self._focus = None           # activo prioritario (el que mira el usuario)
+        self._conn_lock = None       # asyncio.Lock (se crea al arrancar el loop)
+        self._want_analysis = False  # un análisis está esperando la conexión
+        self.collect_seconds = 60    # tiempo por activo (>=60 forma 1 vela M1)
+
         self.client = PocketOptionClient(
             ssid, on_tick=self._on_tick, on_history=self._on_history,
             on_balance=self._on_balance, on_assets=self._on_assets,
@@ -123,8 +134,46 @@ class PocketService:
     async def start(self):
         """Arranca la conexión en segundo plano (como tarea del mismo loop)."""
         self.connected = True
+        self._conn_lock = asyncio.Lock()
         asyncio.create_task(self.client.run(asset="EURUSD_otc",
                                             period=self.period))
+        # Colector integrado: acumula historial en los ratos libres (misma conexión).
+        asyncio.create_task(self._collect_loop())
+
+    def _watch_pick(self, i):
+        """
+        Activo a recolectar en el turno `i`. Intercala el activo en FOCO (el que
+        miras) con la rotación normal, para que su historial se llene antes.
+        """
+        if self._focus and i % 2 == 0:
+            return self._focus
+        return self._watchlist[i % len(self._watchlist)]
+
+    async def _collect_loop(self):
+        """
+        Rota por la watchlist acumulando historial usando la ÚNICA conexión. Cada
+        ráfaga toma el lock; si un análisis está esperando (_want_analysis), corta
+        la ráfaga y suelta la conexión en ~1s para no hacerte esperar.
+        """
+        await asyncio.sleep(8)                     # deja conectar/autenticar
+        self.log.info("Colector integrado en marcha (misma conexión).")
+        i = 0
+        while self.connected:
+            try:
+                asset = self._watch_pick(i)
+                async with self._conn_lock:
+                    self._want_analysis = False
+                    await self.client.set_asset(asset, 60)
+                    # Recolecta en ráfaga; cede de inmediato si llega un análisis.
+                    for _ in range(self.collect_seconds):
+                        if self._want_analysis:
+                            break
+                        await asyncio.sleep(1)
+                i += 1
+            except Exception:
+                self.log.exception("Colector integrado: fallo en una ráfaga")
+                await asyncio.sleep(2)
+            await asyncio.sleep(0.2)               # deja que el análisis tome el lock
 
     def seconds_to_next_candle(self, asset_code, tf_seconds):
         """
@@ -152,14 +201,21 @@ class PocketService:
             return ({"veredicto": "🚫 MERCADO CERRADO", "direccion": motivo,
                      "fuerza": 0.0, "por_tiempo": {}, "cerrado": True}, None, 0)
 
-        try:
-            await self.client.set_asset(asset_code, 60)
-        except Exception:
-            self.log.exception("No se pudo cambiar de activo")
-        await asyncio.sleep(self.wait_seconds)
-
-        seg = self.seconds_to_next_candle(asset_code, tf_seconds)
-        ticks = list(self._ticks.get(asset_code, []))
+        # El análisis tiene PRIORIDAD sobre el colector: pedimos la conexión y el
+        # colector cede en ~1s. Priorizamos también este activo para lo siguiente.
+        self._focus = asset_code
+        self._want_analysis = True
+        import contextlib
+        lock = self._conn_lock or contextlib.nullcontext()
+        async with lock:
+            self._want_analysis = False
+            try:
+                await self.client.set_asset(asset_code, 60)
+            except Exception:
+                self.log.exception("No se pudo cambiar de activo")
+            await asyncio.sleep(self.wait_seconds)
+            seg = self.seconds_to_next_candle(asset_code, tf_seconds)
+            ticks = list(self._ticks.get(asset_code, []))
         if len(ticks) < 50:
             return ({"veredicto": "🚫 NO OPERAR", "direccion": "⏸️ pocos datos",
                      "fuerza": 0.0, "por_tiempo": {}}, seg, len(ticks))
