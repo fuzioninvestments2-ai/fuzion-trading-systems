@@ -63,65 +63,72 @@ class DeepAnalyzer:
             out.append((ts, s))
         return out
 
-    def _opinar_temporalidad(self, tf_seconds, ticks_suaves):
-        """Un 'analista': construye las velas de SU tiempo y opina."""
-        cb = CandleBuilder(tf_seconds)
-        for ts, p in ticks_suaves:
-            cb.add_tick(p, ts * 1000.0)
-        df = cb.to_dataframe(include_forming=True)
-        if len(df) < self.min_candles:
-            return {"dir": "NEUTRAL", "conf": 0.0, "velas": len(df)}
+    def _opinar_df(self, df):
+        """Un 'analista' opina sobre un DataFrame de velas ya construido."""
+        velas = 0 if df is None else len(df)
+        if df is None or velas < self.min_candles:
+            return {"dir": "NEUTRAL", "conf": 0.0, "velas": velas}
         _, _, d = ScoringStrategy(self.cfg).analyze(df)
         call_s, put_s = d.get("call_score", 0.0), d.get("put_score", 0.0)
         conf = d.get("confidence", 0.0)
         direction = CALL if call_s > put_s else PUT if put_s > call_s else "NEUTRAL"
-        return {"dir": direction, "conf": round(conf, 3), "velas": len(df)}
+        return {"dir": direction, "conf": round(conf, 3), "velas": velas}
 
-    def analyze(self, ticks):
-        """
-        ticks: lista de (timestamp_segundos, precio) en orden cronológico.
-        Devuelve el veredicto combinado + el desglose por temporalidad.
-        """
-        if not ticks:
-            return {"veredicto": "SIN DATOS", "direccion": "NEUTRAL",
-                    "fuerza": 0.0, "por_tiempo": {}}
+    def _opinar_temporalidad(self, tf_seconds, ticks_suaves):
+        """Construye las velas de SU tiempo desde ticks y opina."""
+        cb = CandleBuilder(tf_seconds)
+        for ts, p in ticks_suaves:
+            cb.add_tick(p, ts * 1000.0)
+        return self._opinar_df(cb.to_dataframe(include_forming=True))
 
-        suaves = self._filtrar_ruido(ticks)
-        por_tiempo = {tf: self._opinar_temporalidad(tf, suaves)
-                      for tf in self.timeframes}
-
-        # Contamos hacia dónde apunta cada temporalidad que sí opinó.
+    def _combinar(self, por_tiempo):
+        """La ECUACIÓN: combina las opiniones por tiempo en un veredicto."""
         ups = [tf for tf, v in por_tiempo.items() if v["dir"] == CALL]
         downs = [tf for tf, v in por_tiempo.items() if v["dir"] == PUT]
-        opinan = ups + downs
-        total = len(self.timeframes)
+        total = len(por_tiempo)
 
-        # Confianza media de las que apoyan la dirección mayoritaria.
         def _avg(tfs):
             vals = [por_tiempo[t]["conf"] for t in tfs]
             return round(sum(vals) / len(vals), 3) if vals else 0.0
 
-        # LA ECUACIÓN: coincidencia entre temporalidades.
         if ups and downs:
-            # Corto y largo se contradicen -> mercado no claro.
             return {"veredicto": "🚫 NO OPERAR", "direccion": "⚠️ conflicto",
                     "fuerza": 0.0, "motivo": "las temporalidades no coinciden",
                     "por_tiempo": por_tiempo}
         if len(ups) >= 2:
-            fuerza = _avg(ups)
             v = "✅ OPERAR" if len(ups) == total else "🟡 OPCIONAL"
-            return {"veredicto": v, "direccion": "⬆️ UP (CALL)", "fuerza": fuerza,
-                    "coinciden": f"{len(ups)}/{total} tiempos",
+            return {"veredicto": v, "direccion": "⬆️ UP (CALL)",
+                    "fuerza": _avg(ups), "coinciden": f"{len(ups)}/{total} tiempos",
                     "por_tiempo": por_tiempo}
         if len(downs) >= 2:
-            fuerza = _avg(downs)
             v = "✅ OPERAR" if len(downs) == total else "🟡 OPCIONAL"
-            return {"veredicto": v, "direccion": "⬇️ DOWN (PUT)", "fuerza": fuerza,
-                    "coinciden": f"{len(downs)}/{total} tiempos",
+            return {"veredicto": v, "direccion": "⬇️ DOWN (PUT)",
+                    "fuerza": _avg(downs), "coinciden": f"{len(downs)}/{total} tiempos",
                     "por_tiempo": por_tiempo}
-        # Ninguna confluencia suficiente.
-        return {"veredicto": "🚫 NO OPERAR",
-                "direccion": "⏸️ sin confluencia",
-                "fuerza": _avg(opinan),
+        return {"veredicto": "🚫 NO OPERAR", "direccion": "⏸️ sin confluencia",
+                "fuerza": _avg(ups + downs),
                 "motivo": "pocas temporalidades de acuerdo o pocos datos",
                 "por_tiempo": por_tiempo}
+
+    def analyze(self, ticks):
+        """ticks: [(timestamp_segundos, precio), ...] en orden cronológico."""
+        if not ticks:
+            return {"veredicto": "SIN DATOS", "direccion": "NEUTRAL",
+                    "fuerza": 0.0, "por_tiempo": {}}
+        suaves = self._filtrar_ruido(ticks)
+        por_tiempo = {tf: self._opinar_temporalidad(tf, suaves)
+                      for tf in self.timeframes}
+        return self._combinar(por_tiempo)
+
+    def analyze_frames(self, frames):
+        """
+        frames: dict {tf_segundos: DataFrame de velas}. Permite mezclar tiempos
+        cortos (desde ticks) y largos (desde historial acumulado). Es el modo
+        de "lectura continua": los tiempos largos usan las velas que el bot ha
+        ido acumulando.
+        """
+        if not frames:
+            return {"veredicto": "SIN DATOS", "direccion": "NEUTRAL",
+                    "fuerza": 0.0, "por_tiempo": {}}
+        por_tiempo = {tf: self._opinar_df(df) for tf, df in frames.items()}
+        return self._combinar(por_tiempo)

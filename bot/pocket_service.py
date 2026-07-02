@@ -124,18 +124,58 @@ class PocketService:
             return ({"veredicto": "🚫 NO OPERAR", "direccion": "⏸️ pocos datos",
                      "fuerza": 0.0, "por_tiempo": {}}, seg, len(ticks))
 
-        # La "ecuación de tiempo" ADAPTATIVA: elegimos 3 temporalidades que
-        # DE VERDAD tengan suficientes velas con los datos disponibles. Así el
-        # panel opina en serio (no "neutral" por falta de datos).
-        #  - OTC: permite sub-minuto (PO lo ofrece de 5s a 1m).
-        #  - Real: nunca baja de 1m (como en Pocket Option).
-        span = (ticks[-1][0] - ticks[0][0]) if len(ticks) >= 2 else 0
+        # La "ecuación de tiempo": un tiempo corto (entrada), uno medio y uno
+        # largo (tendencia). OTC permite sub-minuto; real nunca baja de 1m.
         is_otc = asset_code.endswith("_otc")
-        floor = 5 if is_otc else 60
-        # El tiempo LARGO se limita para tener ~12 velas con los datos que hay.
-        slow = max(floor * 6, int(span // 12)) if span else floor * 6
-        mid = max(floor * 2, slow // 3)
-        fast = max(floor, slow // 9)
-        tfs = tuple(sorted({fast, mid, slow}))
-        resultado = DeepAnalyzer(timeframes=tfs).analyze(ticks)
+        if is_otc:
+            corto = max(5, tf_seconds // 4)
+            tfs = tuple(sorted({corto, max(60, tf_seconds), max(300, tf_seconds * 5)}))
+        else:
+            tfs = tuple(sorted({max(60, tf_seconds), tf_seconds * 3, tf_seconds * 5}))
+
+        # LECTURA CONTINUA: los tiempos largos usan las velas ACUMULADAS en el
+        # historial (cuanto más ha leído el bot, más profundo analiza); los
+        # cortos usan los ticks recientes (con ruido filtrado).
+        analyzer = DeepAnalyzer(timeframes=tfs)
+        suaves = analyzer._filtrar_ruido(ticks)
+        frames = {}
+        for tf in tfs:
+            if tf < 60:
+                cb = CandleBuilder(tf)
+                for t, p in suaves:
+                    cb.add_tick(p, t * 1000.0)
+                frames[tf] = cb.to_dataframe(include_forming=True)
+            else:
+                agg = self._aggregate_m1(asset_code, tf)
+                if agg is None or len(agg) < 6:
+                    # Aún no hay historial suficiente -> construir desde ticks.
+                    cb = CandleBuilder(tf)
+                    for t, p in suaves:
+                        cb.add_tick(p, t * 1000.0)
+                    agg = cb.to_dataframe(include_forming=True)
+                frames[tf] = agg
+
+        resultado = analyzer.analyze_frames(frames)
         return resultado, seg, len(ticks)
+
+    def _aggregate_m1(self, asset, tf_seconds):
+        """
+        Agrega las velas M1 ACUMULADAS en el historial a un timeframe mayor.
+        Cuantas más velas M1 haya guardado el bot, más velas del tiempo largo
+        se pueden formar (la "lectura continua"). Devuelve un DataFrame OHLC.
+        """
+        import pandas as pd
+        m1 = self.repo.get_recent(asset, "M1", 5000)
+        if m1 is None or len(m1) == 0:
+            return None
+        tf_ms = tf_seconds * 1000
+        m1 = m1.copy()
+        m1["bucket"] = (m1["timestamp"] // tf_ms) * tf_ms
+        agg = (m1.groupby("bucket")
+               .agg(open=("open", "first"), high=("high", "max"),
+                    low=("low", "min"), close=("close", "last"),
+                    volume=("volume", "sum"))
+               .reset_index()
+               .rename(columns={"bucket": "timestamp"})
+               .sort_values("timestamp").reset_index(drop=True))
+        return agg
