@@ -126,8 +126,14 @@ def _tf_label(seconds):
     return "1D"
 
 
-def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
-    """Formatea el resultado del análisis profundo multi-temporalidad."""
+def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False):
+    """
+    Formatea el resultado del análisis profundo multi-temporalidad.
+
+    compact=True: versión más corta para el PIE DE FOTO de Telegram (límite 1024
+    caracteres), para poder enviar gráfico + análisis en UN SOLO mensaje. Recorta
+    solo la parte educativa larga; mantiene lo esencial y el panel completo.
+    """
     # Caso especial: mercado cerrado.
     if result.get("cerrado"):
         return (f"📈 *{asset_display}*  |  ⏱️ *{tf}*\n\n"
@@ -270,10 +276,27 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
     m1 = result.get("m1_count")
     if m1 is not None:
         cobertura = (f"\n📚 Historial: {m1} velas M1 acumuladas"
-                     + ("" if m1 >= 400 else
+                     + ("" if (m1 >= 400 or compact) else
                         " _(los tiempos largos se llenan con el tiempo)_"))
     else:
         cobertura = ""
+
+    # MODO COMPACTO (para el pie de foto ≤1024): recortamos solo lo educativo
+    # largo. Se conserva el PANEL completo (15s→30m), las alertas y el timing.
+    if compact:
+        if explicacion:
+            # Solo las 2 primeras frases (incluye el aviso de tendencia si lo hay).
+            frases = explicacion.split(". ")
+            corta = ". ".join(frases[:2]).strip().rstrip(".")
+            expl = f"\n🧭 *Lectura:* _{corta}._"
+        bal = ""                                   # el balance se ve en el menú
+        # De lo aprendido dejamos solo los "mejores indicadores" (línea corta).
+        pt = result.get("pesos_top")
+        if pt:
+            det = ", ".join(f"{_NOM.get(n, n)} {hr:.0%}" for n, hr in pt)
+            aprendido = f"\n🧠 Mejores: {det}"
+        else:
+            aprendido = ""
 
     return (f"📈 *{asset_display}*   ⏱️ *{tf}*   (REALES ✅)\n"
             f"{alerta}\n"
@@ -354,6 +377,8 @@ def run():
                 result, seg, n = await service.analyze(code, period)
                 text = _format_deep(asset_display, tf, result, seg,
                                     service.balance, n)
+                caption = _format_deep(asset_display, tf, result, seg,
+                                       service.balance, n, compact=True)
                 rows = [[("🔁 Analizar de nuevo", "analyze")],
                         [("📊 Otro activo", "back:market"), ("🏠 Menú", "back:main")]]
                 # Dibujamos el gráfico (si hay velas) y enviamos TODO junto:
@@ -369,7 +394,7 @@ def run():
                                      levels=result.get("levels"))
                     except Exception:
                         path = None
-                await _send_signal(query, text, rows, path)
+                await _send_signal(query, caption, text, rows, path)
                 return
             await _safe_edit(query, text, rows)
             return
@@ -377,31 +402,30 @@ def run():
         text, rows = menu.handle_callback(uid, query.data)
         await _safe_edit(query, text, rows)
 
-    async def _send_signal(query, text, rows, path):
+    async def _send_signal(query, caption, text, rows, path):
         """
-        Envía la señal UNIENDO gráfico + análisis en un solo mensaje (foto con el
-        texto de pie de foto). Con reintentos robustos:
-          1) foto + pie con formato Markdown,
-          2) si el formato falla -> foto + pie en texto plano,
-          3) si el pie es muy largo (>1024) o no hay gráfico -> foto aparte + el
-             texto como mensaje editado (para no perder la lectura).
+        Envía la señal en UN SOLO mensaje: gráfico con el análisis (compacto) de
+        pie de foto. `caption` es la versión compacta (≤1024); `text` es la
+        completa (para el respaldo). Reintentos robustos:
+          1) foto + pie compacto con formato Markdown,
+          2) si el formato falla -> foto + pie compacto en texto plano,
+          3) si aun así no cabe o no hay gráfico -> foto aparte + texto completo.
         Al enviar el mensaje unido, borra el "🧘 Leyendo…" para no dejarlo colgado.
         """
         from telegram.error import BadRequest
         kb = _keyboard(rows)
 
-        async def _foto(caption, markdown):
+        async def _foto(cap, markdown):
             with open(path, "rb") as fimg:
                 await query.message.reply_photo(
-                    photo=fimg, caption=caption, reply_markup=kb,
+                    photo=fimg, caption=cap, reply_markup=kb,
                     parse_mode="Markdown" if markdown else None)
 
         if path:
-            for caption, md in ((text, True),
-                                (text.replace("*", "").replace("`", "")
-                                     .replace("_", ""), False)):
+            plano = caption.replace("*", "").replace("`", "").replace("_", "")
+            for cap, md in ((caption, True), (plano, False)):
                 try:
-                    await _foto(caption, md)
+                    await _foto(cap, md)
                     try:
                         await query.message.delete()   # quita el "Leyendo…"
                     except Exception:
@@ -409,7 +433,7 @@ def run():
                     return
                 except BadRequest:
                     continue        # formato roto o pie muy largo -> siguiente intento
-            # No se pudo unir (p.ej. pie > 1024): foto aparte + texto por separado.
+            # Respaldo: no se pudo unir -> foto aparte + texto COMPLETO por separado.
             try:
                 await _foto("📈", False)
             except Exception:
