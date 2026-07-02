@@ -73,6 +73,12 @@ apoyan). Sirve para que aprendas a leer el mercado, no solo a obedecer.
 - El **%** es lo lejos que está el precio de ese nivel justo.
 - *Nota honesta:* en OTC no hay volumen real; se pondera por **actividad (ticks)**.
 
+### 🧱 Techo / Piso (soporte y resistencia)
+Los niveles donde el precio suele **rebotar** (piso) o **rechazar** (techo).
+- Cerca del **piso** → posible rebote al alza (CALL).
+- Cerca del **techo** → posible rechazo a la baja (PUT).
+En el **gráfico** se dibujan como líneas punteadas: verde = piso, roja = techo.
+
 ### 🔎 Panel de tiempos
 Cada temporalidad (15s, 1m, 5m, …) con su color:
 🟢 fuerte · 🟡 medio · ⚪ débil/neutral. La **entrada** manda en el tiempo corto;
