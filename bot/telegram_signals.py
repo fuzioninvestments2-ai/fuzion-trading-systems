@@ -190,6 +190,9 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
               if manip else "")
     if result.get("inestable"):
         alerta += "\n🔄 *INDECISIÓN:* la señal cambió de dirección → espera"
+    if result.get("vacio"):
+        alerta += ("\n🕳️ *VACÍO DE MERCADO:* " + ", ".join(result["vacio"])
+                   + " → feed no fiable, NO operes")
 
     explicacion = result.get("explicacion", "")
     expl = f"\n🧭 *Lectura:* _{explicacion}_" if explicacion else ""

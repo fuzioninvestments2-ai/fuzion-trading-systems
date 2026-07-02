@@ -24,6 +24,7 @@ from bot.manipulation import ManipulationGuard
 from bot.market_hours import is_open
 from bot.calibration import calibrate
 from bot.scoring_strategy import regime as _regime
+from bot.void_detector import detect_void
 
 
 class PocketService:
@@ -221,6 +222,20 @@ class PocketService:
 
         # GRÁFICO: velas M1 recientes para dibujar en Telegram.
         resultado["chart"] = self.repo.get_recent(asset_code, "M1", 45)
+
+        # DETECTOR DE VACÍO DEL MERCADO: huecos/silencio en el flujo de precios.
+        # Distinto de "plano": aquí NO llegan ticks (feed congelado o con huecos),
+        # así que la lectura se calcula sobre datos muertos -> NO OPERAR. Usamos
+        # los timestamps de los propios ticks (gaps internos y densidad), que no
+        # dependen de un reloj sincronizado con el servidor.
+        vac = detect_void(ticks[-400:])
+        if vac["void"]:
+            resultado["veredicto"] = "🚫 NO OPERAR"
+            resultado["direccion"] = "🕳️ vacío de mercado"
+            resultado["explicacion"] = (
+                "Vacío en el flujo de precios (" + "; ".join(vac["reasons"])
+                + "). El feed no es fiable ahora; no operes sobre datos viejos.")
+            resultado["vacio"] = vac["reasons"]
 
         # DETECTOR DE MERCADO PLANO: si el precio casi no se mueve, cualquier
         # "señal" es ruido -> avisamos claro para que el usuario elija otro activo.
