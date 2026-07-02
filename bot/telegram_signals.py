@@ -52,7 +52,8 @@ def _keyboard(rows):
     return InlineKeyboardMarkup(kb)
 
 
-def _format_real_signal(asset_display, tf, signal, conf, details, n, balance):
+def _format_real_signal(asset_display, tf, signal, conf, details, n, balance,
+                        seg_next=None):
     # Dirección = hacia dónde se inclinan más los indicadores (siempre da UP/DOWN
     # salvo empate perfecto). Así el usuario ve una tendencia, no un "nada".
     call_s = details.get("call_score", 0.0)
@@ -76,11 +77,23 @@ def _format_real_signal(asset_display, tf, signal, conf, details, n, balance):
     motivo = (_reason_from_votes(votes, side) if side != HOLD
               else "indicadores equilibrados")
     bal = f"\n💰 Balance demo: ${balance:.2f}" if balance else ""
+
+    # TIMING (clave en binarias): cuándo entrar. La entrada correcta es al ABRIR
+    # la próxima vela, no a mitad. Avisamos los segundos que faltan.
+    if seg_next is not None:
+        if seg_next <= 5:
+            timing = f"\n⏱️ *¡ENTRA YA!* (vela nueva en {seg_next}s)"
+        else:
+            timing = (f"\n⏱️ Entra al ABRIR la próxima vela: faltan "
+                      f"*{seg_next}s* (no entres a mitad)")
+    else:
+        timing = ""
+
     return (f"📈 *{asset_display}*  |  ⏱️ *{tf}*   (PRECIOS REALES ✅)\n"
             f"Dirección: {direccion}\n"
             f"Fuerza: {fuerza}  _(confianza {conf:.0%})_\n"
             f"Motivo: {motivo}\n"
-            f"Velas: {n}{bal}\n\n"
+            f"Velas: {n}{bal}{timing}\n\n"
             f"⚠️ _No es recomendación; ningún bot acierta siempre. Cuenta demo._")
 
 
@@ -137,9 +150,9 @@ def run():
                     f"reales… espera unos segundos.", parse_mode="Markdown")
                 code = to_po_code(asset_display)
                 period = _TF_SECONDS.get(tf, 60)
-                signal, conf, details, n = await service.analyze(code, period)
+                signal, conf, details, n, seg = await service.analyze(code, period)
                 text = _format_real_signal(asset_display, tf, signal, conf,
-                                           details, n, service.balance)
+                                           details, n, service.balance, seg)
                 rows = [[("🔁 Analizar de nuevo", "analyze")],
                         [("📊 Otro activo", "back:market"), ("🏠 Menú", "back:main")]]
             await _safe_edit(query, text, rows)

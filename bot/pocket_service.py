@@ -34,6 +34,7 @@ class PocketService:
                 os.path.abspath(__file__))), "history.db"))
 
         self._builders = {}          # asset -> CandleBuilder
+        self._last_tick = {}         # asset -> último timestamp (segundos, hora real de PO)
         self.balance = None
         self.connected = False
 
@@ -47,6 +48,7 @@ class PocketService:
         return self._builders.setdefault(asset, CandleBuilder(self.period))
 
     def _on_tick(self, asset, ts, price):
+        self._last_tick[asset] = ts          # hora real del mercado (PO)
         closed = self._builder(asset).add_tick(price, ts * 1000.0)
         if closed is not None:
             self.repo.record_candle(asset, "M1", closed)
@@ -82,15 +84,27 @@ class PocketService:
         asyncio.create_task(self.client.run(asset="EURUSD_otc",
                                             period=self.period))
 
-    async def analyze(self, asset_code, period=60):
+    def seconds_to_next_candle(self, asset_code, tf_seconds):
+        """
+        Segundos que faltan para que ABRA la próxima vela del timeframe elegido.
+        En binarias, la entrada correcta es al ABRIR la vela; por eso este dato
+        es clave. Usa la hora REAL del mercado (último tick de PO).
+        """
+        last_ts = self._last_tick.get(asset_code)
+        if not last_ts or tf_seconds <= 0:
+            return None
+        return int(tf_seconds - (last_ts % tf_seconds))
+
+    async def analyze(self, asset_code, tf_seconds=60):
         """
         Cambia al activo pedido, espera datos y analiza usando TODO el historial
-        acumulado (que crece con el uso). Devuelve (señal, confianza, detalles,
-        nº_velas).
+        acumulado. Devuelve (señal, confianza, detalles, nº_velas, seg_próx_vela).
+        `tf_seconds` es la expiración elegida (M1=60, M5=300...), usada para el
+        cálculo de TIMING (cuándo entrar).
         """
         try:
-            # Pedimos siempre velas de 1 minuto (M1) para tener buena resolución;
-            # el 'tiempo' que elige el usuario es la expiración, no el análisis.
+            # Datos siempre en M1 (buena resolución); el tf del usuario es la
+            # expiración y se usa para el timing de entrada.
             await self.client.set_asset(asset_code, 60)
         except Exception:
             self.log.exception("No se pudo cambiar de activo")
@@ -113,11 +127,12 @@ class PocketService:
             elif len(live):
                 df = live
 
+        seg = self.seconds_to_next_candle(asset_code, tf_seconds)
         n = len(df) if df is not None else 0
         if n < 5:
-            return HOLD, 0.0, {"motivo": "pocas velas todavía"}, n
+            return HOLD, 0.0, {"motivo": "pocas velas todavía"}, n, seg
 
         cfg = TradingConfig(stack_method="aggressive")
         cfg.min_confidence = 0.25
         signal, conf, d = ScoringStrategy(cfg).analyze(df)
-        return signal, conf, d, n
+        return signal, conf, d, n, seg
