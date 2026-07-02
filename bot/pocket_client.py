@@ -44,11 +44,13 @@ class PocketOptionClient:
     """
 
     def __init__(self, ssid, on_tick=None, on_history=None, on_balance=None,
-                 demo=True, logger=None, base_delay=1.0, max_delay=30.0):
+                 on_assets=None, demo=True, logger=None, base_delay=1.0,
+                 max_delay=30.0):
         self.ssid = ssid.strip()
         self.on_tick = on_tick
         self.on_history = on_history
         self.on_balance = on_balance
+        self.on_assets = on_assets       # lista de activos con su payout
         self.url = URL_DEMO if demo else URL_REAL
         self.log = logger or logging.getLogger("pocket_client")
         self.base_delay = base_delay
@@ -148,3 +150,7 @@ class PocketOptionClient:
         elif event == "successupdateBalance":
             if self.on_balance:
                 self.on_balance(obj)
+        elif event == "updateAssets":
+            # Lista completa de activos; de aquí sacamos el PAYOUT de cada uno.
+            if self.on_assets:
+                self.on_assets(obj)

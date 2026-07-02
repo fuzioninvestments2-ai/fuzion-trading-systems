@@ -40,12 +40,14 @@ class PocketService:
         self._ticks = {}             # asset -> deque de (ts_seg, precio) para análisis profundo
         self._last_tick = {}         # asset -> último timestamp (segundos, hora real de PO)
         self._calib = {}             # asset -> umbral aprendido (calibración)
+        self._payouts = {}           # asset -> % de pago (payout) de Pocket Option
         self.balance = None
         self.connected = False
 
         self.client = PocketOptionClient(
             ssid, on_tick=self._on_tick, on_history=self._on_history,
-            on_balance=self._on_balance, demo=demo, logger=self.log)
+            on_balance=self._on_balance, on_assets=self._on_assets,
+            demo=demo, logger=self.log)
 
     # --- callbacks del cliente (se llaman desde el mismo loop async) ---
 
@@ -87,6 +89,22 @@ class PocketService:
     def _on_balance(self, payload):
         if isinstance(payload, dict):
             self.balance = float(payload.get("balance", 0))
+
+    def _on_assets(self, assets):
+        """
+        Extrae el % de PAGO (payout) de cada activo de la lista de PO.
+        Formato observado por activo: [id, "SYMBOL", "Nombre", tipo, _, payout, ...].
+        (El índice del payout es best-effort; se muestra para que el usuario lo
+        verifique contra Pocket Option y lo ajustemos si hiciera falta.)
+        """
+        if not isinstance(assets, list):
+            return
+        for a in assets:
+            if isinstance(a, list) and len(a) > 5 and isinstance(a[1], str):
+                try:
+                    self._payouts[a[1]] = float(a[5])
+                except (TypeError, ValueError):
+                    pass
 
     # --- API para Telegram ---
 
@@ -199,6 +217,14 @@ class PocketService:
                                             "cualquier señal sería ruido. Elige "
                                             "un activo más activo.")
                 resultado["plano"] = True
+
+        # PAYOUT: añadimos el % de pago; si es bajo, avisamos (tu regla: no
+        # entrar en activos con pago bajo).
+        payout = self._payouts.get(asset_code)
+        if payout is not None:
+            resultado["payout"] = payout
+            if payout < 80:
+                resultado["pago_bajo"] = True
 
         # BARRERA ANTI-MANIPULACIÓN: si el mercado se comporta raro (spike,
         # congelado, estallido), forzamos NO OPERAR sin importar la señal.

@@ -59,4 +59,14 @@ class ManipulationGuard:
             if base.std() > 0 and recent.std() > self.vol_burst_factor * base.std():
                 reasons.append("estallido de volatilidad")
 
+        # 4. INESTABILIDAD: demasiados cambios de dirección seguidos (mercado
+        #    errático que sube y baja sin rumbo -> peligroso para entrar).
+        if n >= 40:
+            signos = np.sign(rets)
+            signos = signos[signos != 0]
+            if signos.size >= 20:
+                reversals = float(np.mean(signos[1:] != signos[:-1]))
+                if reversals > 0.62:
+                    reasons.append("movimiento inestable (errático)")
+
         return {"suspicious": len(reasons) > 0, "reasons": reasons}

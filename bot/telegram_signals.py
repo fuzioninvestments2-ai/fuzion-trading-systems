@@ -164,6 +164,16 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
     bal = f"\n💰 Balance demo: ${balance:.2f}" if balance else ""
     coin = f"  ({coinciden})" if coinciden else ""
 
+    # Payout (% de pago). Si es bajo, avisamos (regla del usuario: no entrar).
+    payout = result.get("payout")
+    if payout is not None:
+        if result.get("pago_bajo"):
+            pago = f"\n💵 *Pago: {payout:.0f}%* ⚠️ BAJO — mejor NO entrar aquí"
+        else:
+            pago = f"\n💵 Pago: {payout:.0f}%"
+    else:
+        pago = ""
+
     # Calibración aprendida (si existe).
     umbral = result.get("umbral")
     wr = result.get("win_rate_hist")
@@ -187,7 +197,7 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
             f"Dirección: {direccion}\n"
             f"🎯 Alineación: *{fuerza:.0%}*  ({coinciden}){expl}\n\n"
             f"🔎 *Panel de tiempos:*\n{desglose}\n"
-            f"{timing}{bal}{aprendido}\n\n"
+            f"{timing}{pago}{bal}{aprendido}\n\n"
             f"⚠️ _No es recomendación; ningún bot acierta siempre. Demo._")
 
 
