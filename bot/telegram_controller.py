@@ -45,9 +45,10 @@ class BotController:
         self.running = True
         if self._start_fn:
             self._start_fn()
-        return (f"✅ Bot ARRANCADO en modo DEMO.\n"
+        return (f"✅ Bot ARRANCADO en modo SIMULADO.\n"
                 f"Preset: {self.preset} | activo: {self.cfg.current_asset}\n"
-                f"(No se envían órdenes reales sin tu confirmación explícita.)")
+                f"⚠️ Los precios son INVENTADOS por el código (no es Pocket "
+                f"Option todavía). No se envía ninguna orden.")
 
     def cmd_stop(self):
         if not self.running:
