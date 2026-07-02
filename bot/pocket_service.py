@@ -25,6 +25,12 @@ from bot.market_hours import is_open
 from bot.calibration import calibrate
 from bot.scoring_strategy import regime as _regime
 from bot.void_detector import detect_void
+from bot.payout import parse_assets
+
+# Umbral de PAGO BAJO (%): por debajo de esto avisamos "no entrar", según la
+# regla del usuario ("EurUsdOTC está el % de pago bajo, yo no entro a ese
+# candel"). Un payout más bajo empeora el valor esperado de cada operación.
+LOW_PAYOUT_PCT = 80
 
 
 class PocketService:
@@ -96,18 +102,13 @@ class PocketService:
     def _on_assets(self, assets):
         """
         Extrae el % de PAGO (payout) de cada activo de la lista de PO.
-        Formato observado por activo: [id, "SYMBOL", "Nombre", tipo, _, payout, ...].
-        (El índice del payout es best-effort; se muestra para que el usuario lo
-        verifique contra Pocket Option y lo ajustemos si hiciera falta.)
+        Delegado a bot/payout.parse_assets, que valida por RANGO (un payout es un
+        %, así que debe caer en un rango sensato) en vez de fiarse de un índice
+        fijo. Así el filtro de "pago bajo" no falla si PO reordena el array.
         """
-        if not isinstance(assets, list):
-            return
-        for a in assets:
-            if isinstance(a, list) and len(a) > 5 and isinstance(a[1], str):
-                try:
-                    self._payouts[a[1]] = float(a[5])
-                except (TypeError, ValueError):
-                    pass
+        nuevos = parse_assets(assets)
+        if nuevos:
+            self._payouts.update(nuevos)
 
     # --- API para Telegram ---
 
@@ -256,7 +257,7 @@ class PocketService:
         payout = self._payouts.get(asset_code)
         if payout is not None:
             resultado["payout"] = payout
-            if payout < 80:
+            if payout < LOW_PAYOUT_PCT:
                 resultado["pago_bajo"] = True
 
         # GUARDIÁN DE ESTABILIDAD (indecisión): si la señal acaba de cambiar de
