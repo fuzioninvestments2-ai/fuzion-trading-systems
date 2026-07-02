@@ -358,13 +358,31 @@ def run():
         await _safe_edit(query, text, rows)
 
     async def _safe_edit(query, text, rows):
+        """
+        Edita el mensaje con formato Markdown. Si Telegram rechaza el formato
+        (un carácter especial en un nombre/razón rompe el Markdown), NO perdemos
+        la información: reintentamos SIN formato, y si aún falla, la enviamos como
+        mensaje nuevo. Así la lectura SIEMPRE llega al usuario (Regla 3: robustez).
+        """
         from telegram.error import BadRequest
         try:
             await query.edit_message_text(text, reply_markup=_keyboard(rows),
                                           parse_mode="Markdown")
+            return
         except BadRequest as e:
-            if "not modified" not in str(e).lower():
-                raise
+            if "not modified" in str(e).lower():
+                return
+        # Reintento en texto plano (quitamos los marcadores * _ ` de Markdown).
+        plano = text.replace("*", "").replace("`", "").replace("_", "")
+        try:
+            await query.edit_message_text(plano, reply_markup=_keyboard(rows))
+        except BadRequest:
+            # El mensaje original no se puede editar (p.ej. era una foto):
+            # enviamos la lectura como mensaje nuevo para no perderla.
+            try:
+                await query.message.reply_text(plano, reply_markup=_keyboard(rows))
+            except Exception:
+                pass
 
     async def _post_init(app):
         if service:
