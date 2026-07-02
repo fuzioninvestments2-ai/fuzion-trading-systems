@@ -43,3 +43,6 @@ cache/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# SSID de Pocket Option (sensible, nunca versionar)
+ssid.txt

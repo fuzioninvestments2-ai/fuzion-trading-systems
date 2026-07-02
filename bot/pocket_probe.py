@@ -63,12 +63,28 @@ async def _listen(ws, auth_msg):
             print(">> enviado: auth (SSID)")
 
 
+def _load_ssid():
+    """
+    Lee el SSID desde (por orden): la variable POCKET_OPTION_SSID, o un archivo
+    'ssid.txt' en la raíz del proyecto. El archivo evita problemas con las
+    muchas comillas del SSID. Nunca se versiona (está en .gitignore).
+    """
+    env = os.getenv("POCKET_OPTION_SSID", "").strip()
+    if env:
+        return env
+    ruta = os.path.join(ROOT, "ssid.txt")
+    if os.path.exists(ruta):
+        with open(ruta, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    return ""
+
+
 async def probe(seconds=40):
-    ssid = os.getenv("POCKET_OPTION_SSID", "")
+    ssid = _load_ssid()
     if not ssid:
         raise RuntimeError(
-            "Falta POCKET_OPTION_SSID en tu .env. Pega la línea completa "
-            "42[\"auth\",{...}] que capturaste del navegador.")
+            "Falta el SSID. Crea un archivo 'ssid.txt' en la carpeta del "
+            "proyecto con la línea completa 42[\"auth\",{...}] del navegador.")
 
     auth_msg = _build_auth(ssid)
     headers = {"Origin": "https://pocketoption.com",
