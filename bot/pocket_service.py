@@ -201,20 +201,23 @@ class PocketService:
                     agg = cb.to_dataframe(include_forming=True)
                 frames[tf] = agg
 
-        resultado = analyzer.analyze_frames(frames)
-        resultado["umbral"] = min_conf
-        if win_rate is not None:
-            resultado["win_rate_hist"] = win_rate
-
-        # RÉGIMEN (Oscillate/Slide) desde un tiempo medio con datos.
+        # RÉGIMEN (Oscillate/Slide) desde un tiempo medio con datos. Se calcula
+        # ANTES del análisis para AJUSTAR los pesos de indicadores: en tendencia
+        # mandan MACD/medias; en rango mandan los rebotes techo/piso (RSI/Bollinger).
+        reg = adxv = None
         for tfm in (60, 180, 300):
             fm = frames.get(tfm)
             if fm is not None and len(fm) >= 20:
                 reg, adxv = _regime(fm["high"], fm["low"], fm["close"])
-                if reg:
-                    resultado["regime"] = reg
-                    resultado["adx"] = round(adxv, 1)
                 break
+
+        resultado = analyzer.analyze_frames(frames, regimen=reg)
+        resultado["umbral"] = min_conf
+        if win_rate is not None:
+            resultado["win_rate_hist"] = win_rate
+        if reg:
+            resultado["regime"] = reg
+            resultado["adx"] = round(adxv, 1)
 
         # GRÁFICO: velas M1 recientes para dibujar en Telegram.
         resultado["chart"] = self.repo.get_recent(asset_code, "M1", 45)

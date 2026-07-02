@@ -107,8 +107,10 @@ def _simulate_candles(asset, timeframe, n=260):
 def _reason_from_votes(votes, side):
     """Arma un texto legible con los indicadores que apoyan la dirección."""
     nombres = {"rsi": "RSI", "macd": "MACD", "bollinger": "Bollinger",
-               "moving_averages": "Medias móviles", "stochastic": "Estocástico"}
-    apoyan = [nombres[k] for k, v in votes.items() if v == side]
+               "moving_averages": "Medias móviles", "stochastic": "Estocástico",
+               "donchian": "Canal Donchian (techo/piso)"}
+    # .get evita KeyError si algún indicador nuevo aún no está en el mapa.
+    apoyan = [nombres.get(k, k) for k, v in votes.items() if v == side]
     if not apoyan:
         return "sin confluencia clara de indicadores"
     return ", ".join(apoyan)

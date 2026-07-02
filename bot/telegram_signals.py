@@ -196,8 +196,13 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
 
     reg = result.get("regime")
     adxv = result.get("adx")
-    reg_map = {"slide": "📈 Slide (tendencia)", "oscillate": "🔁 Oscillate (rango)",
-               "mixto": "🔀 mixto"}
+    # El "Modo" no es solo etiqueta: el bot YA ajustó el peso de sus indicadores
+    # a este régimen (en Slide manda MACD/medias; en Oscillate los rebotes).
+    reg_map = {
+        "slide": "📈 Slide (tendencia) → prioriza MACD/medias",
+        "oscillate": "🔁 Oscillate (rango) → prioriza rebotes techo/piso",
+        "mixto": "🔀 mixto → pesos equilibrados",
+    }
     modo = (f"\n📐 Modo: {reg_map.get(reg, '')}"
             + (f" _(ADX {adxv})_" if adxv is not None else "")) if reg else ""
 

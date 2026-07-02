@@ -41,9 +41,9 @@ CALL = "CALL"
 PUT = "PUT"
 HOLD = "HOLD"
 
-# Pesos de cada indicador (de la especificación). MACD pesa más porque combina
-# tendencia y momento; el estocástico menos porque es más ruidoso.
-WEIGHTS = {
+# Pesos BASE de cada indicador (de la especificación). MACD pesa más porque
+# combina tendencia y momento; el estocástico menos porque es más ruidoso.
+BASE_WEIGHTS = {
     "rsi": 2.0,
     "macd": 3.0,
     "bollinger": 2.0,
@@ -51,6 +51,62 @@ WEIGHTS = {
     "stochastic": 1.0,
     "donchian": 2.0,       # techo/piso (soporte-resistencia)
 }
+# Alias por compatibilidad con código/tests que aún usan WEIGHTS.
+WEIGHTS = BASE_WEIGHTS
+
+
+# ---------------------------------------------------------------------------
+# CONFIGURACIÓN NO FIJA: los pesos cambian POR TIEMPO y POR RÉGIMEN.
+# El usuario pidió expresamente que "la configuración de los indicadores no es
+# fija, es por tiempo". Además, en tendencia (slide) vs rango (oscillate) los
+# indicadores útiles NO son los mismos:
+#   - En TENDENCIA fuerte, los osciladores (RSI/estocástico/Bollinger) dan
+#     falsas señales de "reversión" que pelean contra la tendencia -> pesan menos;
+#     MACD/medias/Donchian (seguidores de tendencia) pesan más.
+#   - En RANGO, es al revés: los rebotes techo/piso (RSI/Bollinger/estocástico/
+#     Donchian) mandan; MACD/medias dan cruces falsos -> pesan menos.
+# Los factores son MULTIPLICADORES sobre los pesos base (1.0 = sin cambio).
+# ---------------------------------------------------------------------------
+
+# Por TIEMPO: en tiempos cortos (scalping) mandan los osciladores rápidos; las
+# medias largas (SMA200) casi no tienen velas -> poco fiables. En tiempos largos
+# manda la tendencia (medias/MACD/Donchian) y el estocástico ruidoso pesa menos.
+def _factor_por_tiempo(tf_seconds):
+    if tf_seconds is None:
+        return {}
+    if tf_seconds < 60:                 # corto: 5s..30s
+        return {"rsi": 1.3, "stochastic": 1.4, "bollinger": 1.2,
+                "moving_averages": 0.5, "macd": 0.9}
+    if tf_seconds <= 300:               # medio: 1m..5m (equilibrado)
+        return {}
+    return {"moving_averages": 1.3, "macd": 1.2, "donchian": 1.2,  # largo: >5m
+            "stochastic": 0.6, "rsi": 0.9}
+
+
+# Por RÉGIMEN (de scoring_strategy.regime()).
+def _factor_por_regimen(regimen):
+    if regimen == "slide":              # tendencia: seguir, no revertir
+        return {"macd": 1.3, "moving_averages": 1.3, "donchian": 1.2,
+                "rsi": 0.6, "bollinger": 0.6, "stochastic": 0.6}
+    if regimen == "oscillate":          # rango: operar rebotes techo/piso
+        return {"rsi": 1.3, "bollinger": 1.3, "stochastic": 1.3,
+                "donchian": 1.2, "macd": 0.6, "moving_averages": 0.6}
+    return {}                           # mixto/None: sin ajuste
+
+
+def weights_for(tf_seconds=None, regimen=None):
+    """
+    Devuelve los pesos AJUSTADOS para una temporalidad y un régimen concretos.
+    Combina (multiplica) los factores de tiempo y de régimen sobre BASE_WEIGHTS.
+    EL PORQUÉ: un mismo indicador no vale lo mismo en 15s que en 30m, ni en
+    tendencia que en rango. Así la "configuración por tiempo" deja de ser fija.
+    """
+    ft = _factor_por_tiempo(tf_seconds)
+    fr = _factor_por_regimen(regimen)
+    out = {}
+    for name, base in BASE_WEIGHTS.items():
+        out[name] = base * ft.get(name, 1.0) * fr.get(name, 1.0)
+    return out
 
 
 def _last(series):
@@ -200,9 +256,16 @@ class ScoringStrategy:
     def __init__(self, cfg):
         self.cfg = cfg
 
-    def analyze(self, df):
+    def analyze(self, df, weights=None):
+        """
+        weights: dict opcional de pesos por indicador. Si es None usa los BASE.
+        Permite pasar pesos AJUSTADOS por tiempo/régimen (weights_for), para que
+        la configuración de indicadores NO sea fija.
+        """
         if df is None or len(df) < 2:
             return HOLD, 0.0, {"motivo": "datos insuficientes"}
+
+        w_map = weights if weights else BASE_WEIGHTS
 
         close = df["close"]
         high = df.get("high", close)
@@ -221,7 +284,7 @@ class ScoringStrategy:
         call_score = put_score = 0.0
         call_votes = put_votes = 0
         for name, (sig, strength) in votes.items():
-            w = WEIGHTS[name]
+            w = w_map[name]
             if sig == CALL:
                 call_score += w * strength
                 call_votes += 1
@@ -229,7 +292,7 @@ class ScoringStrategy:
                 put_score += w * strength
                 put_votes += 1
 
-        max_score = sum(WEIGHTS.values())
+        max_score = sum(w_map.values())
         # Confianza: qué tan desequilibrada está la decisión (0..1).
         confidence = abs(call_score - put_score) / max_score
 

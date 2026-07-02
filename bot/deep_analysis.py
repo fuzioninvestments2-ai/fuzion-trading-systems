@@ -20,7 +20,7 @@ SRP: este módulo solo analiza. No conecta a red ni opera. Se prueba sin interne
 """
 
 from bot.candles import CandleBuilder
-from bot.scoring_strategy import ScoringStrategy, CALL, PUT
+from bot.scoring_strategy import ScoringStrategy, CALL, PUT, weights_for
 from bot.config import TradingConfig
 
 # Temporalidades por defecto (segundos): corto, medio, largo = "mín … máx".
@@ -104,17 +104,21 @@ class DeepAnalyzer:
             out.append((ts, s))
         return out
 
-    def _opinar_df(self, df):
+    def _opinar_df(self, df, tf=None, regimen=None):
         """
         Un 'analista' opina sobre un DataFrame de velas. SIEMPRE calcula la
         inclinación (lean) aunque sea débil; marca aparte si está CONFIRMADA
         (confianza >= umbral). Así nunca perdemos la dirección.
+
+        tf / regimen: si se dan, los pesos de los indicadores se AJUSTAN a esa
+        temporalidad y régimen (config no fija). Si no, usa los pesos base.
         """
         velas = 0 if df is None else len(df)
         if df is None or velas < self.min_candles:
             return {"dir": "NEUTRAL", "conf": 0.0, "velas": velas,
                     "votes": {}, "confirmado": False, "datos": False}
-        _, _, d = ScoringStrategy(self.cfg).analyze(df)
+        pesos = weights_for(tf, regimen) if (tf or regimen) else None
+        _, _, d = ScoringStrategy(self.cfg).analyze(df, weights=pesos)
         call_s, put_s = d.get("call_score", 0.0), d.get("put_score", 0.0)
         conf = d.get("confidence", 0.0)
         if call_s > put_s:
@@ -127,12 +131,13 @@ class DeepAnalyzer:
                 "votes": d.get("votes", {}),
                 "confirmado": conf >= self.min_conf, "datos": True}
 
-    def _opinar_temporalidad(self, tf_seconds, ticks_suaves):
-        """Construye las velas de SU tiempo desde ticks y opina."""
+    def _opinar_temporalidad(self, tf_seconds, ticks_suaves, regimen=None):
+        """Construye las velas de SU tiempo desde ticks y opina (pesos por tiempo)."""
         cb = CandleBuilder(tf_seconds)
         for ts, p in ticks_suaves:
             cb.add_tick(p, ts * 1000.0)
-        return self._opinar_df(cb.to_dataframe(include_forming=True))
+        return self._opinar_df(cb.to_dataframe(include_forming=True),
+                               tf=tf_seconds, regimen=regimen)
 
     def _combinar(self, por_tiempo):
         """
@@ -202,25 +207,30 @@ class DeepAnalyzer:
                                 f"fortalezca.")
         return base
 
-    def analyze(self, ticks):
-        """ticks: [(timestamp_segundos, precio), ...] en orden cronológico."""
+    def analyze(self, ticks, regimen=None):
+        """
+        ticks: [(timestamp_segundos, precio), ...] en orden cronológico.
+        regimen: 'slide'/'oscillate'/'mixto' (opcional) para ajustar los pesos.
+        """
         if not ticks:
             return {"veredicto": "SIN DATOS", "direccion": "NEUTRAL",
                     "fuerza": 0.0, "por_tiempo": {}}
         suaves = self._filtrar_ruido(ticks)
-        por_tiempo = {tf: self._opinar_temporalidad(tf, suaves)
+        por_tiempo = {tf: self._opinar_temporalidad(tf, suaves, regimen)
                       for tf in self.timeframes}
         return self._combinar(por_tiempo)
 
-    def analyze_frames(self, frames):
+    def analyze_frames(self, frames, regimen=None):
         """
         frames: dict {tf_segundos: DataFrame de velas}. Permite mezclar tiempos
         cortos (desde ticks) y largos (desde historial acumulado). Es el modo
         de "lectura continua": los tiempos largos usan las velas que el bot ha
         ido acumulando.
+        regimen: ajusta los pesos de indicadores según tendencia/rango.
         """
         if not frames:
             return {"veredicto": "SIN DATOS", "direccion": "NEUTRAL",
                     "fuerza": 0.0, "por_tiempo": {}}
-        por_tiempo = {tf: self._opinar_df(df) for tf, df in frames.items()}
+        por_tiempo = {tf: self._opinar_df(df, tf=tf, regimen=regimen)
+                      for tf, df in frames.items()}
         return self._combinar(por_tiempo)
