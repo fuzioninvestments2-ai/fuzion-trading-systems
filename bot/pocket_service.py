@@ -21,6 +21,7 @@ from bot.candles import CandleBuilder
 from bot.history import HistoryRepository
 from bot.deep_analysis import DeepAnalyzer
 from bot.manipulation import ManipulationGuard
+from bot.market_hours import is_open
 
 
 class PocketService:
@@ -113,6 +114,12 @@ class PocketService:
         El `resultado_dict` viene de DeepAnalyzer: veredicto, dirección, fuerza,
         por_tiempo.
         """
+        # HORARIO: si el mercado real está cerrado, ni siquiera analizamos.
+        abierto, motivo = is_open(asset_code)
+        if not abierto:
+            return ({"veredicto": "🚫 MERCADO CERRADO", "direccion": motivo,
+                     "fuerza": 0.0, "por_tiempo": {}, "cerrado": True}, None, 0)
+
         try:
             await self.client.set_asset(asset_code, 60)
         except Exception:

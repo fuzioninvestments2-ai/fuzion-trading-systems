@@ -127,6 +127,13 @@ def _tf_label(seconds):
 
 def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
     """Formatea el resultado del análisis profundo multi-temporalidad."""
+    # Caso especial: mercado cerrado.
+    if result.get("cerrado"):
+        return (f"📈 *{asset_display}*  |  ⏱️ *{tf}*\n\n"
+                f"🕐 *{result.get('direccion', 'Mercado cerrado')}*\n\n"
+                f"_Este activo real no opera ahora. Prueba un activo *OTC* "
+                f"(disponible 24/7)._")
+
     veredicto = result.get("veredicto", "")
     direccion = result.get("direccion", "")
     fuerza = result.get("fuerza", 0.0)
