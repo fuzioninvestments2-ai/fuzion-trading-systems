@@ -26,6 +26,7 @@ from bot.calibration import calibrate
 from bot.scoring_strategy import regime as _regime
 from bot.void_detector import detect_void
 from bot.payout import parse_assets
+from bot.candle_patterns import detect_patterns
 
 # Umbral de PAGO BAJO (%): por debajo de esto avisamos "no entrar", según la
 # regla del usuario ("EurUsdOTC está el % de pago bajo, yo no entro a ese
@@ -223,6 +224,22 @@ class PocketService:
 
         # GRÁFICO: velas M1 recientes para dibujar en Telegram.
         resultado["chart"] = self.repo.get_recent(asset_code, "M1", 45)
+
+        # PATRONES DE VELA sobre el tiempo más corto (el de la ENTRADA): la FORMA
+        # de la vela cuenta lo que los indicadores no ven. Un doji = indecisión
+        # (fuerza NO OPERAR); martillo/envolvente = confirmación de dirección.
+        corto = min(frames) if frames else None
+        if corto is not None and frames[corto] is not None and len(frames[corto]) >= 2:
+            pat = detect_patterns(frames[corto])
+            if pat["patrones"]:
+                resultado["patrones"] = pat["patrones"]
+            if pat["indecision"]:
+                resultado["veredicto"] = "🚫 NO OPERAR"
+                resultado["indecision_vela"] = True
+                base_expl = resultado.get("explicacion", "")
+                resultado["explicacion"] = (
+                    "Vela DOJI (indecisión): compradores y vendedores empatados, "
+                    "sin dirección clara. " + base_expl).strip()
 
         # DETECTOR DE VACÍO DEL MERCADO: huecos/silencio en el flujo de precios.
         # Distinto de "plano": aquí NO llegan ticks (feed congelado o con huecos),

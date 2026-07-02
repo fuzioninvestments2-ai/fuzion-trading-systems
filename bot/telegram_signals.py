@@ -193,6 +193,8 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
     if result.get("vacio"):
         alerta += ("\n🕳️ *VACÍO DE MERCADO:* " + ", ".join(result["vacio"])
                    + " → feed no fiable, NO operes")
+    if result.get("indecision_vela"):
+        alerta += "\n🕯️ *DOJI:* vela de indecisión → espera dirección clara"
 
     explicacion = result.get("explicacion", "")
     expl = f"\n🧭 *Lectura:* _{explicacion}_" if explicacion else ""
@@ -209,11 +211,15 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
     modo = (f"\n📐 Modo: {reg_map.get(reg, '')}"
             + (f" _(ADX {adxv})_" if adxv is not None else "")) if reg else ""
 
+    # Patrones de vela (la FORMA de la vela): confirmación o indecisión.
+    pats = result.get("patrones")
+    patrones = f"\n🕯️ *Patrones:* {', '.join(pats)}" if pats else ""
+
     return (f"📈 *{asset_display}*   ⏱️ *{tf}*   (REALES ✅)\n"
             f"{alerta}\n"
             f"\n*{veredicto}*\n"
             f"Dirección: {direccion}{modo}\n"
-            f"🎯 Alineación: *{fuerza:.0%}*  ({coinciden}){expl}\n\n"
+            f"🎯 Alineación: *{fuerza:.0%}*  ({coinciden}){expl}{patrones}\n\n"
             f"🔎 *Panel de tiempos:*\n{desglose}\n"
             f"{timing}{pago}{bal}{aprendido}\n\n"
             f"⚠️ _No es recomendación; ningún bot acierta siempre. Demo._")
