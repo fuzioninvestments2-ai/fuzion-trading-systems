@@ -113,6 +113,47 @@ def _format_real_signal(asset_display, tf, signal, conf, details, n, balance,
             f"⚠️ _No es recomendación; ningún bot acierta siempre. Cuenta demo._")
 
 
+def _tf_label(seconds):
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    if seconds < 86400:
+        return f"{seconds // 3600}h"
+    return "1D"
+
+
+def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
+    """Formatea el resultado del análisis profundo multi-temporalidad."""
+    veredicto = result.get("veredicto", "")
+    direccion = result.get("direccion", "")
+    fuerza = result.get("fuerza", 0.0)
+    coinciden = result.get("coinciden", "")
+    por = result.get("por_tiempo", {})
+    emo = {"CALL": "⬆️", "PUT": "⬇️", "NEUTRAL": "⏸️"}
+
+    filas = []
+    for tfs, v in sorted(por.items()):
+        filas.append(f"  {_tf_label(tfs):>4}  {emo.get(v['dir'], '⏸️')}  "
+                     f"_(conf {v['conf']:.0%}, {v['velas']}v)_")
+    desglose = "\n".join(filas) if filas else "  (sin datos suficientes)"
+
+    if seg is not None:
+        timing = (f"\n⏱️ *¡ENTRA YA!* (vela en {seg}s)" if seg <= 5
+                  else f"\n⏱️ Entra al ABRIR la próxima vela: *{seg}s*")
+    else:
+        timing = ""
+    bal = f"\n💰 Balance demo: ${balance:.2f}" if balance else ""
+    coin = f"  ({coinciden})" if coinciden else ""
+
+    return (f"📈 *{asset_display}*  |  ⏱️ *{tf}*   (PRECIOS REALES ✅)\n"
+            f"\n{veredicto}  →  {direccion}{coin}\n"
+            f"Fuerza de acuerdo: *{fuerza:.0%}*\n\n"
+            f"🔎 *Panel por tiempo:*\n{desglose}\n"
+            f"{timing}{bal}\n\n"
+            f"⚠️ _No es recomendación; ningún bot acierta siempre. Demo._")
+
+
 def run():
     try:
         from dotenv import load_dotenv
@@ -166,9 +207,9 @@ def run():
                     f"reales… espera unos segundos.", parse_mode="Markdown")
                 code = to_po_code(asset_display)
                 period = _TF_SECONDS.get(tf, 60)
-                signal, conf, details, n, seg = await service.analyze(code, period)
-                text = _format_real_signal(asset_display, tf, signal, conf,
-                                           details, n, service.balance, seg)
+                result, seg, n = await service.analyze(code, period)
+                text = _format_deep(asset_display, tf, result, seg,
+                                    service.balance, n)
                 rows = [[("🔁 Analizar de nuevo", "analyze")],
                         [("📊 Otro activo", "back:market"), ("🏠 Menú", "back:main")]]
             await _safe_edit(query, text, rows)

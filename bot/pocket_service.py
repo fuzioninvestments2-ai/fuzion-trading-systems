@@ -14,12 +14,12 @@ También guarda todo en el historial (SQLite). SOLO LECTURA: no opera.
 import asyncio
 import logging
 import os
+from collections import deque
 
 from bot.pocket_client import PocketOptionClient
 from bot.candles import CandleBuilder
 from bot.history import HistoryRepository
-from bot.scoring_strategy import ScoringStrategy, CALL, PUT, HOLD
-from bot.config import TradingConfig
+from bot.deep_analysis import DeepAnalyzer
 
 
 class PocketService:
@@ -33,7 +33,8 @@ class PocketService:
             db_path or os.path.join(os.path.dirname(os.path.dirname(
                 os.path.abspath(__file__))), "history.db"))
 
-        self._builders = {}          # asset -> CandleBuilder
+        self._builders = {}          # asset -> CandleBuilder (para guardar historial)
+        self._ticks = {}             # asset -> deque de (ts_seg, precio) para análisis profundo
         self._last_tick = {}         # asset -> último timestamp (segundos, hora real de PO)
         self.balance = None
         self.connected = False
@@ -47,8 +48,12 @@ class PocketService:
     def _builder(self, asset):
         return self._builders.setdefault(asset, CandleBuilder(self.period))
 
+    def _tick_buffer(self, asset):
+        return self._ticks.setdefault(asset, deque(maxlen=10000))
+
     def _on_tick(self, asset, ts, price):
         self._last_tick[asset] = ts          # hora real del mercado (PO)
+        self._tick_buffer(asset).append((ts, price))
         closed = self._builder(asset).add_tick(price, ts * 1000.0)
         if closed is not None:
             self.repo.record_candle(asset, "M1", closed)
@@ -60,15 +65,18 @@ class PocketService:
         hist = payload.get("history", [])
         if not asset:
             return
-        # Reconstruimos las velas de ese activo desde el historial recibido.
+        # Reconstruimos las velas + el buffer de ticks desde el historial recibido.
         cb = CandleBuilder(self.period)
+        buf = deque(maxlen=10000)
         for row in hist:
             try:
                 t, p = float(row[0]), float(row[1])
             except (IndexError, TypeError, ValueError):
                 continue
             cb.add_tick(p, t * 1000.0)
+            buf.append((t, p))
         self._builders[asset] = cb
+        self._ticks[asset] = buf
         for c in cb.closed_candles():
             self.repo.record_candle(asset, "M1", c)
 
@@ -97,42 +105,28 @@ class PocketService:
 
     async def analyze(self, asset_code, tf_seconds=60):
         """
-        Cambia al activo pedido, espera datos y analiza usando TODO el historial
-        acumulado. Devuelve (señal, confianza, detalles, nº_velas, seg_próx_vela).
-        `tf_seconds` es la expiración elegida (M1=60, M5=300...), usada para el
-        cálculo de TIMING (cuándo entrar).
+        Cambia al activo pedido, espera datos y hace ANÁLISIS PROFUNDO
+        multi-temporalidad (la "ecuación": tiempo corto + medio + largo).
+
+        Devuelve (resultado_dict, seg_próx_vela, nº_ticks).
+        El `resultado_dict` viene de DeepAnalyzer: veredicto, dirección, fuerza,
+        por_tiempo.
         """
         try:
-            # Datos siempre en M1 (buena resolución); el tf del usuario es la
-            # expiración y se usa para el timing de entrada.
             await self.client.set_asset(asset_code, 60)
         except Exception:
             self.log.exception("No se pudo cambiar de activo")
-        # Damos tiempo a que lleguen historial + primeros ticks.
         await asyncio.sleep(self.wait_seconds)
 
-        # Analizamos con TODO lo acumulado en el historial (más datos = mejor),
-        # más la vela que se está formando ahora mismo.
-        df = self.repo.get_recent(asset_code, "M1", 400)
-        cb = self._builders.get(asset_code)
-        if cb is not None:
-            live = cb.to_dataframe(include_forming=True)
-            if len(live) and len(df):
-                # Unimos y quitamos duplicados por timestamp (nos quedamos con
-                # la última versión de cada vela).
-                import pandas as pd
-                df = (pd.concat([df, live])
-                      .drop_duplicates(subset="timestamp", keep="last")
-                      .sort_values("timestamp").reset_index(drop=True))
-            elif len(live):
-                df = live
-
         seg = self.seconds_to_next_candle(asset_code, tf_seconds)
-        n = len(df) if df is not None else 0
-        if n < 5:
-            return HOLD, 0.0, {"motivo": "pocas velas todavía"}, n, seg
+        ticks = list(self._ticks.get(asset_code, []))
+        if len(ticks) < 50:
+            return ({"veredicto": "🚫 NO OPERAR", "direccion": "⏸️ pocos datos",
+                     "fuerza": 0.0, "por_tiempo": {}}, seg, len(ticks))
 
-        cfg = TradingConfig(stack_method="aggressive")
-        cfg.min_confidence = 0.25
-        signal, conf, d = ScoringStrategy(cfg).analyze(df)
-        return signal, conf, d, n, seg
+        # La "ecuación de tiempo": alrededor del tiempo elegido tomamos uno más
+        # corto (entrada) y uno más largo (tendencia).
+        corto = max(5, tf_seconds // 4)
+        tfs = tuple(sorted({corto, tf_seconds, tf_seconds * 5}))
+        resultado = DeepAnalyzer(timeframes=tfs).analyze(ticks)
+        return resultado, seg, len(ticks)
