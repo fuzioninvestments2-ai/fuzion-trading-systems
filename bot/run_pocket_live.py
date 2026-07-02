@@ -50,19 +50,25 @@ def main():
     cfg.min_confidence = 0.25         # más sensible para ver señales en vivo
     strat = ScoringStrategy(cfg)
 
+    contador = {"ticks": 0}
+
     def analizar_y_guardar(closed_candle):
         """Guarda la vela cerrada y analiza la serie reciente."""
         repo.record_candle(ASSET, "M1", closed_candle)
         df = cb.to_dataframe()
-        if len(df) < 20:
+        if len(df) < 5:                # con muy pocas velas no hay nada que medir
             return
         signal, conf, d = strat.analyze(df)
-        flecha = {"CALL": "⬆️ UP", "PUT": "⬇️ DOWN"}.get(signal, "⏸️ nada")
-        log.info("Vela cerrada | %s | señal=%s conf=%.0f%% (velas=%d)",
-                 ASSET, flecha, conf * 100, len(df))
+        flecha = {"CALL": "⬆️ UP", "PUT": "⬇️ DOWN"}.get(signal, "⏸️ sin señal")
+        log.info("── VELA CERRADA %s | %s | confianza=%.0f%% | velas=%d "
+                 "(guardadas en history.db)", ASSET, flecha, conf * 100, len(df))
 
     def on_tick(asset, ts, price):
         # ts viene en SEGUNDOS -> el constructor de velas usa milisegundos.
+        contador["ticks"] += 1
+        # Mostramos el precio en vivo cada 25 ticks (para ver actividad ya).
+        if contador["ticks"] % 25 == 0:
+            log.info("precio %s = %s", asset, price)
         closed = cb.add_tick(price, ts * 1000.0)
         if closed is not None:
             analizar_y_guardar(closed)
