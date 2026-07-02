@@ -65,13 +65,28 @@ def _format_real_signal(asset_display, tf, signal, conf, details, n, balance,
     else:
         direccion, side = "⏸️ *Neutral*", HOLD
 
+    # Cuántos indicadores apoyan la dirección ganadora.
+    call_v = details.get("call_votes", 0)
+    put_v = details.get("put_votes", 0)
+    votos_ganadores = max(call_v, put_v)
+
     # Fuerza HONESTA según la confianza: no engañamos, decimos si es débil.
     if conf >= 0.60:
         fuerza = "🟢 fuerte"
     elif conf >= 0.35:
         fuerza = "🟡 media"
     else:
-        fuerza = "🔴 débil (mejor esperar)"
+        fuerza = "🔴 débil"
+
+    # VEREDICTO CLARO (lo más importante): decir SÍ operar o NO operar.
+    # El porqué: en binarias se gana operando POCAS veces pero buenas. Una señal
+    # débil o con pocos indicadores de acuerdo = NO operar.
+    if side == HOLD or votos_ganadores < 2 or conf < 0.35:
+        veredicto = "🚫 *NO OPERAR* — señal floja, espera una mejor"
+    elif conf >= 0.55 and votos_ganadores >= 3:
+        veredicto = "✅ *OPERAR* — señal fuerte y con confluencia"
+    else:
+        veredicto = "🟡 *OPCIONAL* — señal media (con cautela)"
 
     votes = details.get("votes", {})
     motivo = (_reason_from_votes(votes, side) if side != HOLD
@@ -90,8 +105,9 @@ def _format_real_signal(asset_display, tf, signal, conf, details, n, balance,
         timing = ""
 
     return (f"📈 *{asset_display}*  |  ⏱️ *{tf}*   (PRECIOS REALES ✅)\n"
+            f"\n{veredicto}\n\n"
             f"Dirección: {direccion}\n"
-            f"Fuerza: {fuerza}  _(confianza {conf:.0%})_\n"
+            f"Fuerza: {fuerza}  _(confianza {conf:.0%}, {votos_ganadores} indicadores)_\n"
             f"Motivo: {motivo}\n"
             f"Velas: {n}{bal}{timing}\n\n"
             f"⚠️ _No es recomendación; ningún bot acierta siempre. Cuenta demo._")
