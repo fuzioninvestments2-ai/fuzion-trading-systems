@@ -23,6 +23,7 @@ from bot.deep_analysis import DeepAnalyzer
 from bot.manipulation import ManipulationGuard
 from bot.market_hours import is_open
 from bot.calibration import calibrate
+from bot.weight_learning import learn_weights
 from bot.scoring_strategy import regime as _regime
 from bot.void_detector import detect_void
 from bot.payout import parse_assets
@@ -51,6 +52,7 @@ class PocketService:
         self._ticks = {}             # asset -> deque de (ts_seg, precio) para análisis profundo
         self._last_tick = {}         # asset -> último timestamp (segundos, hora real de PO)
         self._calib = {}             # asset -> umbral aprendido (calibración)
+        self._weights = {}           # asset -> pesos aprendidos por indicador
         self._payouts = {}           # asset -> % de pago (payout) de Pocket Option
         self._last_dir = {}          # asset -> (direccion, ts) para estabilidad
         self.balance = None
@@ -184,10 +186,28 @@ class PocketService:
             if cache:
                 min_conf, win_rate = cache["min_conf"], cache["win_rate"]
 
+        # APRENDIZAJE DE PESOS: además del umbral, aprendemos qué INDICADORES han
+        # acertado más en ESTE activo y ajustamos su peso. Mismo caché/cadencia
+        # que la calibración (~30 velas nuevas) porque es costoso (recorre el
+        # historial re-evaluando indicadores).
+        learned = None
+        if m1_cal is not None and len(m1_cal) >= 60:
+            wcache = self._weights.get(asset_code)
+            if wcache is None or len(m1_cal) - wcache.get("count", 0) >= 30:
+                lw = learn_weights(m1_cal)
+                if lw:
+                    self._weights[asset_code] = {
+                        "multipliers": lw["multipliers"],
+                        "stats": lw["stats"], "count": len(m1_cal)}
+            wcache = self._weights.get(asset_code)
+            if wcache:
+                learned = wcache["multipliers"]
+
         # LECTURA CONTINUA: los tiempos largos usan las velas ACUMULADAS en el
         # historial (cuanto más ha leído el bot, más profundo analiza); los
         # cortos usan los ticks recientes (con ruido filtrado).
         analyzer = DeepAnalyzer(timeframes=tfs, min_conf=min_conf)
+        analyzer.learned = learned            # pesos aprendidos por indicador
         suaves = analyzer._filtrar_ruido(ticks)
         frames = {}
         for tf in tfs:
@@ -223,6 +243,17 @@ class PocketService:
         if reg:
             resultado["regime"] = reg
             resultado["adx"] = round(adxv, 1)
+
+        # Pesos aprendidos: mostramos los indicadores que MÁS aciertan en este
+        # activo (los que el bot ha "aprendido" a valorar) para que se vea el
+        # aprendizaje continuo en acción.
+        wcache = self._weights.get(asset_code)
+        if wcache:
+            top = [(n, s["hit_rate"]) for n, s in wcache["stats"].items()
+                   if s.get("hit_rate") is not None]
+            top.sort(key=lambda x: x[1], reverse=True)
+            if top:
+                resultado["pesos_top"] = top[:3]        # 3 mejores (ind, hit_rate)
 
         # GRÁFICO: velas M1 recientes para dibujar en Telegram.
         chart_df = self.repo.get_recent(asset_code, "M1", 45)

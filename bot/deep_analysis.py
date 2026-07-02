@@ -91,6 +91,7 @@ class DeepAnalyzer:
         self.noise_alpha = float(noise_alpha)
         self.min_candles = int(min_candles)
         self.min_conf = float(min_conf)
+        self.learned = None            # multiplicadores de peso aprendidos (por activo)
         cfg = TradingConfig(stack_method="aggressive")
         cfg.min_confidence = 0.25
         self.cfg = cfg
@@ -121,7 +122,8 @@ class DeepAnalyzer:
         if df is None or velas < self.min_candles:
             return {"dir": "NEUTRAL", "conf": 0.0, "velas": velas,
                     "votes": {}, "confirmado": False, "datos": False}
-        pesos = weights_for(tf, regimen) if (tf or regimen) else None
+        pesos = (weights_for(tf, regimen, learned=self.learned)
+                 if (tf or regimen or self.learned) else None)
         _, _, d = ScoringStrategy(self.cfg).analyze(df, weights=pesos)
         call_s, put_s = d.get("call_score", 0.0), d.get("put_score", 0.0)
         conf = d.get("confidence", 0.0)

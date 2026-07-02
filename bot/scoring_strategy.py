@@ -106,18 +106,24 @@ def _factor_por_regimen(regimen):
     return {}                           # mixto/None: sin ajuste
 
 
-def weights_for(tf_seconds=None, regimen=None):
+def weights_for(tf_seconds=None, regimen=None, learned=None):
     """
     Devuelve los pesos AJUSTADOS para una temporalidad y un régimen concretos.
     Combina (multiplica) los factores de tiempo y de régimen sobre BASE_WEIGHTS.
     EL PORQUÉ: un mismo indicador no vale lo mismo en 15s que en 30m, ni en
     tendencia que en rango. Así la "configuración por tiempo" deja de ser fija.
+
+    learned: dict opcional {indicador: multiplicador} APRENDIDO del historial del
+    activo (bot/weight_learning). Sube el peso de los indicadores que más aciertan
+    en ESE activo y baja el de los que fallan. Se aplica encima de tiempo/régimen.
     """
     ft = _factor_por_tiempo(tf_seconds)
     fr = _factor_por_regimen(regimen)
+    lw = learned or {}
     out = {}
     for name, base in BASE_WEIGHTS.items():
-        out[name] = base * ft.get(name, 1.0) * fr.get(name, 1.0)
+        out[name] = (base * ft.get(name, 1.0) * fr.get(name, 1.0)
+                     * lw.get(name, 1.0))
     return out
 
 

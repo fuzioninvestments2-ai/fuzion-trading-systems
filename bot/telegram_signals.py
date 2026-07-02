@@ -184,6 +184,15 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks):
     else:
         aprendido = ""
 
+    # Indicadores que el bot ha APRENDIDO a valorar más en este activo.
+    _NOM = {"rsi": "RSI", "macd": "MACD", "bollinger": "Bollinger",
+            "moving_averages": "Medias", "stochastic": "Estocástico",
+            "donchian": "Donchian", "vwap": "VWAP", "patterns": "Patrones"}
+    pesos_top = result.get("pesos_top")
+    if pesos_top:
+        detalle = ", ".join(f"{_NOM.get(n, n)} {hr:.0%}" for n, hr in pesos_top)
+        aprendido += f"\n🧠 Mejores indicadores aquí: {detalle}"
+
     # Alerta anti-manipulación (si el mercado se comportó raro).
     manip = result.get("manipulacion")
     alerta = (f"\n🛡️ *ALERTA:* mercado raro ({', '.join(manip)}) → mejor NO operar"
