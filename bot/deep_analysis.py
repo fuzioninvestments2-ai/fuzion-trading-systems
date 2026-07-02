@@ -103,20 +103,27 @@ class DeepAnalyzer:
         return out
 
     def _opinar_df(self, df):
-        """Un 'analista' opina sobre un DataFrame de velas ya construido."""
+        """
+        Un 'analista' opina sobre un DataFrame de velas. SIEMPRE calcula la
+        inclinación (lean) aunque sea débil; marca aparte si está CONFIRMADA
+        (confianza >= umbral). Así nunca perdemos la dirección.
+        """
         velas = 0 if df is None else len(df)
         if df is None or velas < self.min_candles:
-            return {"dir": "NEUTRAL", "conf": 0.0, "velas": velas, "votes": {}}
+            return {"dir": "NEUTRAL", "conf": 0.0, "velas": velas,
+                    "votes": {}, "confirmado": False, "datos": False}
         _, _, d = ScoringStrategy(self.cfg).analyze(df)
         call_s, put_s = d.get("call_score", 0.0), d.get("put_score", 0.0)
         conf = d.get("confidence", 0.0)
-        # Solo opina dirección si supera el umbral aprendido; si no, NEUTRAL.
-        if conf < self.min_conf:
-            direction = "NEUTRAL"
+        if call_s > put_s:
+            direction = CALL
+        elif put_s > call_s:
+            direction = PUT
         else:
-            direction = CALL if call_s > put_s else PUT if put_s > call_s else "NEUTRAL"
+            direction = "NEUTRAL"
         return {"dir": direction, "conf": round(conf, 3), "velas": velas,
-                "votes": d.get("votes", {})}
+                "votes": d.get("votes", {}),
+                "confirmado": conf >= self.min_conf, "datos": True}
 
     def _opinar_temporalidad(self, tf_seconds, ticks_suaves):
         """Construye las velas de SU tiempo desde ticks y opina."""
@@ -127,45 +134,70 @@ class DeepAnalyzer:
 
     def _combinar(self, por_tiempo):
         """
-        La ECUACIÓN: combina toda la escalera de tiempos y calcula una métrica
-        CLARA de 0 a 100%: la ALINEACIÓN = % de tiempos que coinciden en la
-        dirección. Bandas: >=75% OPERAR, >=60% OPCIONAL, si no NO OPERAR.
+        La ECUACIÓN. Métrica CLARA (0-100%): ALINEACIÓN = % de tiempos que
+        coinciden. Bandas: >=75% OPERAR, >=60% OPCIONAL, si no NO OPERAR.
+        SIEMPRE devuelve una lectura (nunca "0/0 sin datos" si hay movimiento):
+        confirmada (fuerte), inclinación débil, o mercado plano.
         """
-        ups = [tf for tf, v in por_tiempo.items() if v["dir"] == CALL]
-        downs = [tf for tf, v in por_tiempo.items() if v["dir"] == PUT]
-        opinan = len(ups) + len(downs)
         base = {"por_tiempo": por_tiempo}
+        con_datos = {tf: v for tf, v in por_tiempo.items() if v.get("datos")}
 
-        if opinan == 0:
-            base.update(veredicto="🚫 NO OPERAR", direccion="⏸️ sin datos",
+        if not con_datos:
+            base.update(veredicto="🚫 NO OPERAR", direccion="⏸️ sin velas",
                         fuerza=0.0, coinciden="0/0",
-                        explicacion="Aún no hay suficientes datos para leer.")
+                        explicacion="Aún no hay suficientes velas. Deja el bot "
+                                    "leyendo este activo un rato y reintenta.")
             return base
 
-        u, dn = len(ups), len(downs)
-        if u >= dn:
-            side, tfs, win = CALL, ups, u
-        else:
-            side, tfs, win = PUT, downs, dn
-        lose = opinan - win
-        alignment = win / opinan          # 0..1 -> métrica clara
+        # Inclinación cruda (aunque débil) y confirmada (supera umbral).
+        ups_l = [tf for tf, v in con_datos.items() if v["dir"] == CALL]
+        downs_l = [tf for tf, v in con_datos.items() if v["dir"] == PUT]
+        ups_c = [tf for tf in ups_l if con_datos[tf]["confirmado"]]
+        downs_c = [tf for tf in downs_l if con_datos[tf]["confirmado"]]
 
-        if lose == 0 and win >= 3 and alignment >= 0.75:
-            veredicto = "✅ OPERAR"
-        elif lose <= 1 and alignment >= 0.60 and win >= 2:
-            veredicto = "🟡 OPCIONAL"
-        else:
-            base.update(veredicto="🚫 NO OPERAR", direccion="⚠️ sin alineación",
-                        fuerza=round(alignment, 3), coinciden=f"{win}/{opinan}",
-                        explicacion="Los tiempos no están suficientemente "
-                                    "alineados. Mejor esperar.")
+        if not ups_l and not downs_l:
+            base.update(veredicto="🚫 NO OPERAR", direccion="😴 mercado plano",
+                        fuerza=0.0, coinciden="0/0",
+                        explicacion="Este activo está muy plano ahora (sin "
+                                    "movimiento claro). Prueba otro más activo.")
             return base
 
-        flecha = "⬆️ UP (CALL)" if side == CALL else "⬇️ DOWN (PUT)"
-        base.update(veredicto=veredicto, direccion=flecha,
+        opinan_c = len(ups_c) + len(downs_c)
+
+        # CASO 1: hay suficientes tiempos CONFIRMADOS -> señal de verdad.
+        if opinan_c >= 2:
+            if len(ups_c) >= len(downs_c):
+                side, tfs, win = CALL, ups_c, len(ups_c)
+            else:
+                side, tfs, win = PUT, downs_c, len(downs_c)
+            lose = opinan_c - win
+            alignment = win / opinan_c
+            if lose == 0 and win >= 3 and alignment >= 0.75:
+                veredicto = "✅ OPERAR"
+            elif lose <= 1 and alignment >= 0.60:
+                veredicto = "🟡 OPCIONAL"
+            else:
+                veredicto = "🚫 NO OPERAR"
+            flecha = "⬆️ UP (CALL)" if side == CALL else "⬇️ DOWN (PUT)"
+            base.update(veredicto=veredicto, direccion=flecha,
+                        fuerza=round(alignment, 3),
+                        coinciden=f"{win}/{opinan_c} tiempos",
+                        explicacion=_explicar(por_tiempo, side))
+            return base
+
+        # CASO 2: hay inclinación pero DÉBIL (no confirmada) -> mostrarla, no operar.
+        u, dn = len(ups_l), len(downs_l)
+        side = CALL if u >= dn else PUT
+        win = max(u, dn)
+        alignment = win / (u + dn)
+        flecha = "⬆️ UP" if side == CALL else "⬇️ DOWN"
+        hacia = "al alza" if side == CALL else "a la baja"
+        base.update(veredicto="🚫 NO OPERAR", direccion=f"{flecha} (débil)",
                     fuerza=round(alignment, 3),
-                    coinciden=f"{win}/{opinan} tiempos",
-                    explicacion=_explicar(por_tiempo, side))
+                    coinciden=f"{win}/{u + dn} débiles",
+                    explicacion=f"Ligera inclinación {hacia}, pero DÉBIL "
+                                f"(sin confirmación). Mejor esperar a que se "
+                                f"fortalezca.")
         return base
 
     def analyze(self, ticks):

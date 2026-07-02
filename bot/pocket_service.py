@@ -145,7 +145,7 @@ class PocketService:
         # CALIBRACIÓN que aprende: buscamos en el historial de ESTE activo el
         # umbral que mejor habría funcionado, y lo usamos. Se cachea y se
         # recalcula cuando hay ~30 velas nuevas (entrenamiento continuo).
-        min_conf, win_rate = 0.25, None
+        min_conf, win_rate = 0.18, None
         m1_cal = self.repo.get_recent(asset_code, "M1", 600)
         if m1_cal is not None and len(m1_cal) >= 60:
             cache = self._calib.get(asset_code)
@@ -185,6 +185,20 @@ class PocketService:
         resultado["umbral"] = min_conf
         if win_rate is not None:
             resultado["win_rate_hist"] = win_rate
+
+        # DETECTOR DE MERCADO PLANO: si el precio casi no se mueve, cualquier
+        # "señal" es ruido -> avisamos claro para que el usuario elija otro activo.
+        precios_v = [p for _, p in ticks[-600:]]
+        if precios_v:
+            media = sum(precios_v) / len(precios_v)
+            rango_pct = (max(precios_v) - min(precios_v)) / media if media else 0
+            if rango_pct < 0.0004:               # < 0.04% de rango = casi plano
+                resultado["veredicto"] = "🚫 NO OPERAR"
+                resultado["direccion"] = "😴 mercado plano"
+                resultado["explicacion"] = ("Este activo casi no se mueve ahora; "
+                                            "cualquier señal sería ruido. Elige "
+                                            "un activo más activo.")
+                resultado["plano"] = True
 
         # BARRERA ANTI-MANIPULACIÓN: si el mercado se comporta raro (spike,
         # congelado, estallido), forzamos NO OPERAR sin importar la señal.
