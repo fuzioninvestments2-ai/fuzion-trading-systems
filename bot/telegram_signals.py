@@ -306,10 +306,14 @@ def run():
     collector = None
     if ssid:
         from bot.pocket_service import PocketService
-        from bot.collector import Collector
         service = PocketService(ssid, demo=True)
-        # Colector 24/7 que comparte el mismo historial (aprendizaje continuo).
-        collector = Collector(ssid, service.repo, demo=True)
+        # Colector 24/7: usa una SEGUNDA conexión con el mismo SSID. Pocket Option
+        # a veces no permite dos conexiones a la vez y provoca desconexiones. Por
+        # eso viene DESACTIVADO por defecto (más estable con una sola conexión).
+        # Para activarlo: crea en el .env la línea  ENABLE_COLLECTOR=1
+        if os.getenv("ENABLE_COLLECTOR", "").strip() in ("1", "true", "yes"):
+            from bot.collector import Collector
+            collector = Collector(ssid, service.repo, demo=True)
 
     async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         modo = "PRECIOS REALES ✅" if service else "datos simulados (sin SSID)"
@@ -450,7 +454,14 @@ def run():
 
     modo = "PRECIOS REALES" if service else "SIMULADO (sin ssid.txt)"
     print(f"🤖 Bot de SEÑALES en marcha [{modo}]. Abre tu bot y pulsa /start.")
-    app.run_polling()
+    print("   (Para apagarlo: pulsa Ctrl + C)")
+    try:
+        app.run_polling()
+    except KeyboardInterrupt:
+        # Apagado LIMPIO al pulsar Ctrl + C (sin traceback que asuste).
+        pass
+    finally:
+        print("\n🛑 Bot detenido. ¡Hasta la próxima!")
 
 
 if __name__ == "__main__":
