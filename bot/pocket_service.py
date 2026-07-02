@@ -275,8 +275,22 @@ class PocketService:
         if learned_source:
             resultado["pesos_fuente"] = learned_source   # "real" o "backtest"
 
-        # GRÁFICO: velas M1 recientes para dibujar en Telegram.
+        # GRÁFICO: velas M1 recientes para dibujar en Telegram. Añadimos la vela
+        # EN FORMACIÓN (la del minuto en curso) que aún no está guardada en el
+        # historial, para que el gráfico NO vaya una vela atrás respecto a la
+        # lectura en vivo (era la "vela de menos" que se notaba).
         chart_df = self.repo.get_recent(asset_code, "M1", 45)
+        forming = self._builders.get(asset_code)
+        forming = forming.forming_candle() if forming is not None else None
+        if forming is not None and chart_df is not None:
+            ult_ts = (int(chart_df["timestamp"].iloc[-1])
+                      if len(chart_df) else None)
+            # Solo la añadimos si es MÁS reciente que la última cerrada (evita
+            # duplicar el mismo minuto).
+            if ult_ts is None or int(forming["timestamp"]) > ult_ts:
+                import pandas as _pd
+                chart_df = _pd.concat(
+                    [chart_df, _pd.DataFrame([forming])], ignore_index=True)
         resultado["chart"] = chart_df
 
         # VWAP: nivel de referencia (precio "justo") ponderado por actividad.

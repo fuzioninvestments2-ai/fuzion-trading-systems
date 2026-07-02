@@ -91,6 +91,14 @@ class CandleBuilder:
         """Lista de velas ya cerradas (sin la que está en formación)."""
         return list(self._candles)
 
+    def forming_candle(self):
+        """
+        Copia de la vela EN FORMACIÓN (la del intervalo actual, aún sin cerrar),
+        o None si no hay ninguna. Útil para que el gráfico muestre la vela viva y
+        no vaya "una vela atrás" respecto al análisis en tiempo real.
+        """
+        return dict(self._current) if self._current is not None else None
+
     def to_dataframe(self, include_forming=False):
         """
         Devuelve las velas como DataFrame (columns: timestamp, open, high, low,

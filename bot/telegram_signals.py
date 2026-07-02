@@ -337,7 +337,9 @@ def run():
                                     service.balance, n)
                 rows = [[("🔁 Analizar de nuevo", "analyze")],
                         [("📊 Otro activo", "back:market"), ("🏠 Menú", "back:main")]]
-                # 📈 GRÁFICO: dibujamos las velas y lo enviamos como foto.
+                # Dibujamos el gráfico (si hay velas) y enviamos TODO junto:
+                # gráfico + análisis en un SOLO mensaje (foto con pie de foto).
+                path = None
                 chart_df = result.get("chart")
                 if chart_df is not None and len(chart_df) >= 5:
                     try:
@@ -346,15 +348,53 @@ def run():
                         draw_candles(chart_df, asset_display, tf, path,
                                      direccion=result.get("direccion", ""),
                                      levels=result.get("levels"))
-                        with open(path, "rb") as fimg:
-                            await query.message.reply_photo(
-                                photo=fimg, caption=f"📈 {asset_display}  {tf}")
                     except Exception:
-                        pass          # si falla el gráfico, seguimos con el texto
+                        path = None
+                await _send_signal(query, text, rows, path)
+                return
             await _safe_edit(query, text, rows)
             return
 
         text, rows = menu.handle_callback(uid, query.data)
+        await _safe_edit(query, text, rows)
+
+    async def _send_signal(query, text, rows, path):
+        """
+        Envía la señal UNIENDO gráfico + análisis en un solo mensaje (foto con el
+        texto de pie de foto). Con reintentos robustos:
+          1) foto + pie con formato Markdown,
+          2) si el formato falla -> foto + pie en texto plano,
+          3) si el pie es muy largo (>1024) o no hay gráfico -> foto aparte + el
+             texto como mensaje editado (para no perder la lectura).
+        Al enviar el mensaje unido, borra el "🧘 Leyendo…" para no dejarlo colgado.
+        """
+        from telegram.error import BadRequest
+        kb = _keyboard(rows)
+
+        async def _foto(caption, markdown):
+            with open(path, "rb") as fimg:
+                await query.message.reply_photo(
+                    photo=fimg, caption=caption, reply_markup=kb,
+                    parse_mode="Markdown" if markdown else None)
+
+        if path:
+            for caption, md in ((text, True),
+                                (text.replace("*", "").replace("`", "")
+                                     .replace("_", ""), False)):
+                try:
+                    await _foto(caption, md)
+                    try:
+                        await query.message.delete()   # quita el "Leyendo…"
+                    except Exception:
+                        pass
+                    return
+                except BadRequest:
+                    continue        # formato roto o pie muy largo -> siguiente intento
+            # No se pudo unir (p.ej. pie > 1024): foto aparte + texto por separado.
+            try:
+                await _foto("📈", False)
+            except Exception:
+                pass
         await _safe_edit(query, text, rows)
 
     async def _safe_edit(query, text, rows):
