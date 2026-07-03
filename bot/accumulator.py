@@ -35,6 +35,26 @@ LADDER = [5, 10, 15, 30, 60, 120, 180, 240, 300, 600, 900, 1800,
 SEG_POR_ACTIVO = 30
 
 
+def _clave(period):
+    """Clave en la BD: 60 -> 'M1'; el resto -> 'tf<segundos>' (como el bot)."""
+    return "M1" if period == 60 else f"tf{period}"
+
+
+def _cobertura(repo, asset):
+    """
+    Suma de velas en TODA la escalera 5s..1d y cuántas temporalidades tienen
+    datos. Sirve para mostrar que se acumula todo el rango, no solo M1.
+    """
+    total = 0
+    tiempos = 0
+    for p in LADDER:
+        c = repo.count(asset, _clave(p))
+        total += c
+        if c > 0:
+            tiempos += 1
+    return total, tiempos
+
+
 def _git_push(logger):
     """
     Sube datasets/ a la nube. Defensivo: si git falla (sin credenciales, sin
@@ -77,9 +97,11 @@ async def _accumulate_round(svc, assets, seg_por_activo=SEG_POR_ACTIVO,
                 for _ in range(int(seg_por_activo)):
                     await asyncio.sleep(1)
             if verbose:
-                # Señal de vida: activo, cuántos lleva la ronda y su total M1.
-                print(f"   · [{idx}/{n}] {asset}: "
-                      f"{svc.repo.count(asset, 'M1')} velas M1", flush=True)
+                # Señal de vida: total en TODA la escalera 5s..1d y cuántos
+                # tiempos tienen datos (para ver que NO es solo M1).
+                total, tiempos = _cobertura(svc.repo, asset)
+                print(f"   · [{idx}/{n}] {asset}: {total} velas en {tiempos}/"
+                      f"{len(LADDER)} tiempos (5s..1d)", flush=True)
         except Exception as exc:
             svc.log.warning("acumulador: salto %s (%s)", asset, exc)
             await asyncio.sleep(1)

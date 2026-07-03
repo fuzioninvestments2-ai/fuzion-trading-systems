@@ -24,11 +24,19 @@ echo.
 echo [%date% %time%] Actualizando codigo...
 git pull --no-edit
 
-echo [%date% %time%] Arrancando acumulador (todos los majors, sube a la nube)...
+echo.
+echo [%date% %time%] FASE 1: descarga PROFUNDA 5s..1d de TODOS los OTC (de 5 en 5).
+echo   Reanudable: salta los que ya esten completos. Sube a la nube al final.
+python -m bot.download_history --all --batch 5
+python -m bot.dataset_export export
+git add datasets/ & git commit -m "datos: descarga profunda 5s-1d" & git push
+
+echo.
+echo [%date% %time%] FASE 2: acumular hacia adelante y subir cada ronda...
 python -m bot.accumulator --push
 
 echo.
-echo [%date% %time%] El acumulador se detuvo. Reinicio en 30s...
+echo [%date% %time%] El robot se detuvo. Reinicio en 30s...
 echo   (Ctrl+C ahora para salir del todo.)
 timeout /t 30 /nobreak >nul
 goto loop
