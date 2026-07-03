@@ -61,21 +61,24 @@ async def _descargar_uno(svc, asset, espera=1.3, pausa=3):
             print(f"   {label}: error ({e})", flush=True)
 
 
-async def _run(assets, do_all=False, batch=5):
+async def _run(assets, do_all=False, batch=5, perfil="OTC"):
     from bot.pocket_service import PocketService
     from bot.pocket_probe import _load_ssid
     from bot.dataset_export import export_db
+    from bot.profiles import get_profile
 
-    ssid = _load_ssid()
+    p = get_profile(perfil)                    # OTC o REAL: BD, SSID y carpeta propios
+    ssid = _load_ssid(p.nombre)                # usa ssid_real.txt / ssid_otc.txt / comun
     if not ssid:
-        print("Falta ssid.txt en la raíz del proyecto.", flush=True)
+        print(f"Falta el SSID del bot {p.titulo} "
+              f"(ssid_{p.nombre.lower()}.txt o ssid.txt).", flush=True)
         return
 
-    svc = PocketService(ssid, demo=True)
+    svc = PocketService(ssid, demo=True, db_path=p.db_path)
     svc.connected = True
     svc._conn_lock = asyncio.Lock()
     # Arranca SOLO la conexión (no el colector), en segundo plano.
-    arranque = (assets[0] if assets else "EURUSD_otc")
+    arranque = (assets[0] if assets else p.activos[0])
     asyncio.create_task(svc.client.run(asset=arranque, period=60))
     print("Conectando a Pocket Option...", flush=True)
     # Esperar la conexión REAL (no un sleep a ciegas) + un momento para autenticar.
@@ -84,18 +87,21 @@ async def _run(assets, do_all=False, batch=5):
         return
     await asyncio.sleep(4)                      # dar tiempo a autenticar + updateAssets
 
-    # --all: descubrir TODOS los OTC de la lista que envía PO (updateAssets).
+    # --all: en OTC descubre TODOS los _otc que envía PO; en REAL usa los 22 pares
+    # del perfil (el mercado real es solo monedas, lista fija).
     if do_all:
-        otc = sorted(s for s in svc._payouts if isinstance(s, str)
-                     and s.endswith("_otc"))
-        if otc:
-            assets = otc
-            print(f"Descubiertos {len(assets)} activos OTC. Bajando de "
+        if p.es_otc:
+            descubiertos = sorted(s for s in svc._payouts if isinstance(s, str)
+                                  and s.endswith("_otc"))
+        else:
+            descubiertos = list(p.activos)
+        if descubiertos:
+            assets = descubiertos
+            print(f"[{p.titulo}] {len(assets)} activos. Bajando de "
                   f"{batch} en {batch}.", flush=True)
         else:
-            print("No llegó la lista de activos; uso los majors por defecto.",
-                  flush=True)
-            assets = list(OTC_MAJORS)
+            print("No llegó la lista de activos; uso los del perfil.", flush=True)
+            assets = list(p.activos)
 
     lotes = list(_lotes(assets, batch))
     for li, lote in enumerate(lotes, 1):
@@ -107,9 +113,8 @@ async def _run(assets, do_all=False, batch=5):
                 continue
             print(f"[{asset}] ...", flush=True)
             await _descargar_uno(svc, asset)
-        from bot.profiles import OTC_PROFILE
-        n = export_db(svc.repo, out_dir=OTC_PROFILE.datasets_dir)   # a datasets/otc
-        print(f"--- Lote {li} listo. Exportados {n} archivos a datasets/otc ---",
+        n = export_db(svc.repo, out_dir=p.datasets_dir)   # a datasets/otc o /real
+        print(f"--- Lote {li} listo. Exportados {n} archivos a {p.datasets_dir} ---",
               flush=True)
 
     print(f"\nDescarga completa ({len(assets)} activos). "
@@ -124,6 +129,7 @@ def _main():
     import sys
     argv = sys.argv[1:]
     do_all = "--all" in argv
+    perfil = "REAL" if "--real" in argv else "OTC"   # --real: baja los pares reales
     batch = 5
     if "--batch" in argv:
         try:
@@ -131,8 +137,10 @@ def _main():
         except (IndexError, ValueError):
             batch = 5
     assets = [a for a in argv if not a.startswith("--") and not a.isdigit()]
-    assets = assets or OTC_MAJORS
-    asyncio.run(_run(assets, do_all=do_all, batch=batch))
+    if not assets:
+        from bot.profiles import get_profile
+        assets = list(get_profile(perfil).activos)
+    asyncio.run(_run(assets, do_all=do_all, batch=batch, perfil=perfil))
 
 
 if __name__ == "__main__":
