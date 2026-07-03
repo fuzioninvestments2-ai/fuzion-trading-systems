@@ -48,7 +48,8 @@ _NO_MONEDAS = ("BTC", "ETH", "LTC", "XRP", "DOGE", "XAU", "XAG", "GOLD", "OIL")
 @dataclass(frozen=True)
 class Profile:
     """Configuración de UN bot. `frozen` = inmutable (no se toca en caliente)."""
-    nombre: str                     # "OTC" | "REAL"
+    nombre: str                     # "OTC" | "REAL" (clave interna)
+    titulo: str                     # nombre VISIBLE del bot (Telegram/logs)
     es_otc: bool                    # los activos llevan sufijo _otc
     ladder: Tuple[int, ...]         # escalera de tiempos que lee el motor
     respeta_horario: bool           # True -> no opera fuera de sesión (real)
@@ -88,13 +89,13 @@ def _db(nombre):
 
 
 OTC_PROFILE = Profile(
-    nombre="OTC", es_otc=True, ladder=LADDER_OTC,
+    nombre="OTC", titulo="Fuzion OTC", es_otc=True, ladder=LADDER_OTC,
     respeta_horario=False, filtro_volatilidad=False,
     fuentes_datos=("pocket_option",),
     activos=tuple(OTC_MAJORS), db_path=_db("OTC"))
 
 REAL_PROFILE = Profile(
-    nombre="REAL", es_otc=False, ladder=LADDER_REAL,
+    nombre="REAL", titulo="Fuzion FX", es_otc=False, ladder=LADDER_REAL,
     respeta_horario=True, filtro_volatilidad=True,
     fuentes_datos=("pocket_option", "tradingview", "yfinance"),
     activos=tuple(REAL_MAJORS), db_path=_db("REAL"))

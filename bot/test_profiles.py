@@ -46,7 +46,7 @@ def test_real_solo_monedas_sin_cripto():
         assert not any(x in a.upper() for x in prohibidos), a
     # Y el perfil debe RECHAZAR crear un REAL con cripto.
     try:
-        Profile(nombre="REAL", es_otc=False, ladder=LADDER_REAL,
+        Profile(nombre="REAL", titulo="Fuzion FX", es_otc=False, ladder=LADDER_REAL,
                 respeta_horario=True, filtro_volatilidad=True,
                 fuentes_datos=("yfinance",), activos=("BTCUSD",),
                 db_path=":memory:")
@@ -54,6 +54,12 @@ def test_real_solo_monedas_sin_cripto():
     except ValueError:
         pass
     print("OK bot REAL es SOLO monedas (cripto/metales rechazados)")
+
+
+def test_nombres_visibles():
+    assert OTC_PROFILE.titulo == "Fuzion OTC"
+    assert REAL_PROFILE.titulo == "Fuzion FX"
+    print("OK cada bot tiene su nombre visible (Fuzion OTC / Fuzion FX)")
 
 
 def test_bases_de_datos_separadas():
@@ -67,7 +73,7 @@ def test_bases_de_datos_separadas():
 def test_perfil_otc_sin_sub_minuto_falla():
     # Un OTC sin sub-minuto perdería su ventaja: debe rechazarse.
     try:
-        Profile(nombre="OTC", es_otc=True, ladder=(60, 300),
+        Profile(nombre="OTC", titulo="Fuzion OTC", es_otc=True, ladder=(60, 300),
                 respeta_horario=False, filtro_volatilidad=False,
                 fuentes_datos=("pocket_option",), activos=("EURUSD_otc",),
                 db_path=":memory:")
@@ -82,6 +88,7 @@ if __name__ == "__main__":
     test_otc_tiene_sub_minuto_y_es_24_7()
     test_real_sin_sub_minuto_con_horario_y_fuentes()
     test_real_solo_monedas_sin_cripto()
+    test_nombres_visibles()
     test_bases_de_datos_separadas()
     test_perfil_otc_sin_sub_minuto_falla()
     print("\nTODOS OK — perfiles OTC/REAL (dos bots separados)")
