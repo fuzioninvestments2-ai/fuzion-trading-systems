@@ -8,3 +8,4 @@ websockets>=12.0            # conexión en tiempo real a Pocket Option
 python-telegram-bot>=22.0  # bot de Telegram con botones
 matplotlib>=3.7.0          # gráfico de velas que se envía por Telegram
 python-dotenv>=1.0.0       # leer el token desde .env
+yfinance>=0.2.0            # historial REAL (solo activos reales, no OTC)
