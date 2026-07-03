@@ -102,6 +102,26 @@ class PocketOptionClient:
         await ws.send(f'42["subfor","{asset}"]')
         await ws.send(f'42["changeSymbol",{{"asset":"{asset}","period":{period}}}]')
 
+    async def request_history(self, asset, periods):
+        """
+        Pide a Pocket Option el historial a VARIOS periodos para dar PROFUNDIDAD a
+        los tiempos largos (así los 5m/15m/30m no salen "pocos datos"). Reutiliza
+        el mismo mensaje `changeSymbol` que ya usamos (seguro). Termina volviendo
+        a 60s para seguir recibiendo los ticks M1 en vivo. Defensivo: si algo
+        falla, no rompe la conexión (la reconexión se encarga).
+        """
+        ws = self._ws
+        if ws is None:
+            return
+        for p in list(periods) + [60]:
+            try:
+                await ws.send(
+                    f'42["changeSymbol",{{"asset":"{asset}","period":{p}}}]')
+                await asyncio.sleep(0.35)
+            except Exception:
+                return
+        self._period = 60
+
     async def _listen(self, ws):
         async for raw in ws:
             if isinstance(raw, bytes):

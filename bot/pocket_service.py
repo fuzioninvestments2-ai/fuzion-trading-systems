@@ -97,22 +97,35 @@ class PocketService:
             return
         asset = payload.get("asset")
         hist = payload.get("history", [])
-        if not asset:
+        if not asset or not hist:
             return
-        # Reconstruimos las velas + el buffer de ticks desde el historial recibido.
-        cb = CandleBuilder(self.period)
-        buf = deque(maxlen=10000)
+        # Periodo del historial recibido (60=M1, 300=M5, ...). Construimos las
+        # velas a ESE periodo para dar profundidad a esa temporalidad.
+        try:
+            period = int(payload.get("period", 60) or 60)
+        except (TypeError, ValueError):
+            period = 60
+        cb = CandleBuilder(period)
+        ticks = []
         for row in hist:
             try:
                 t, p = float(row[0]), float(row[1])
             except (IndexError, TypeError, ValueError):
                 continue
             cb.add_tick(p, t * 1000.0)
-            buf.append((t, p))
-        self._builders[asset] = cb
-        self._ticks[asset] = buf
-        for c in cb.closed_candles():
-            self.repo.record_candle(asset, "M1", c)
+            ticks.append((t, p))
+        # Guardamos las velas de este periodo (period 60 -> "M1"; otros -> "tf<s>").
+        key = "M1" if period == 60 else f"tf{period}"
+        velas = cb.closed_candles()
+        if velas:
+            self.repo.record_many(asset, key, velas)
+        # Sembramos el buffer/builder en vivo SOLO si aún no hay nada: NO pisamos
+        # lo que _on_tick ya acumuló (antes se borraba en cada cambio de activo).
+        if period == 60:
+            if not self._ticks.get(asset):
+                self._ticks[asset] = deque(ticks, maxlen=10000)
+            if asset not in self._builders:
+                self._builders[asset] = cb
 
     def _on_balance(self, payload):
         if isinstance(payload, dict):
@@ -213,6 +226,15 @@ class PocketService:
                 await self.client.set_asset(asset_code, 60)
             except Exception:
                 self.log.exception("No se pudo cambiar de activo")
+            # Si el activo tiene POCO historial, pedimos a PO más profundidad a
+            # varios periodos (5m/15m/30m) para que los tiempos largos no salgan
+            # "pocos datos". Solo cuando hace falta (no molesta a los ya cargados).
+            try:
+                if self.repo.count(asset_code, "M1") < 120:
+                    await self.client.request_history(asset_code,
+                                                      (300, 900, 1800))
+            except Exception:
+                self.log.exception("No se pudo pedir historial profundo")
             await asyncio.sleep(self.wait_seconds)
             seg = self.seconds_to_next_candle(asset_code, tf_seconds)
             ticks = list(self._ticks.get(asset_code, []))
@@ -295,15 +317,21 @@ class PocketService:
                 for t, p in suaves:
                     cb.add_tick(p, t * 1000.0)
                 frames[tf] = cb.to_dataframe(include_forming=True)
-            else:
-                agg = self._aggregate_m1(asset_code, tf)
-                if agg is None or len(agg) < 6:
-                    # Aún no hay historial suficiente -> construir desde ticks.
-                    cb = CandleBuilder(tf)
-                    for t, p in suaves:
-                        cb.add_tick(p, t * 1000.0)
-                    agg = cb.to_dataframe(include_forming=True)
-                frames[tf] = agg
+                continue
+            # 1) Velas REALES de PO a ese periodo (si las pedimos y llegaron).
+            stored = self.repo.get_recent(asset_code, f"tf{tf}", 300)
+            if stored is not None and len(stored) >= 6:
+                frames[tf] = stored
+                continue
+            # 2) Si no, agregamos desde el historial M1 acumulado.
+            agg = self._aggregate_m1(asset_code, tf)
+            if agg is None or len(agg) < 6:
+                # 3) Último recurso: construir desde los ticks recientes.
+                cb = CandleBuilder(tf)
+                for t, p in suaves:
+                    cb.add_tick(p, t * 1000.0)
+                agg = cb.to_dataframe(include_forming=True)
+            frames[tf] = agg
 
         # RÉGIMEN (Oscillate/Slide) desde un tiempo medio con datos. Se calcula
         # ANTES del análisis para AJUSTAR los pesos de indicadores: en tendencia

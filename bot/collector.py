@@ -25,7 +25,8 @@ from bot.candles import CandleBuilder
 # Lista de activos ACTIVOS (majors + cruces OTC que suelen moverse) para acumular.
 WATCHLIST = ["EURUSD_otc", "GBPUSD_otc", "AUDUSD_otc", "USDJPY_otc",
              "USDCAD_otc", "USDCHF_otc", "NZDUSD_otc", "EURJPY_otc",
-             "GBPJPY_otc", "AUDCAD_otc", "EURGBP_otc", "AUDJPY_otc"]
+             "GBPJPY_otc", "AUDCAD_otc", "EURGBP_otc", "AUDJPY_otc",
+             "CHFJPY_otc", "EURCHF_otc", "CADJPY_otc", "NZDJPY_otc"]
 
 
 class Collector:
