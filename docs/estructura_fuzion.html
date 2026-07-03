@@ -163,6 +163,36 @@
     border-radius:12px;padding:16px 18px;font-size:14px;color:var(--muted);
   }
   .callout b{color:var(--ink)}
+
+  /* ---- El corazón: pipeline del motor ---- */
+  .pipe{display:flex;flex-direction:column;gap:0;counter-reset:step}
+  .pstep{
+    display:grid;grid-template-columns:44px 1fr;gap:16px;align-items:start;
+    padding:16px 0;border-bottom:1px dashed var(--line);
+  }
+  .pstep:last-child{border-bottom:none}
+  .pstep .num{
+    counter-increment:step;width:44px;height:44px;border-radius:12px;
+    background:var(--core-soft);color:var(--core);font-weight:800;font-size:17px;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .pstep h4{margin:0 0 3px;font-size:16px;font-weight:800;letter-spacing:-.01em}
+  .pstep .mech{margin:0 0 6px;font-size:14px;color:var(--ink)}
+  .pstep .why{margin:0;font-size:13px;color:var(--muted)}
+  .pstep .why b{color:var(--ink)}
+  .pstep .file{
+    display:inline-block;margin-top:8px;font-size:11.5px;color:var(--faint);
+    background:var(--panel-2);border:1px solid var(--line);border-radius:6px;
+    padding:2px 8px;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  .pstep.protect .num{background:var(--real-soft);color:var(--real)}
+  .pstep.verdict .num{background:var(--otc-soft);color:var(--otc)}
+
+  .gloss{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media (max-width:720px){.gloss{grid-template-columns:1fr}}
+  .term{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .term b{display:block;font-size:14px;margin-bottom:3px}
+  .term span{font-size:13px;color:var(--muted)}
   footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);
     font-size:12.5px;color:var(--faint)}
 </style>
@@ -264,9 +294,100 @@
     </div>
   </section>
 
+  <!-- ============ EL CORAZON ============ -->
+  <section>
+    <div class="sec-head"><span class="n">02</span><h2>El corazón — cómo piensa el motor</h2></div>
+    <p class="lede" style="margin-bottom:22px">El mismo motor para los dos bots. Lee una vela a una vela, en cada paso hay una razón de trader. A la derecha, el archivo del código que lo hace (para que aprendas dónde vive cada cosa).</p>
+
+    <div class="card core" style="padding:6px 20px">
+      <div class="pipe">
+        <div class="pstep">
+          <div class="num">1</div>
+          <div>
+            <h4>Reúne las velas de todos los tiempos</h4>
+            <p class="mech">De 5s a 1d, en vivo y del historial guardado.</p>
+            <p class="why">Sin datos limpios no hay lectura. Cuantos más tiempos, más completa la foto del mercado.</p>
+            <span class="file">candles.py · history.py</span>
+          </div>
+        </div>
+        <div class="pstep">
+          <div class="num">2</div>
+          <div>
+            <h4>Filtra el ruido</h4>
+            <p class="mech">Suaviza los micro-saltos con una media exponencial.</p>
+            <p class="why">Un tick suelto puede ser un salto falso. Suavizando, los indicadores leen la <b>tendencia real</b>, no cada temblor.</p>
+            <span class="file">deep_analysis.py</span>
+          </div>
+        </div>
+        <div class="pstep">
+          <div class="num">3</div>
+          <div>
+            <h4>8 indicadores votan en cada tiempo</h4>
+            <p class="mech">RSI · MACD · Bollinger · Medias · Estocástico · Donchian · VWAP · Patrones. Cada uno dice sube / baja / neutral.</p>
+            <p class="why">Ninguno decide solo. Es un <b>panel de opiniones</b>, como varios analistas mirando el mismo gráfico.</p>
+            <span class="file">scoring_strategy.py</span>
+          </div>
+        </div>
+        <div class="pstep">
+          <div class="num">4</div>
+          <div>
+            <h4>Pondera los votos</h4>
+            <p class="mech">No todos pesan igual: según el tiempo, el régimen (ADX: rango o tendencia) y lo que <b>históricamente acierta</b> en ese activo.</p>
+            <p class="why">En tendencia mandan MACD y medias; en rango mandan los rebotes techo/piso. El bot aprende y sube el peso de lo que funciona.</p>
+            <span class="file">scoring_strategy.py · weight_learning.py</span>
+          </div>
+        </div>
+        <div class="pstep">
+          <div class="num">5</div>
+          <div>
+            <h4>Cada tiempo da su opinión</h4>
+            <p class="mech">Dirección (sube/baja) + confianza (0–100%).</p>
+            <p class="why">El umbral de confianza se <b>calibra</b> con el historial: cada activo tiene su punto justo.</p>
+            <span class="file">deep_analysis.py · calibration.py</span>
+          </div>
+        </div>
+        <div class="pstep">
+          <div class="num">6</div>
+          <div>
+            <h4>Mide la ALINEACIÓN</h4>
+            <p class="mech">¿Cuántos tiempos coinciden en la misma dirección?</p>
+            <p class="why">Esa es la fuerza. Muchos tiempos coincidiendo = señal fuerte; peleados entre sí = <b>no operar</b>. Es la idea central del sistema.</p>
+            <span class="file">deep_analysis.py</span>
+          </div>
+        </div>
+        <div class="pstep protect">
+          <div class="num">7</div>
+          <div>
+            <h4>Aplica protecciones</h4>
+            <p class="mech">Tendencia mayor (no ir contra el diario) · compresión (squeeze, previo a ruptura) · <b>solo real:</b> horario + noticias de alto impacto.</p>
+            <p class="why">Aquí el bot <b>calla</b> cuando el mercado no es claro o es peligroso. La protección es tan importante como la señal.</p>
+            <span class="file">manipulation.py · market_hours.py · news_filter.py</span>
+          </div>
+        </div>
+        <div class="pstep verdict">
+          <div class="num">8</div>
+          <div>
+            <h4>Veredicto</h4>
+            <p class="mech">OPERAR · OPCIONAL · NO OPERAR, con dirección y hora exacta de entrada.</p>
+            <p class="why">Y se <b>registra</b> para, más tarde, medir si acertó (win-rate real) y aprender de verdad.</p>
+            <span class="file">telegram_signals.py · signal_log.py</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="layer-label" style="margin-top:30px">Vocabulario (para leer las señales)</p>
+    <div class="gloss">
+      <div class="term"><b>Alineación</b><span>% de tiempos que coinciden en la misma dirección. Alta = acuerdo entre plazos.</span></div>
+      <div class="term"><b>Régimen (ADX)</b><span>Si el mercado va en tendencia (slide) o en rango (oscillate). Cambia qué indicadores mandan.</span></div>
+      <div class="term"><b>Compresión (squeeze)</b><span>Las velas se estrechan: rango apretado, posible ruptura. Entrada por el tiempo corto.</span></div>
+      <div class="term"><b>Tendencia mayor</b><span>La dirección del tiempo más largo. No operar en contra de ella (alto riesgo).</span></div>
+    </div>
+  </section>
+
   <!-- ============ TABLA ============ -->
   <section>
-    <div class="sec-head"><span class="n">02</span><h2>OTC vs. real, de un vistazo</h2></div>
+    <div class="sec-head"><span class="n">03</span><h2>OTC vs. real, de un vistazo</h2></div>
     <div class="table-scroll">
       <table>
         <thead>
@@ -288,7 +409,7 @@
 
   <!-- ============ FLUJO ============ -->
   <section>
-    <div class="sec-head"><span class="n">03</span><h2>Cómo nace una señal</h2></div>
+    <div class="sec-head"><span class="n">04</span><h2>Cómo nace una señal</h2></div>
     <div class="flow">
       <div class="step"><div class="st-n">Paso 1</div><h4>Datos de todos los tiempos</h4><p>Guarda velas de 5s a 1d, en vivo y hacia atrás.</p></div>
       <div class="step"><div class="st-n">Paso 2</div><h4>Lectura envolvente</h4><p>Lee toda la escala: cuántos tiempos coinciden (alineación).</p></div>
@@ -299,7 +420,7 @@
 
   <!-- ============ LANZADORES ============ -->
   <section>
-    <div class="sec-head"><span class="n">04</span><h2>Cómo lo enciendes (doble clic)</h2></div>
+    <div class="sec-head"><span class="n">05</span><h2>Cómo lo enciendes (doble clic)</h2></div>
     <div class="launch">
       <div class="bat">
         <div class="fn"><span class="mono">INICIAR_OTC.bat</span><span class="badge otc">OTC</span></div>
@@ -323,7 +444,7 @@
 
   <!-- ============ DÍA A DÍA ============ -->
   <section>
-    <div class="sec-head"><span class="n">05</span><h2>Tu día a día</h2></div>
+    <div class="sec-head"><span class="n">06</span><h2>Tu día a día</h2></div>
     <div class="callout">
       <p style="margin:0 0 10px"><b>Fin de semana</b> → mercado real cerrado. Usas <b>Fuzion OTC</b> (24/7) y dejas corriendo <span class="mono">ROBOT_AUTO</span> y <span class="mono">ROBOT_REAL</span> (este último solo junta datos hasta que abra).</p>
       <p style="margin:0 0 10px"><b>Domingo noche</b> (~22:00 UTC) → reabre el real. <span class="mono">ROBOT_REAL</span> empieza solo a bajar 5s→1d de PO. Para señales en vivo, enciendes <span class="mono">INICIAR_REAL</span>.</p>
