@@ -93,15 +93,18 @@ def _ruta(*partes):
 
 # BD por bot. OTC conserva 'history.db' (donde ya está lo descargado, no se pierde);
 # REAL usa la suya. Datasets en carpetas separadas para que la nube no mezcle.
+# Convención de nombres (para identificar bots cuando haya muchos):
+#   Fuzion <Plataforma> <Mercado>   ej: "Fuzion POption OTC", "Fuzion POption FX".
+# POption = Pocket Option. Si entra otra plataforma, se distingue sola.
 OTC_PROFILE = Profile(
-    nombre="OTC", titulo="Fuzion OTC", es_otc=True, ladder=LADDER_OTC,
+    nombre="OTC", titulo="Fuzion POption OTC", es_otc=True, ladder=LADDER_OTC,
     respeta_horario=False, filtro_volatilidad=False,
     fuentes_datos=("pocket_option",),
     activos=tuple(OTC_MAJORS),
     db_path=_ruta("history.db"), datasets_dir=_ruta("datasets", "otc"))
 
 REAL_PROFILE = Profile(
-    nombre="REAL", titulo="Fuzion FX", es_otc=False, ladder=LADDER_REAL,
+    nombre="REAL", titulo="Fuzion POption FX", es_otc=False, ladder=LADDER_REAL,
     respeta_horario=True, filtro_volatilidad=True,
     fuentes_datos=("pocket_option", "tradingview", "yfinance"),
     activos=tuple(REAL_MAJORS),

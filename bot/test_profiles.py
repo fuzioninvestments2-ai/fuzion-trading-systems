@@ -59,9 +59,10 @@ def test_real_solo_monedas_sin_cripto():
 
 
 def test_nombres_visibles():
-    assert OTC_PROFILE.titulo == "Fuzion OTC"
-    assert REAL_PROFILE.titulo == "Fuzion FX"
-    print("OK cada bot tiene su nombre visible (Fuzion OTC / Fuzion FX)")
+    # Convención Fuzion <Plataforma> <Mercado> (identifica bots cuando hay muchos).
+    assert OTC_PROFILE.titulo == "Fuzion POption OTC"
+    assert REAL_PROFILE.titulo == "Fuzion POption FX"
+    print("OK nombres: Fuzion POption OTC / Fuzion POption FX")
 
 
 def test_bases_de_datos_separadas():

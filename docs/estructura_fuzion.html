@@ -205,8 +205,8 @@
   <p class="lede">El sistema <b>Fuzion Investments</b> son dos bots totalmente separados —su Telegram, su cuenta, su historial y su propio motor— cada uno afinado a su mercado. Este es el mapa del sistema y cómo lo enciendes.</p>
 
   <div class="legend">
-    <span class="chip"><span class="dot otc"></span> Fuzion OTC — mercado OTC 24/7</span>
-    <span class="chip"><span class="dot real"></span> Fuzion FX — mercado real (monedas)</span>
+    <span class="chip"><span class="dot otc"></span> Fuzion POption OTC — mercado OTC 24/7</span>
+    <span class="chip"><span class="dot real"></span> Fuzion POption FX — mercado real (monedas)</span>
     <span class="chip"><span class="dot core"></span> Dos motores (uno por bot)</span>
   </div>
 
@@ -217,7 +217,7 @@
     <p class="layer-label">Fuentes de datos</p>
     <div class="row sources">
       <div class="card otc">
-        <span class="tag otc">Fuzion OTC</span>
+        <span class="tag otc">Fuzion POption OTC</span>
         <h3>Pocket Option · cuenta 1</h3>
         <p class="sub">Velas sintéticas de PO, 24/7. 114 activos.</p>
         <ul class="kv">
@@ -226,7 +226,7 @@
         </ul>
       </div>
       <div class="card real">
-        <span class="tag real">Fuzion FX</span>
+        <span class="tag real">Fuzion POption FX</span>
         <h3>PO cuenta 2 · TradingView · yfinance</h3>
         <p class="sub">Precios reales. 22 pares de divisas.</p>
         <ul class="kv">
@@ -242,7 +242,7 @@
     <div class="row two">
       <div class="card otc">
         <span class="tag otc">Bot OTC</span>
-        <h3>Fuzion OTC</h3>
+        <h3>Fuzion POption OTC</h3>
         <ul class="kv">
           <li><span class="k">Telegram</span><span class="v">token propio (<code>_OTC</code>)</span></li>
           <li><span class="k">Historial</span><span class="v"><code>history.db</code></span></li>
@@ -253,7 +253,7 @@
       </div>
       <div class="card real">
         <span class="tag real">Bot real</span>
-        <h3>Fuzion FX</h3>
+        <h3>Fuzion POption FX</h3>
         <ul class="kv">
           <li><span class="k">Telegram</span><span class="v">token propio (<code>_REAL</code>)</span></li>
           <li><span class="k">Historial</span><span class="v"><code>history_real.db</code></span></li>
@@ -401,7 +401,7 @@
     <div class="table-scroll">
       <table>
         <thead>
-          <tr><th>&nbsp;</th><th class="col-otc">Fuzion OTC</th><th class="col-real">Fuzion FX (real)</th></tr>
+          <tr><th>&nbsp;</th><th class="col-otc">Fuzion POption OTC</th><th class="col-real">Fuzion POption FX (real)</th></tr>
         </thead>
         <tbody>
           <tr><td>Cuándo opera</td><td>24/7 (fines de semana también)</td><td>Lun–Vie (forex real)</td></tr>
@@ -438,7 +438,7 @@
       </div>
       <div class="bat">
         <div class="fn"><span class="mono">INICIAR_REAL.bat</span><span class="badge real">Real</span></div>
-        <p>Arranca Fuzion FX en Telegram. Úsalo cuando el mercado real esté abierto (Lun–Vie).</p>
+        <p>Arranca Fuzion POption FX en Telegram. Úsalo cuando el mercado real esté abierto (Lun–Vie).</p>
       </div>
       <div class="bat">
         <div class="fn"><span class="mono">ROBOT_AUTO.bat</span><span class="badge otc">OTC</span></div>
@@ -456,7 +456,7 @@
   <section>
     <div class="sec-head"><span class="n">06</span><h2>Tu día a día</h2></div>
     <div class="callout">
-      <p style="margin:0 0 10px"><b>Fin de semana</b> → mercado real cerrado. Usas <b>Fuzion OTC</b> (24/7) y dejas corriendo <span class="mono">ROBOT_AUTO</span> y <span class="mono">ROBOT_REAL</span> (este último solo junta datos hasta que abra).</p>
+      <p style="margin:0 0 10px"><b>Fin de semana</b> → mercado real cerrado. Usas <b>Fuzion POption OTC</b> (24/7) y dejas corriendo <span class="mono">ROBOT_AUTO</span> y <span class="mono">ROBOT_REAL</span> (este último solo junta datos hasta que abra).</p>
       <p style="margin:0 0 10px"><b>Domingo noche</b> (~22:00 UTC) → reabre el real. <span class="mono">ROBOT_REAL</span> empieza solo a bajar 5s→1d de PO. Para señales en vivo, enciendes <span class="mono">INICIAR_REAL</span>.</p>
       <p style="margin:0"><b>Pedir una señal en Telegram</b> → abres el bot → eliges mercado/par → eliges tiempo (1m–30m) → “Iniciar análisis”. El bot lee y responde con dirección, alineación y aviso.</p>
     </div>
