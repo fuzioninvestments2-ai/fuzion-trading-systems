@@ -341,16 +341,31 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
             f"⚠️ _No es recomendación; ningún bot acierta siempre. Demo._")
 
 
-def run():
+def run(profile_name="OTC"):
+    """
+    Arranca UN bot separado según su perfil (OTC o REAL). Dos bots distintos:
+      - Token PROPIO por bot: TELEGRAM_BOT_TOKEN_OTC / TELEGRAM_BOT_TOKEN_REAL.
+        (Para compatibilidad, el OTC acepta también el viejo TELEGRAM_BOT_TOKEN.)
+      - Historial PROPIO por bot (profile.db_path): sin cruces entre mercados.
+    Así el OTC y el real corren aislados, cada uno su Telegram y su base de datos.
+    """
+    from bot.profiles import get_profile
+    profile = get_profile(profile_name)
+
     try:
         from dotenv import load_dotenv
         load_dotenv()
     except Exception:
         pass
 
-    token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    # Token propio del bot; el OTC hace fallback al nombre viejo por compatibilidad.
+    token = os.getenv(f"TELEGRAM_BOT_TOKEN_{profile.nombre}", "")
+    if not token and profile.nombre == "OTC":
+        token = os.getenv("TELEGRAM_BOT_TOKEN", "")
     if not token:
-        raise RuntimeError("Falta TELEGRAM_BOT_TOKEN en tu .env (con @BotFather).")
+        raise RuntimeError(
+            f"Falta TELEGRAM_BOT_TOKEN_{profile.nombre} en tu .env "
+            f"(crea el bot '{profile.titulo}' con @BotFather y pega su token).")
 
     from telegram import Update
     from telegram.ext import (Application, CommandHandler, CallbackQueryHandler,
@@ -365,7 +380,8 @@ def run():
     collector = None
     if ssid:
         from bot.pocket_service import PocketService
-        service = PocketService(ssid, demo=True)
+        # BD PROPIA del bot (historial separado, sin cruces OTC<->real).
+        service = PocketService(ssid, demo=True, db_path=profile.db_path)
         # Colector 24/7: usa una SEGUNDA conexión con el mismo SSID. Pocket Option
         # a veces no permite dos conexiones a la vez y provoca desconexiones. Por
         # eso viene DESACTIVADO por defecto (más estable con una sola conexión).
@@ -378,8 +394,8 @@ def run():
         modo = "PRECIOS REALES ✅" if service else "datos simulados (sin SSID)"
         text, rows = menu.main_menu()
         await update.message.reply_text(
-            f"{text}\n_Modo: {modo}_", reply_markup=_keyboard(rows),
-            parse_mode="Markdown")
+            f"🤖 *{profile.titulo}*\n{text}\n_Modo: {modo}_",
+            reply_markup=_keyboard(rows), parse_mode="Markdown")
 
     async def historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """/historial — el historial por Telegram es lento; se usa la descarga batch."""
@@ -571,4 +587,7 @@ def run():
 
 
 if __name__ == "__main__":
-    run()
+    import sys
+    # Perfil por argumento: 'OTC' (default) o 'REAL'. Cada uno es un bot aparte.
+    perfil = sys.argv[1] if len(sys.argv) > 1 else "OTC"
+    run(perfil)
