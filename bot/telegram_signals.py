@@ -367,6 +367,29 @@ def run():
             f"{text}\n_Modo: {modo}_", reply_markup=_keyboard(rows),
             parse_mode="Markdown")
 
+    async def historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """/historial [ACTIVO] — escanea el historial hacia ATRÁS (experimental)."""
+        if service is None:
+            await update.message.reply_text("Necesitas ssid.txt (precios reales).")
+            return
+        args = context.args or []
+        # Activo: el que pasen, o el último en foco, o EUR/USD OTC por defecto.
+        code = (to_po_code(" ".join(args)) if args
+                else (service._focus or "EURUSD_otc"))
+        await update.message.reply_text(
+            f"📥 Buscando historial ANTIGUO de *{code}* hacia atrás…\n"
+            f"_Experimental: tomo lo que Pocket Option tenga (sin inventar). "
+            f"Puede tardar un minuto._", parse_mode="Markdown")
+        try:
+            total = await service.scan_backwards(code, period=60,
+                                                 max_days=365, paginas=40)
+            await update.message.reply_text(
+                f"✅ Historial de *{code}*: ahora hay *{total}* velas M1 "
+                f"guardadas. _(Si no subió, PO no da más historial atrás; "
+                f"lo seguimos acumulando en vivo.)_", parse_mode="Markdown")
+        except Exception as e:
+            await update.message.reply_text(f"No se pudo escanear: {e}")
+
     async def _leyendo(query, asset_display, tf):
         # Muestra "🧘 Leyendo…" de forma SEGURA. Si el mensaje es una FOTO (viene
         # de un análisis anterior), no se puede editar su texto -> lo ignoramos.
@@ -530,6 +553,7 @@ def run():
     app = (Application.builder().token(token)
            .post_init(_post_init).post_shutdown(_post_shutdown).build())
     app.add_handler(CommandHandler(["start", "menu"], start))
+    app.add_handler(CommandHandler("historial", historial))
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_error_handler(_on_error)
 

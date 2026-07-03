@@ -96,6 +96,12 @@ class PocketService:
         if not isinstance(payload, dict):
             return
         asset = payload.get("asset")
+        # Respuesta de historial: puede venir como TICKS ("history": [[t,p],...])
+        # o como VELAS ya hechas ("candles"/"data": [{time,open,...},...]). El
+        # escaneo hacia atrás (loadHistoryPeriod) suele traer velas OHLC.
+        candles = payload.get("candles") or payload.get("data")
+        if asset and candles and self._store_ohlc_candles(asset, payload, candles):
+            return
         hist = payload.get("history", [])
         if not asset or not hist:
             return
@@ -126,6 +132,94 @@ class PocketService:
                 self._ticks[asset] = deque(ticks, maxlen=10000)
             if asset not in self._builders:
                 self._builders[asset] = cb
+
+    def _store_ohlc_candles(self, asset, payload, candles):
+        """
+        Guarda velas OHLC ya hechas (del escaneo hacia atrás). Cada vela puede ser
+        dict {time/open/high/low/close/volume} o lista [t,o,c,h,l,...]. Devuelve
+        True si guardó algo. Robusto ante formatos distintos (aún por confirmar).
+        """
+        try:
+            period = int(payload.get("period", 60) or 60)
+        except (TypeError, ValueError):
+            period = 60
+        key = "M1" if period == 60 else f"tf{period}"
+        filas = []
+        for c in candles:
+            try:
+                if isinstance(c, dict):
+                    t = float(c.get("time") or c.get("t") or c.get("timestamp"))
+                    o = float(c.get("open", c.get("o")))
+                    h = float(c.get("high", c.get("h", o)))
+                    lo = float(c.get("low", c.get("l", o)))
+                    cl = float(c.get("close", c.get("c", o)))
+                    vol = float(c.get("volume", c.get("v", 0)) or 0)
+                elif isinstance(c, (list, tuple)) and len(c) >= 5:
+                    t, o, cl, h, lo = (float(c[0]), float(c[1]), float(c[2]),
+                                       float(c[3]), float(c[4]))
+                    vol = float(c[5]) if len(c) > 5 else 0.0
+                else:
+                    continue
+            except (TypeError, ValueError):
+                continue
+            ts_ms = int(t * 1000) if t < 1e12 else int(t)   # seg o ms -> ms
+            filas.append({"timestamp": ts_ms, "open": o, "high": h,
+                          "low": lo, "close": cl, "volume": vol})
+        if filas:
+            self.repo.record_many(asset, key, filas)
+            return True
+        return False
+
+    async def scan_backwards(self, asset, period=60, max_days=60, paginas=200):
+        """
+        ESCÁNER HACIA ATRÁS: pide a Pocket Option velas cada vez más ANTIGUAS de
+        `asset` para acumular su historial (meses/años si PO los sirve). Va desde
+        la vela más antigua que ya tenemos y retrocede, guardando lo que llega,
+        hasta que PO deje de dar más (llegó a su límite) o alcancemos `max_days`.
+
+        ⚠️ EXPERIMENTAL: depende del mensaje loadHistoryPeriod (formato no oficial).
+        Devuelve cuántas velas hay al final. Honesto: PO puede NO tener años de
+        OTC; tomamos lo que exista, sin inventar nada.
+        """
+        key = "M1" if period == 60 else f"tf{period}"
+        df = self.repo.get_recent(asset, key, 5000)
+        if df is not None and len(df):
+            end_time = int(df["timestamp"].iloc[0] // 1000) - 1
+        else:
+            end_time = int(self._last_tick.get(asset, 0)) or None
+            if not end_time:
+                self.log.warning("scan_backwards: sin punto de partida para %s", asset)
+                return 0
+        limite = end_time - int(max_days) * 86400
+        sin_avance = 0
+        # Pedimos la conexión con prioridad (el colector cede) y fijamos el foco.
+        self._focus = asset
+        import contextlib
+        for i in range(1, int(paginas) + 1):
+            if not self.connected or end_time <= limite or sin_avance >= 3:
+                break
+            antes = self.repo.count(asset, key)
+            self._want_analysis = True
+            lock = self._conn_lock or contextlib.nullcontext()
+            try:
+                async with lock:               # una página a la vez; suelta entre páginas
+                    self._want_analysis = False
+                    await self.client.set_asset(asset, 60)
+                    await self.client.load_history_period(asset, period, end_time,
+                                                          index=i)
+                    await asyncio.sleep(1.3)    # esperar respuesta -> _on_history
+            except Exception:
+                self.log.exception("scan_backwards: fallo pidiendo página")
+                break
+            df = self.repo.get_recent(asset, key, 5000)
+            nuevo_end = (int(df["timestamp"].iloc[0] // 1000) - 1
+                         if df is not None and len(df) else end_time)
+            avanzo = (self.repo.count(asset, key) > antes and nuevo_end < end_time)
+            sin_avance = 0 if avanzo else sin_avance + 1
+            end_time = min(end_time, nuevo_end)
+            self.log.info("scan_backwards %s: pág %d -> %d velas totales",
+                          asset, i, self.repo.count(asset, key))
+        return self.repo.count(asset, key)
 
     def _on_balance(self, payload):
         if isinstance(payload, dict):

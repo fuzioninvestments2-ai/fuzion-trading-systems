@@ -122,6 +122,29 @@ class PocketOptionClient:
                 return
         self._period = 60
 
+    async def load_history_period(self, asset, period, end_time, count=6000,
+                                  index=1):
+        """
+        Pide a Pocket Option velas ANTIGUAS de `asset` HASTA `end_time` (unix
+        segundos), para escanear el historial hacia ATRÁS. `period` en segundos,
+        `count` velas aproximadas por página. Reutiliza el canal existente.
+
+        ⚠️ EXPERIMENTAL: el formato exacto de este mensaje no está documentado
+        oficialmente; se basa en lo observado por la comunidad. Es defensivo (si
+        falla, no rompe nada) y hay que afinarlo contra la conexión en vivo.
+        """
+        ws = self._ws
+        if ws is None:
+            return
+        offset = int(count) * int(period)
+        msg = ('42["loadHistoryPeriod",{"asset":"%s","time":%d,"index":%d,'
+               '"offset":%d,"period":%d}]'
+               % (asset, int(end_time), int(index), offset, int(period)))
+        try:
+            await ws.send(msg)
+        except Exception:
+            pass
+
     async def _listen(self, ws):
         async for raw in ws:
             if isinstance(raw, bytes):
@@ -164,7 +187,10 @@ class PocketOptionClient:
                     continue
                 if self.on_tick:
                     self.on_tick(asset, ts, price)
-        elif event == "updateHistoryNewFast":
+        elif event in ("updateHistoryNewFast", "loadHistoryPeriod",
+                       "loadHistoryPeriodFast"):
+            # updateHistoryNewFast = historial reciente al suscribir.
+            # loadHistoryPeriod   = historial ANTIGUO que pedimos (escaneo atrás).
             if self.on_history:
                 self.on_history(obj)
         elif event == "successupdateBalance":
