@@ -193,6 +193,31 @@
   .term{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
   .term b{display:block;font-size:14px;margin-bottom:3px}
   .term span{font-size:13px;color:var(--muted)}
+
+  /* ---- Comandos ---- */
+  .cmds{display:flex;flex-direction:column;gap:14px}
+  .cmd-group{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .cmd-group h4{margin:0 0 3px;font-size:14.5px;font-weight:800;display:flex;align-items:center;gap:8px}
+  .cmd-group h4 .badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:5px}
+  .cmd-group>p{margin:0 0 10px;font-size:12.5px;color:var(--muted)}
+  .cmd{
+    background:var(--panel-2);border:1px solid var(--line);border-radius:8px;
+    padding:9px 12px;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    font-size:12.5px;overflow-x:auto;white-space:nowrap;margin:7px 0 0;color:var(--ink);
+  }
+  .cmd .hash{color:var(--faint)}
+
+  /* ---- Tabla de pesos por tiempo (heat) ---- */
+  .w-cap{font-size:12.5px;color:var(--muted);margin:0 0 12px}
+  table.weights td,table.weights th{text-align:center;font-variant-numeric:tabular-nums}
+  table.weights td:first-child,table.weights th:first-child{text-align:left}
+  table.weights td.lead{color:var(--core);font-weight:800}
+  table.weights td.low{color:var(--faint)}
+  .regnote{margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media (max-width:720px){.regnote{grid-template-columns:1fr}}
+  .regcard{border:1px solid var(--line);border-radius:12px;padding:13px 15px;background:var(--panel)}
+  .regcard b{font-size:13.5px}
+  .regcard p{margin:4px 0 0;font-size:12.5px;color:var(--muted)}
   footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);
     font-size:12.5px;color:var(--faint)}
 </style>
@@ -395,9 +420,70 @@
     </div>
   </section>
 
+  <!-- ============ CONFIG TIEMPOS ============ -->
+  <section>
+    <div class="sec-head"><span class="n">03</span><h2>Configuración de tiempos</h2></div>
+    <div class="row two">
+      <div class="card core">
+        <span class="tag core">Se GUARDAN (datos para leer)</span>
+        <h3>16 temporalidades · 5s → 1d</h3>
+        <div class="feat">
+          <span>5s</span><span>10s</span><span>15s</span><span>30s</span>
+          <span>1m</span><span>2m</span><span>3m</span><span>4m</span><span>5m</span>
+          <span>10m</span><span>15m</span><span>30m</span>
+          <span>1h</span><span>2h</span><span>4h</span><span>1d</span>
+        </div>
+        <p class="note-inline">Toda la escala se lee para la alineación. Un tiempo sin ≥6 velas se ignora solo.</p>
+      </div>
+      <div class="card real">
+        <span class="tag real">Se OPERAN (expiración)</span>
+        <h3>7 temporalidades · 1m → 30m</h3>
+        <div class="feat">
+          <span>1m</span><span>2m</span><span>3m</span><span>5m</span>
+          <span>10m</span><span>15m</span><span>30m</span>
+        </div>
+        <p class="note-inline">Los segundos (5s–30s) son el <b>clic del análisis</b> (afinan la entrada), no expiraciones. Igual en OTC y en real.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ INDICADORES POR TIEMPO ============ -->
+  <section>
+    <div class="sec-head"><span class="n">04</span><h2>Indicadores regulados por temporalidad</h2></div>
+    <p class="w-cap">La “configuración por tiempo” no es fija: cada indicador tiene más o menos <b>voz</b> según el plazo. Estos son los pesos reales de <span class="mono">scoring_strategy.weights_for()</span> (régimen neutro). Más alto = más manda.</p>
+    <div class="table-scroll">
+      <table class="weights">
+        <thead>
+          <tr><th>Indicador</th><th>Base</th><th>Corto<br>5s–30s</th><th>Medio<br>1m–5m</th><th>Largo<br>&gt;5m</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>RSI</td><td>2.0</td><td class="lead">2.6</td><td>2.0</td><td>1.8</td></tr>
+          <tr><td>MACD</td><td>3.0</td><td class="lead">2.7</td><td>3.0</td><td class="lead">3.6</td></tr>
+          <tr><td>Bollinger</td><td>2.0</td><td class="lead">2.4</td><td>2.0</td><td>2.0</td></tr>
+          <tr><td>Medias móviles</td><td>2.0</td><td class="low">1.0</td><td>2.0</td><td class="lead">2.6</td></tr>
+          <tr><td>Estocástico</td><td>1.0</td><td>1.4</td><td>1.0</td><td class="low">0.6</td></tr>
+          <tr><td>Donchian</td><td>2.0</td><td>2.0</td><td>2.0</td><td class="lead">2.4</td></tr>
+          <tr><td>VWAP</td><td>2.0</td><td>1.8</td><td>2.0</td><td>2.2</td></tr>
+          <tr><td>Patrones</td><td>1.5</td><td>1.95</td><td>1.5</td><td>1.2</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="regnote">
+      <div class="regcard">
+        <b>+ En tendencia (slide, ADX alto)</b>
+        <p>Suben MACD y medias (siguen la corriente); bajan RSI/Bollinger/estocástico (sus “reversiones” pelean contra la tendencia).</p>
+      </div>
+      <div class="regcard">
+        <b>+ En rango (oscillate, ADX bajo)</b>
+        <p>Suben RSI/Bollinger/estocástico y Donchian (rebotes techo/piso); bajan MACD/medias (dan cruces falsos).</p>
+      </div>
+    </div>
+    <p class="note-inline">Y encima de esto, cada bot <b>aprende</b>: sube el peso de los indicadores que más aciertan en cada activo (<span class="mono">weight_learning.py</span>).</p>
+  </section>
+
   <!-- ============ TABLA ============ -->
   <section>
-    <div class="sec-head"><span class="n">03</span><h2>OTC vs. real, de un vistazo</h2></div>
+    <div class="sec-head"><span class="n">05</span><h2>OTC vs. real, de un vistazo</h2></div>
     <div class="table-scroll">
       <table>
         <thead>
@@ -419,7 +505,7 @@
 
   <!-- ============ FLUJO ============ -->
   <section>
-    <div class="sec-head"><span class="n">04</span><h2>Cómo nace una señal</h2></div>
+    <div class="sec-head"><span class="n">06</span><h2>Cómo nace una señal</h2></div>
     <div class="flow">
       <div class="step"><div class="st-n">Paso 1</div><h4>Datos de todos los tiempos</h4><p>Guarda velas de 5s a 1d, en vivo y hacia atrás.</p></div>
       <div class="step"><div class="st-n">Paso 2</div><h4>Lectura envolvente</h4><p>Lee toda la escala: cuántos tiempos coinciden (alineación).</p></div>
@@ -428,9 +514,45 @@
     </div>
   </section>
 
+  <!-- ============ COMANDOS ============ -->
+  <section>
+    <div class="sec-head"><span class="n">07</span><h2>Comandos</h2></div>
+    <p class="w-cap">En PowerShell, dentro de la carpeta del proyecto (<span class="mono">cd $env:USERPROFILE\fuzion-trading-systems</span>). El <span class="mono">#</span> es un comentario, no se escribe.</p>
+    <div class="cmds">
+      <div class="cmd-group">
+        <h4>Encender los bots <span class="badge otc">OTC</span> <span class="badge real">Real</span></h4>
+        <p>Cada bot en su ventana. Doble clic al .bat o por comando.</p>
+        <div class="cmd">.\INICIAR_OTC.bat        <span class="hash"># Fuzion POption OTC</span></div>
+        <div class="cmd">.\INICIAR_REAL.bat       <span class="hash"># Fuzion POption FX</span></div>
+      </div>
+      <div class="cmd-group">
+        <h4>Datos OTC <span class="badge otc">OTC</span></h4>
+        <p>Bot de Telegram apagado en esa cuenta (una conexión por SSID).</p>
+        <div class="cmd">python -m bot.download_history --all --batch 5   <span class="hash"># todos los OTC, 5s→1d</span></div>
+        <div class="cmd">python -m bot.download_history EURUSD_otc         <span class="hash"># un activo</span></div>
+        <div class="cmd">.\ROBOT_AUTO.bat                                 <span class="hash"># robot 24/7 (baja + sube)</span></div>
+      </div>
+      <div class="cmd-group">
+        <h4>Datos del mercado real <span class="badge real">Real</span></h4>
+        <p>yfinance anytime; PO solo con mercado abierto; TradingView por CSV.</p>
+        <div class="cmd">python -m bot.historical_loader                  <span class="hash"># yfinance 1m→1d (años)</span></div>
+        <div class="cmd">python -m bot.download_history --real            <span class="hash"># PO 5s→1d (mercado abierto)</span></div>
+        <div class="cmd">python -m bot.tradingview_import EURUSD tf5 archivo.csv  <span class="hash"># CSV de TradingView</span></div>
+        <div class="cmd">.\ROBOT_REAL.bat                                 <span class="hash"># robot real sincronizado</span></div>
+      </div>
+      <div class="cmd-group">
+        <h4>Respaldo en la nube <span class="badge otc">OTC</span> <span class="badge real">Real</span></h4>
+        <p>Exporta y sube (el tesoro, siempre respaldado).</p>
+        <div class="cmd">python -m bot.dataset_export export OTC          <span class="hash"># → datasets/otc</span></div>
+        <div class="cmd">python -m bot.dataset_export export REAL         <span class="hash"># → datasets/real</span></div>
+        <div class="cmd">git add . ; git commit -m "datos" ; git push     <span class="hash"># respaldo a GitHub</span></div>
+      </div>
+    </div>
+  </section>
+
   <!-- ============ LANZADORES ============ -->
   <section>
-    <div class="sec-head"><span class="n">05</span><h2>Cómo lo enciendes (doble clic)</h2></div>
+    <div class="sec-head"><span class="n">08</span><h2>Cómo lo enciendes (doble clic)</h2></div>
     <div class="launch">
       <div class="bat">
         <div class="fn"><span class="mono">INICIAR_OTC.bat</span><span class="badge otc">OTC</span></div>
@@ -454,7 +576,7 @@
 
   <!-- ============ DÍA A DÍA ============ -->
   <section>
-    <div class="sec-head"><span class="n">06</span><h2>Tu día a día</h2></div>
+    <div class="sec-head"><span class="n">09</span><h2>Tu día a día</h2></div>
     <div class="callout">
       <p style="margin:0 0 10px"><b>Fin de semana</b> → mercado real cerrado. Usas <b>Fuzion POption OTC</b> (24/7) y dejas corriendo <span class="mono">ROBOT_AUTO</span> y <span class="mono">ROBOT_REAL</span> (este último solo junta datos hasta que abra).</p>
       <p style="margin:0 0 10px"><b>Domingo noche</b> (~22:00 UTC) → reabre el real. <span class="mono">ROBOT_REAL</span> empieza solo a bajar 5s→1d de PO. Para señales en vivo, enciendes <span class="mono">INICIAR_REAL</span>.</p>
