@@ -1,0 +1,339 @@
+<style>
+  :root{
+    --bg:#F7F8FA; --panel:#FFFFFF; --panel-2:#F0F2F6;
+    --ink:#141A26; --muted:#5A6478; --faint:#8A93A6;
+    --line:#DEE3EC; --line-strong:#C4CBD9;
+    --otc:#0F8F8A; --otc-soft:#E1F3F1;
+    --real:#B9791A; --real-soft:#F8EEDA;
+    --core:#4C5BD0; --core-soft:#E7E9FB;
+    --good:#2E9E5B; --warn:#C7912A;
+    --shadow:0 1px 2px rgba(20,26,38,.05),0 6px 20px rgba(20,26,38,.06);
+    --r:14px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0E1420; --panel:#161E2C; --panel-2:#1B2434;
+      --ink:#EAEEF6; --muted:#9AA5B8; --faint:#6B7686;
+      --line:#28303F; --line-strong:#38424F;
+      --otc:#3FC9C0; --otc-soft:#12312F;
+      --real:#E7B24E; --real-soft:#33280F;
+      --core:#8B97F0; --core-soft:#1C2140;
+      --good:#4FC27E; --warn:#E0B65A;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 26px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#F7F8FA; --panel:#FFFFFF; --panel-2:#F0F2F6;
+    --ink:#141A26; --muted:#5A6478; --faint:#8A93A6;
+    --line:#DEE3EC; --line-strong:#C4CBD9;
+    --otc:#0F8F8A; --otc-soft:#E1F3F1;
+    --real:#B9791A; --real-soft:#F8EEDA;
+    --core:#4C5BD0; --core-soft:#E7E9FB; --good:#2E9E5B; --warn:#C7912A;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0E1420; --panel:#161E2C; --panel-2:#1B2434;
+    --ink:#EAEEF6; --muted:#9AA5B8; --faint:#6B7686;
+    --line:#28303F; --line-strong:#38424F;
+    --otc:#3FC9C0; --otc-soft:#12312F;
+    --real:#E7B24E; --real-soft:#33280F;
+    --core:#8B97F0; --core-soft:#1C2140; --good:#4FC27E; --warn:#E0B65A;
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0}
+  .page{
+    background:var(--bg); color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    line-height:1.55; -webkit-font-smoothing:antialiased;
+    padding:clamp(20px,4vw,56px) clamp(16px,4vw,40px);
+  }
+  .wrap{max-width:1120px;margin:0 auto}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+
+  .eyebrow{
+    font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--core);margin:0 0 10px;
+  }
+  h1{
+    font-size:clamp(30px,5vw,50px);line-height:1.03;font-weight:800;
+    letter-spacing:-.02em;text-wrap:balance;margin:0 0 14px;
+  }
+  h1 .otc-t{color:var(--otc)} h1 .real-t{color:var(--real)}
+  .lede{font-size:clamp(16px,2.2vw,19px);color:var(--muted);max-width:62ch;margin:0}
+
+  .legend{display:flex;flex-wrap:wrap;gap:10px;margin:22px 0 6px}
+  .chip{
+    display:inline-flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;
+    padding:6px 12px;border-radius:999px;border:1px solid var(--line-strong);
+    background:var(--panel);
+  }
+  .dot{width:10px;height:10px;border-radius:50%}
+  .dot.otc{background:var(--otc)} .dot.real{background:var(--real)}
+  .dot.core{background:var(--core)}
+
+  section{margin-top:clamp(38px,6vw,64px)}
+  .sec-head{display:flex;align-items:baseline;gap:12px;margin:0 0 18px}
+  h2{font-size:clamp(20px,3vw,26px);font-weight:800;letter-spacing:-.01em;margin:0}
+  .sec-head .n{font-size:13px;font-weight:700;color:var(--faint)}
+
+  /* ---- Diagrama en capas ---- */
+  .layer-label{
+    font-size:11.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+    color:var(--faint);text-align:center;margin:0 0 12px;
+  }
+  .connector{width:2px;height:26px;background:var(--line-strong);margin:6px auto;border-radius:2px}
+  .row{display:grid;gap:16px}
+  .row.two{grid-template-columns:1fr 1fr}
+  .row.sources{grid-template-columns:1fr 1fr}
+  @media (max-width:720px){.row.two,.row.sources{grid-template-columns:1fr}}
+
+  .card{
+    background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+    padding:18px 18px 16px;box-shadow:var(--shadow);
+  }
+  .card.otc{border-top:3px solid var(--otc)}
+  .card.real{border-top:3px solid var(--real)}
+  .card.core{border-top:3px solid var(--core)}
+  .card h3{margin:0 0 4px;font-size:17px;font-weight:800;letter-spacing:-.01em}
+  .card .sub{margin:0 0 12px;font-size:13px;color:var(--muted)}
+  .tag{
+    display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;
+    text-transform:uppercase;padding:3px 9px;border-radius:6px;margin-bottom:10px;
+  }
+  .tag.otc{background:var(--otc-soft);color:var(--otc)}
+  .tag.real{background:var(--real-soft);color:var(--real)}
+  .tag.core{background:var(--core-soft);color:var(--core)}
+
+  .kv{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px}
+  .kv li{display:flex;gap:10px;font-size:13.5px;align-items:flex-start}
+  .kv .k{color:var(--faint);min-width:82px;font-weight:600}
+  .kv .v{color:var(--ink)}
+  .kv .v code{background:var(--panel-2);padding:1px 6px;border-radius:5px;font-size:12.5px}
+
+  .feat{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+  .feat span{
+    font-size:12.5px;font-weight:600;padding:6px 10px;border-radius:8px;
+    background:var(--panel-2);border:1px solid var(--line);
+  }
+  .feat span.only-real{background:var(--real-soft);border-color:transparent;color:var(--real)}
+  .note-inline{font-size:12.5px;color:var(--muted);margin:12px 0 0}
+
+  .cloud{
+    display:flex;gap:14px;justify-content:center;flex-wrap:wrap;
+  }
+  .folder{
+    display:flex;align-items:center;gap:10px;background:var(--panel);
+    border:1px solid var(--line);border-radius:12px;padding:12px 16px;box-shadow:var(--shadow);
+  }
+  .folder .ic{font-size:20px}
+  .folder b{font-size:14px}
+  .folder small{display:block;color:var(--muted);font-size:12px;font-weight:500}
+
+  /* ---- Tabla comparativa ---- */
+  .table-scroll{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--panel)}
+  table{border-collapse:collapse;width:100%;min-width:540px;font-size:13.5px}
+  th,td{text-align:left;padding:13px 16px;border-bottom:1px solid var(--line)}
+  thead th{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--faint);font-weight:700}
+  tbody tr:last-child td{border-bottom:none}
+  td:first-child,th:first-child{color:var(--muted);font-weight:600}
+  .col-otc{color:var(--otc);font-weight:600}
+  .col-real{color:var(--real);font-weight:600}
+  td code{background:var(--panel-2);padding:1px 6px;border-radius:5px;font-size:12.5px}
+
+  /* ---- Flujo ---- */
+  .flow{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;align-items:stretch}
+  @media (max-width:720px){.flow{grid-template-columns:1fr 1fr}}
+  .step{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;position:relative}
+  .step .st-n{font-size:12px;font-weight:800;color:var(--core)}
+  .step h4{margin:6px 0 4px;font-size:15px;font-weight:800}
+  .step p{margin:0;font-size:12.5px;color:var(--muted)}
+
+  /* ---- Lanzadores ---- */
+  .launch{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media (max-width:720px){.launch{grid-template-columns:1fr}}
+  .bat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:var(--shadow)}
+  .bat .fn{font-size:14.5px;font-weight:700;display:flex;align-items:center;gap:9px;margin-bottom:6px}
+  .bat .fn .badge{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:5px}
+  .badge.otc{background:var(--otc-soft);color:var(--otc)}
+  .badge.real{background:var(--real-soft);color:var(--real)}
+  .bat p{margin:0;font-size:13px;color:var(--muted)}
+
+  .callout{
+    background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--core);
+    border-radius:12px;padding:16px 18px;font-size:14px;color:var(--muted);
+  }
+  .callout b{color:var(--ink)}
+  footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);
+    font-size:12.5px;color:var(--faint)}
+</style>
+
+<div class="page">
+<div class="wrap">
+
+  <p class="eyebrow">Sistema de señales · Pocket Option · Demo</p>
+  <h1>Fuzion — dos bots, <span class="otc-t">OTC</span> y <span class="real-t">real</span>, un solo motor</h1>
+  <p class="lede">Dos bots totalmente separados (su Telegram, su cuenta, su historial) que comparten el mismo motor de análisis ya probado. Este es el mapa del sistema y cómo lo enciendes.</p>
+
+  <div class="legend">
+    <span class="chip"><span class="dot otc"></span> Fuzion OTC — mercado OTC 24/7</span>
+    <span class="chip"><span class="dot real"></span> Fuzion FX — mercado real (monedas)</span>
+    <span class="chip"><span class="dot core"></span> Motor compartido</span>
+  </div>
+
+  <!-- ============ DIAGRAMA ============ -->
+  <section>
+    <div class="sec-head"><span class="n">01</span><h2>Estructura del sistema</h2></div>
+
+    <p class="layer-label">Fuentes de datos</p>
+    <div class="row sources">
+      <div class="card otc">
+        <span class="tag otc">Fuzion OTC</span>
+        <h3>Pocket Option · cuenta 1</h3>
+        <p class="sub">Velas sintéticas de PO, 24/7. 114 activos.</p>
+        <ul class="kv">
+          <li><span class="k">Descarga</span><span class="v">hacia atrás 5s→1d (tope ~5150/tf)</span></li>
+          <li><span class="k">Acceso</span><span class="v"><code>ssid.txt</code></span></li>
+        </ul>
+      </div>
+      <div class="card real">
+        <span class="tag real">Fuzion FX</span>
+        <h3>PO cuenta 2 · TradingView · yfinance</h3>
+        <p class="sub">Precios reales. 22 pares de divisas.</p>
+        <ul class="kv">
+          <li><span class="k">PO cuenta 2</span><span class="v">5s→1d en vivo (con mercado abierto) · <code>ssid_real.txt</code></span></li>
+          <li><span class="k">TradingView</span><span class="v">CSV oficial (Premium): cualquier tiempo, incl. 5s</span></li>
+          <li><span class="k">yfinance</span><span class="v">1m→1d, años (1h≈2 años, diario décadas)</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="connector"></div>
+    <p class="layer-label">Los dos bots (procesos separados)</p>
+    <div class="row two">
+      <div class="card otc">
+        <span class="tag otc">Bot OTC</span>
+        <h3>Fuzion OTC</h3>
+        <ul class="kv">
+          <li><span class="k">Telegram</span><span class="v">token propio (<code>_OTC</code>)</span></li>
+          <li><span class="k">Historial</span><span class="v"><code>history.db</code></span></li>
+          <li><span class="k">Nube</span><span class="v"><code>datasets/otc/</code></span></li>
+          <li><span class="k">Horario</span><span class="v">24/7 (sin cierre)</span></li>
+          <li><span class="k">Activos</span><span class="v">114 OTC (forex, cripto, acciones…)</span></li>
+        </ul>
+      </div>
+      <div class="card real">
+        <span class="tag real">Bot real</span>
+        <h3>Fuzion FX</h3>
+        <ul class="kv">
+          <li><span class="k">Telegram</span><span class="v">token propio (<code>_REAL</code>)</span></li>
+          <li><span class="k">Historial</span><span class="v"><code>history_real.db</code></span></li>
+          <li><span class="k">Nube</span><span class="v"><code>datasets/real/</code></span></li>
+          <li><span class="k">Horario</span><span class="v">Lun–Vie · calla en noticias</span></li>
+          <li><span class="k">Activos</span><span class="v">22 pares de divisas (solo monedas)</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="connector"></div>
+    <p class="layer-label">Motor de análisis — el mismo para los dos</p>
+    <div class="row">
+      <div class="card core">
+        <span class="tag core">Compartido · probado con 40 tests</span>
+        <h3>Lectura envolvente 5s → 1d</h3>
+        <p class="sub">Lee toda la escala de tiempo: los segundos afinan la entrada, los tiempos largos dan el sesgo. Un tiempo sin datos se ignora solo.</p>
+        <div class="feat">
+          <span>8 indicadores que votan</span>
+          <span>Patrones de vela</span>
+          <span>VWAP · niveles techo/piso</span>
+          <span>Compresión (squeeze)</span>
+          <span>Régimen ADX (rango/tendencia)</span>
+          <span>Alineación fractal</span>
+          <span>Aprendizaje de pesos + calibración</span>
+          <span class="only-real">Horario de sesión · solo real</span>
+          <span class="only-real">Filtro de noticias · solo real</span>
+        </div>
+        <p class="note-inline">Solo lectura: el bot da señales, <b>no coloca órdenes</b>. Siempre en demo.</p>
+      </div>
+    </div>
+
+    <div class="connector"></div>
+    <p class="layer-label">Respaldo en la nube (GitHub)</p>
+    <div class="cloud">
+      <div class="folder"><span class="ic">📁</span><div><b class="mono">datasets/otc/</b><small>historial del bot OTC</small></div></div>
+      <div class="folder"><span class="ic">📁</span><div><b class="mono">datasets/real/</b><small>historial del bot real</small></div></div>
+    </div>
+  </section>
+
+  <!-- ============ TABLA ============ -->
+  <section>
+    <div class="sec-head"><span class="n">02</span><h2>OTC vs. real, de un vistazo</h2></div>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>&nbsp;</th><th class="col-otc">Fuzion OTC</th><th class="col-real">Fuzion FX (real)</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Cuándo opera</td><td>24/7 (fines de semana también)</td><td>Lun–Vie (forex real)</td></tr>
+          <tr><td>Activos</td><td>114 OTC</td><td>22 pares de divisas</td></tr>
+          <tr><td>Cuenta PO</td><td><code>ssid.txt</code></td><td><code>ssid_real.txt</code></td></tr>
+          <tr><td>Historial</td><td><code>history.db</code></td><td><code>history_real.db</code></td></tr>
+          <tr><td>Nube</td><td><code>datasets/otc/</code></td><td><code>datasets/real/</code></td></tr>
+          <tr><td>Datos que guarda</td><td>5s → 1d</td><td>5s → 1d (donde exista)</td></tr>
+          <tr><td>Tiempos para operar</td><td>1m · 2m · 3m · 5m · 10m · 15m · 30m</td><td>1m · 2m · 3m · 5m · 10m · 15m · 30m</td></tr>
+          <tr><td>Protección extra</td><td>—</td><td>Horario + noticias de alto impacto</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ FLUJO ============ -->
+  <section>
+    <div class="sec-head"><span class="n">03</span><h2>Cómo nace una señal</h2></div>
+    <div class="flow">
+      <div class="step"><div class="st-n">Paso 1</div><h4>Datos de todos los tiempos</h4><p>Guarda velas de 5s a 1d, en vivo y hacia atrás.</p></div>
+      <div class="step"><div class="st-n">Paso 2</div><h4>Lectura envolvente</h4><p>Lee toda la escala: cuántos tiempos coinciden (alineación).</p></div>
+      <div class="step"><div class="st-n">Paso 3</div><h4>Entrada afinada</h4><p>Los segundos son el “clic” del análisis, no la orden.</p></div>
+      <div class="step"><div class="st-n">Paso 4</div><h4>Orden en 1m–30m</h4><p>La señal se opera en tus tiempos: 1m a 30m.</p></div>
+    </div>
+  </section>
+
+  <!-- ============ LANZADORES ============ -->
+  <section>
+    <div class="sec-head"><span class="n">04</span><h2>Cómo lo enciendes (doble clic)</h2></div>
+    <div class="launch">
+      <div class="bat">
+        <div class="fn"><span class="mono">INICIAR_OTC.bat</span><span class="badge otc">OTC</span></div>
+        <p>Arranca el bot OTC en Telegram. Úsalo para pedir señales OTC (24/7).</p>
+      </div>
+      <div class="bat">
+        <div class="fn"><span class="mono">INICIAR_REAL.bat</span><span class="badge real">Real</span></div>
+        <p>Arranca Fuzion FX en Telegram. Úsalo cuando el mercado real esté abierto (Lun–Vie).</p>
+      </div>
+      <div class="bat">
+        <div class="fn"><span class="mono">ROBOT_AUTO.bat</span><span class="badge otc">OTC</span></div>
+        <p>Robot que baja y acumula el historial OTC 24/7 y lo sube a la nube. Se reinicia solo.</p>
+      </div>
+      <div class="bat">
+        <div class="fn"><span class="mono">ROBOT_REAL.bat</span><span class="badge real">Real</span></div>
+        <p>Robot del real, sincronizado con el horario: siempre refresca años (yfinance) y, al abrir el mercado, baja 5s→1d de PO. Déjalo armado desde ya.</p>
+      </div>
+    </div>
+    <p class="note-inline" style="margin-top:14px">Regla de oro: <b>una cuenta de PO = una conexión</b>. El OTC usa la cuenta 1 y el real la cuenta 2, así pueden correr a la vez. No enciendas dos cosas sobre la misma cuenta al mismo tiempo.</p>
+  </section>
+
+  <!-- ============ DÍA A DÍA ============ -->
+  <section>
+    <div class="sec-head"><span class="n">05</span><h2>Tu día a día</h2></div>
+    <div class="callout">
+      <p style="margin:0 0 10px"><b>Fin de semana</b> → mercado real cerrado. Usas <b>Fuzion OTC</b> (24/7) y dejas corriendo <span class="mono">ROBOT_AUTO</span> y <span class="mono">ROBOT_REAL</span> (este último solo junta datos hasta que abra).</p>
+      <p style="margin:0 0 10px"><b>Domingo noche</b> (~22:00 UTC) → reabre el real. <span class="mono">ROBOT_REAL</span> empieza solo a bajar 5s→1d de PO. Para señales en vivo, enciendes <span class="mono">INICIAR_REAL</span>.</p>
+      <p style="margin:0"><b>Pedir una señal en Telegram</b> → abres el bot → eliges mercado/par → eliges tiempo (1m–30m) → “Iniciar análisis”. El bot lee y responde con dirección, alineación y aviso.</p>
+    </div>
+  </section>
+
+  <footer>
+    Fuzion — bot de señales educativas para Pocket Option, en demo y solo lectura. No garantiza aciertos; aporta disciplina y protección. Los precios OTC son sintéticos de PO; el mercado real se lee de fuentes legítimas (PO, TradingView, yfinance), sin scraping ni evasión.
+  </footer>
+
+</div>
+</div>
