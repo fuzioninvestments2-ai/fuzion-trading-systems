@@ -373,6 +373,28 @@ def run():
             await update.message.reply_text("Necesitas ssid.txt (precios reales).")
             return
         args = context.args or []
+        arg0 = (args[0].lower() if args else "")
+
+        # /historial todos  -> escanea M1 hacia atrás de TODA la watchlist.
+        if arg0 in ("todos", "all", "todo"):
+            assets = list(service._watchlist)
+            await update.message.reply_text(
+                f"📥 Escaneando historial de *{len(assets)}* activos hacia "
+                f"atrás (M1)…\n_Esto tarda BASTANTE (varios minutos). Ve haciendo "
+                f"otra cosa; te aviso al terminar._", parse_mode="Markdown")
+            lineas = []
+            for a in assets:
+                try:
+                    total = await service.scan_backwards(a, period=60,
+                                                         max_days=365, paginas=15)
+                    lineas.append(f"  {a}: *{total}*")
+                except Exception:
+                    lineas.append(f"  {a}: (error)")
+            await update.message.reply_text(
+                "✅ Historial M1 por activo:\n" + "\n".join(lineas),
+                parse_mode="Markdown")
+            return
+
         # Activo: el que pasen, o el último en foco, o EUR/USD OTC por defecto.
         code = (to_po_code(" ".join(args)) if args
                 else (service._focus or "EURUSD_otc"))
