@@ -165,6 +165,11 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
 
     filas = []
     for tfs, v in sorted(por.items()):
+        # En COMPACTO (pie de foto ≤1024) ocultamos los tiempos aún SIN datos:
+        # con la escalera 5s→1d hay hasta 16 filas y los largos tardan en
+        # llenarse; mostrarlos vacíos desborda el mensaje y no aporta lectura.
+        if compact and v["velas"] < 6:
+            continue
         flecha = emo.get(v["dir"], "⏸️")
         if v["velas"] < 6:
             estado = "·  _(pocos datos)_"
