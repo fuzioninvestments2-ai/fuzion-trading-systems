@@ -38,8 +38,8 @@ ALL_TIMEFRAMES = {
 # Frases educativas por indicador y dirección (para explicar la lectura, como
 # hacen los bots que "enseñan" al trader).
 _EXPLICA = {
-    ("rsi", CALL): "RSI en sobreventa (posible rebote al alza)",
-    ("rsi", PUT): "RSI en sobrecompra (posible caída)",
+    ("rsi", CALL): "RSI en zona baja (posible rebote al alza)",
+    ("rsi", PUT): "RSI en zona alta (posible caída)",
     ("macd", CALL): "MACD con impulso alcista",
     ("macd", PUT): "MACD con impulso bajista",
     ("bollinger", CALL): "precio en la banda BAJA de Bollinger (rebote)",

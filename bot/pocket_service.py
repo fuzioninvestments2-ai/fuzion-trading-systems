@@ -445,9 +445,13 @@ class PocketService:
         # PATRONES DE VELA sobre el tiempo más corto (el de la ENTRADA): la FORMA
         # de la vela cuenta lo que los indicadores no ven. Un doji = indecisión
         # (fuerza NO OPERAR); martillo/envolvente = confirmación de dirección.
+        # IMPORTANTE: se miran solo velas YA CERRADAS. La vela en formación aún
+        # puede cambiar; detectar un patrón sobre ella daría señales prematuras
+        # (era la vela "que aún no estaba hecha" que notó el usuario).
         corto = min(frames) if frames else None
-        if corto is not None and frames[corto] is not None and len(frames[corto]) >= 2:
-            pat = detect_patterns(frames[corto])
+        if corto is not None and frames[corto] is not None and len(frames[corto]) >= 3:
+            velas_cerradas = frames[corto].iloc[:-1]      # quita la vela en curso
+            pat = detect_patterns(velas_cerradas)
             if pat["patrones"]:
                 resultado["patrones"] = pat["patrones"]
             if pat["indecision"]:
