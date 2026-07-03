@@ -293,6 +293,31 @@ def regime(high, low, close, period=14):
     return "mixto", adx_v
 
 
+def compression(close, period=20, lookback=100, umbral_pct=0.25):
+    """
+    Detecta COMPRESIÓN (squeeze): cuando el mercado se lateraliza, las bandas de
+    Bollinger se ESTRECHAN. Es el estado PREVIO a una ruptura, y la lectura del
+    trader es: en compresión la entrada vive en el TIEMPO CORTO (el largo solo da
+    el sesgo). EL PORQUÉ: un umbral de ancho FIJO no sirve (cada activo tiene su
+    volatilidad); comparamos el ancho ACTUAL contra su propio historial reciente
+    (percentil). Si está en el `umbral_pct` inferior (p.ej. 25% más estrecho que
+    de costumbre), está comprimido.
+
+    Devuelve (comprimido: bool, ancho_relativo: float 0-1). ancho_relativo es el
+    percentil del ancho actual (0 = lo más estrecho visto; 1 = lo más ancho).
+    """
+    upper, mid, lower, _ = Indicators.bollinger_bands(close, period, 2.0)
+    ancho = (upper - lower) / mid.replace(0, float("nan"))   # ancho normalizado
+    ancho = ancho.dropna()
+    if len(ancho) < max(period, 20):
+        return False, None
+    ventana = ancho.tail(int(lookback))
+    actual = float(ventana.iloc[-1])
+    # Percentil del ancho actual dentro de su ventana (rank empírico).
+    percentil = float((ventana <= actual).mean())
+    return percentil <= float(umbral_pct), round(percentil, 3)
+
+
 class ScoringStrategy:
     """
     Estrategia principal. `analyze(df)` -> (señal, confianza, detalles).

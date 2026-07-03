@@ -25,7 +25,7 @@ from bot.market_hours import is_open
 from bot.calibration import calibrate
 from bot.weight_learning import learn_weights
 from bot.signal_log import SignalTracker, CALL as _SIG_CALL, PUT as _SIG_PUT
-from bot.scoring_strategy import regime as _regime
+from bot.scoring_strategy import regime as _regime, compression as _compression
 from bot.void_detector import detect_void
 from bot.payout import parse_assets
 from bot.candle_patterns import detect_patterns
@@ -484,10 +484,16 @@ class PocketService:
         # ANTES del análisis para AJUSTAR los pesos de indicadores: en tendencia
         # mandan MACD/medias; en rango mandan los rebotes techo/piso (RSI/Bollinger).
         reg = adxv = None
+        comprimido, ancho_rel = False, None
         for tfm in (60, 180, 300):
             fm = frames.get(tfm)
             if fm is not None and len(fm) >= 20:
                 reg, adxv = _regime(fm["high"], fm["low"], fm["close"])
+                # COMPRESIÓN (squeeze): cuando lateraliza, las bandas se estrechan.
+                # La lectura del trader: la entrada vive en el TIEMPO CORTO; el
+                # largo solo da el sesgo. Se avisa para no entrar "a ciegas" en
+                # un rango que está por romper.
+                comprimido, ancho_rel = _compression(fm["close"])
                 break
 
         resultado = analyzer.analyze_frames(frames, regimen=reg)
@@ -497,6 +503,13 @@ class PocketService:
         if reg:
             resultado["regime"] = reg
             resultado["adx"] = round(adxv, 1)
+        if comprimido:
+            resultado["comprimido"] = True
+            resultado["ancho_rel"] = ancho_rel
+            aviso = ("🔬 Mercado COMPRIMIDO (rango estrecho, posible RUPTURA): "
+                     "la entrada vive en el tiempo CORTO; usa el tiempo largo solo "
+                     "como sesgo y espera confirmación de la ruptura.")
+            resultado["explicacion"] = aviso + " " + resultado.get("explicacion", "")
 
         # Pesos aprendidos: mostramos los indicadores que MÁS aciertan en este
         # activo (los que el bot ha "aprendido" a valorar), de la FUENTE activa
