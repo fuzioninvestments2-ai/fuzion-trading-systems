@@ -450,6 +450,7 @@ def run():
         # El botón "Analizar de nuevo" LLEVA el activo y el tiempo en su dato, así
         # funciona SIEMPRE (incluso tras reiniciar el bot, sin memoria previa).
         rows = [[("🔁 Analizar de nuevo", f"re:{asset_display}:{tf}")],
+                [("📥 Cargar historial", f"hist:{asset_display}")],
                 [("📊 Otro activo", "back:market"), ("🏠 Menú", "back:main")]]
         path = None
         chart_df = result.get("chart")
@@ -468,6 +469,30 @@ def run():
         query = update.callback_query
         await query.answer()
         uid = query.from_user.id
+
+        # Botón "📥 Cargar historial": escanea hacia atrás el activo (sin escribir).
+        if query.data.startswith("hist:") and service is not None:
+            asset_display = query.data.split(":", 1)[1]
+            code = to_po_code(asset_display)
+            await query.message.reply_text(
+                f"📥 Buscando historial de *{asset_display}* hacia atrás "
+                f"(1m, 3m, 5m, 15m, 30m)…\n_Tarda 2-3 min. Te aviso al terminar._",
+                parse_mode="Markdown")
+            try:
+                lineas = []
+                for p, etq in ((60, "1m"), (180, "3m"), (300, "5m"),
+                               (900, "15m"), (1800, "30m")):
+                    total = await service.scan_backwards(code, period=p,
+                                                         max_days=365, paginas=20)
+                    lineas.append(f"  {etq}: *{total}* velas")
+                await query.message.reply_text(
+                    f"✅ Historial de *{asset_display}*:\n" + "\n".join(lineas)
+                    + "\n\n_Si un número no subió, PO no da más atrás en ese "
+                      "tiempo; se sigue acumulando en vivo._",
+                    parse_mode="Markdown")
+            except Exception as e:
+                await query.message.reply_text(f"No se pudo: {e}")
+            return
 
         # "Analizar de nuevo" que lleva el activo y el tiempo consigo (re:activo:tf).
         if query.data.startswith("re:"):
