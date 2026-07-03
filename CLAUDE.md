@@ -77,3 +77,34 @@ mercado real). No implementar evasión de bloqueos/IP.
 ## LANZADORES (Windows, doble clic)
 - `INICIAR_BOT.bat` — actualiza y arranca el bot.
 - `DESCARGAR_HISTORIAL.bat` — descarga masiva de historial (bot apagado).
+
+## HERRAMIENTAS DISPONIBLES
+- Ejecutar código Python, crear/editar archivos, `pip install`, comandos de
+  terminal, crear directorios y estructura de proyecto.
+
+## MANEJO DE ERRORES
+- Leer el traceback completo. Identificar la línea exacta.
+- Decir "hay un error en la línea X", no "puede haber un error".
+- Dar la corrección específica.
+
+## TESTING
+- Funciones críticas: incluir tests básicos con `assert`, sin red.
+- No usar frameworks de testing complejos salvo que se solicite.
+
+## OPTIMIZACIÓN
+- Legibilidad sobre optimización prematura.
+- Si es lento, identificar el bottleneck concreto; perfilar solo si hace falta.
+
+## DOCUMENTACIÓN
+- No crear README salvo que se solicite. No documentar lo obvio.
+- Solo documentar APIs públicas complejas.
+
+## PROHIBIDO (en respuestas técnicas)
+- Frases motivacionales o de aliento.
+- Explicar conceptos básicos de Python.
+- Sugerir "mejoras futuras" no solicitadas.
+- Preguntar "¿hay algo más en lo que pueda ayudarte?".
+- Resumir lo que se acaba de hacer.
+- Emojis en el código o en explicaciones técnicas.
+- EXCEPCIÓN: guiar al usuario a EJECUTAR/OPERAR (pasos numerados simples) sí se
+  permite; no es programador.
