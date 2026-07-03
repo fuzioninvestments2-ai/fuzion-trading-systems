@@ -232,6 +232,9 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
     if result.get("contra_tendencia"):
         alerta += ("\n📉 *CONTRA TENDENCIA:* la señal va contra el tiempo mayor "
                    "→ ALTO RIESGO, mejor operar a favor de la tendencia")
+    if result.get("consenso_extremo"):
+        alerta += ("\n🔬 *CONSENSO EXTREMO:* casi TODOS los tiempos coinciden "
+                   "(raro) → confírmalo antes de entrar")
     na = result.get("nivel_alerta")
     if na:
         if na[0] == "techo":
@@ -243,6 +246,14 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
 
     explicacion = result.get("explicacion", "")
     expl = f"\n🧭 *Lectura:* _{explicacion}_" if explicacion else ""
+
+    # Alineación FRACTAL: cuántos de TODOS los tiempos apuntan igual (0-100%).
+    frac = result.get("alineacion_fractal")
+    if frac is not None:
+        fractal_txt = (f"\n🧬 *Alineación fractal:* {frac:.0%} "
+                       f"_({result.get('fractal_txt', '')})_")
+    else:
+        fractal_txt = ""
 
     reg = result.get("regime")
     adxv = result.get("adx")
@@ -310,7 +321,7 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
             f"{alerta}\n"
             f"\n*{veredicto}*\n"
             f"Dirección: {direccion}{modo}\n"
-            f"🎯 Alineación: *{fuerza:.0%}*  ({coinciden}){expl}{patrones}{vwap_txt}{niveles_txt}\n\n"
+            f"🎯 Alineación: *{fuerza:.0%}*  ({coinciden}){fractal_txt}{expl}{patrones}{vwap_txt}{niveles_txt}\n\n"
             f"🔎 *Panel de tiempos:*\n{desglose}\n"
             f"{timing}{pago}{bal}{aprendido}{cobertura}\n\n"
             f"⚠️ _No es recomendación; ningún bot acierta siempre. Demo._")

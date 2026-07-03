@@ -57,23 +57,38 @@ _EXPLICA = {
 }
 
 
+def _fmt_tf(seconds):
+    """Etiqueta legible de una temporalidad en segundos (30->'30s', 300->'5m')."""
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    return f"{seconds // 3600}h"
+
+
 def _explicar(por_tiempo, side):
     """
     Arma una explicación en palabras de POR QUÉ el bot ve esa dirección,
-    juntando los indicadores que apoyan `side` en los tiempos alineados.
+    juntando los indicadores que apoyan `side` y DICIENDO EN QUÉ TIEMPO ocurren
+    (ej. "medias al alza (en 5m)"), como haría un mentor que enseña a leer.
     """
-    razones = []
-    for tf, v in por_tiempo.items():
+    razones = []                      # [(frase, etiqueta_tiempo)]
+    vistas = set()
+    for tf, v in sorted(por_tiempo.items()):
         if v.get("dir") != side:
             continue
+        etiqueta = _fmt_tf(tf)
         for ind, voto in v.get("votes", {}).items():
             if voto == side and (ind, side) in _EXPLICA:
                 frase = _EXPLICA[(ind, side)]
-                if frase not in razones:
-                    razones.append(frase)
+                if frase not in vistas:      # la primera vez, con su tiempo
+                    vistas.add(frase)
+                    razones.append((frase, etiqueta))
     if not razones:
         return "Varios tiempos coinciden en la dirección."
-    return "; ".join(razones[:4]) + "."
+    partes = [f"{f} (en {t})" for f, t in razones[:4]]
+    return "; ".join(partes) + "."
 
 
 class DeepAnalyzer:
@@ -226,9 +241,24 @@ class DeepAnalyzer:
                                f"mejor esperar o operar a favor de la tendencia. "
                                + explicacion)
 
+            # ALINEACIÓN FRACTAL: de TODOS los tiempos con datos (no solo los
+            # confirmados), ¿cuántos apuntan al mismo lado? Es la "gramática
+            # completa" del mercado en toda la escala de tiempo.
+            total_data = len(con_datos)
+            a_favor = len(ups_l) if side == CALL else len(downs_l)
+            fractal = (a_favor / total_data) if total_data else 0.0
+
+            # CONSENSO EXTREMO: si CASI todos coinciden (>=96%), es tan raro que
+            # conviene desconfiar un poco (puede ser un movimiento "demasiado
+            # perfecto"). Aviso suave, honesto (no es "detección cuántica").
+            consenso_extremo = fractal >= 0.96 and total_data >= 6
+
             base.update(veredicto=veredicto, direccion=flecha,
                         fuerza=round(alignment, 3),
                         coinciden=f"{win}/{opinan_c} tiempos",
+                        alineacion_fractal=round(fractal, 3),
+                        fractal_txt=f"{a_favor}/{total_data} tiempos",
+                        consenso_extremo=consenso_extremo,
                         explicacion=explicacion, contra_tendencia=contra)
             return base
 
