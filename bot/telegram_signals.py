@@ -34,6 +34,15 @@ _TF_SECONDS = {"S5": 5, "S10": 10, "S15": 15, "S30": 30,
                "M1": 60, "M2": 120, "M3": 180, "M5": 300, "M10": 600,
                "M15": 900, "M30": 1800, "H1": 3600, "H4": 14400, "D1": 86400}
 
+# El historial NO se carga por Telegram (es lento). Se descarga en bloque, aparte.
+_AVISO_HISTORIAL = (
+    "📥 *El historial no se carga por aquí* (es lento).\n\n"
+    "Descárgalo en bloque (rápido) con el bot APAGADO:\n"
+    "1) Cierra la ventana del bot.\n"
+    "2) Doble clic en *DESCARGAR_HISTORIAL* (en la carpeta del proyecto).\n"
+    "3) Vuelve a abrir *INICIAR_BOT*.\n\n"
+    "_Baja OTC (BinaryOptionsToolsV2) y FX real (yfinance) a la base de datos._")
+
 
 def to_po_code(display):
     """
@@ -368,58 +377,8 @@ def run():
             parse_mode="Markdown")
 
     async def historial(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """/historial [ACTIVO] — escanea el historial hacia ATRÁS (experimental)."""
-        if service is None:
-            await update.message.reply_text("Necesitas ssid.txt (precios reales).")
-            return
-        args = context.args or []
-        arg0 = (args[0].lower() if args else "")
-
-        # /historial todos  -> escanea M1 hacia atrás de TODA la watchlist.
-        if arg0 in ("todos", "all", "todo"):
-            assets = list(service._watchlist)
-            await update.message.reply_text(
-                f"📥 Escaneando historial de *{len(assets)}* activos hacia "
-                f"atrás (M1)…\n_Esto tarda BASTANTE (varios minutos). Ve haciendo "
-                f"otra cosa; te aviso al terminar._", parse_mode="Markdown")
-            lineas = []
-            for a in assets:
-                try:
-                    total = await service.scan_backwards(a, period=60,
-                                                         max_days=365, paginas=15)
-                    lineas.append(f"  {a}: *{total}*")
-                except Exception:
-                    lineas.append(f"  {a}: (error)")
-            await update.message.reply_text(
-                "✅ Historial M1 por activo:\n" + "\n".join(lineas),
-                parse_mode="Markdown")
-            return
-
-        # Activo: el que pasen, o el último en foco, o EUR/USD OTC por defecto.
-        code = (to_po_code(" ".join(args)) if args
-                else (service._focus or "EURUSD_otc"))
-        await update.message.reply_text(
-            f"📥 Buscando historial ANTIGUO de *{code}* hacia atrás, en TODAS "
-            f"las temporalidades…\n_Experimental: tomo lo que Pocket Option "
-            f"tenga (sin inventar). Puede tardar 2-3 minutos._",
-            parse_mode="Markdown")
-        # Escaneamos cada temporalidad clave hacia atrás (M1, 3m, 5m, 15m, 30m).
-        periodos = [(60, "1m"), (180, "3m"), (300, "5m"), (900, "15m"),
-                    (1800, "30m")]
-        try:
-            lineas = []
-            for p, etq in periodos:
-                total = await service.scan_backwards(code, period=p,
-                                                     max_days=365, paginas=25)
-                lineas.append(f"  {etq}: *{total}* velas")
-            await update.message.reply_text(
-                f"✅ Historial de *{code}* (por temporalidad):\n"
-                + "\n".join(lineas)
-                + "\n\n_Si algún número no subió, PO no da más historial atrás "
-                  "en ese tiempo; lo seguimos acumulando en vivo._",
-                parse_mode="Markdown")
-        except Exception as e:
-            await update.message.reply_text(f"No se pudo escanear: {e}")
+        """/historial — el historial por Telegram es lento; se usa la descarga batch."""
+        await update.message.reply_text(_AVISO_HISTORIAL, parse_mode="Markdown")
 
     async def _leyendo(query, asset_display, tf):
         # Muestra "🧘 Leyendo…" de forma SEGURA. Si el mensaje es una FOTO (viene
@@ -450,7 +409,6 @@ def run():
         # El botón "Analizar de nuevo" LLEVA el activo y el tiempo en su dato, así
         # funciona SIEMPRE (incluso tras reiniciar el bot, sin memoria previa).
         rows = [[("🔁 Analizar de nuevo", f"re:{asset_display}:{tf}")],
-                [("📥 Cargar historial", f"hist:{asset_display}")],
                 [("📊 Otro activo", "back:market"), ("🏠 Menú", "back:main")]]
         path = None
         chart_df = result.get("chart")
@@ -470,28 +428,10 @@ def run():
         await query.answer()
         uid = query.from_user.id
 
-        # Botón "📥 Cargar historial": escanea hacia atrás el activo (sin escribir).
-        if query.data.startswith("hist:") and service is not None:
-            asset_display = query.data.split(":", 1)[1]
-            code = to_po_code(asset_display)
-            await query.message.reply_text(
-                f"📥 Buscando historial de *{asset_display}* hacia atrás "
-                f"(1m, 3m, 5m, 15m, 30m)…\n_Tarda 2-3 min. Te aviso al terminar._",
-                parse_mode="Markdown")
-            try:
-                lineas = []
-                for p, etq in ((60, "1m"), (180, "3m"), (300, "5m"),
-                               (900, "15m"), (1800, "30m")):
-                    total = await service.scan_backwards(code, period=p,
-                                                         max_days=365, paginas=20)
-                    lineas.append(f"  {etq}: *{total}* velas")
-                await query.message.reply_text(
-                    f"✅ Historial de *{asset_display}*:\n" + "\n".join(lineas)
-                    + "\n\n_Si un número no subió, PO no da más atrás en ese "
-                      "tiempo; se sigue acumulando en vivo._",
-                    parse_mode="Markdown")
-            except Exception as e:
-                await query.message.reply_text(f"No se pudo: {e}")
+        # (Botón viejo de historial en mensajes previos): redirige a la descarga
+        # batch. El historial por Telegram es LENTO y se retiró.
+        if query.data.startswith("hist:"):
+            await query.message.reply_text(_AVISO_HISTORIAL, parse_mode="Markdown")
             return
 
         # "Analizar de nuevo" que lleva el activo y el tiempo consigo (re:activo:tf).
