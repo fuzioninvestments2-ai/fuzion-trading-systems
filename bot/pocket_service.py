@@ -148,10 +148,30 @@ class PocketService:
         """Arranca la conexión en segundo plano (como tarea del mismo loop)."""
         self.connected = True
         self._conn_lock = asyncio.Lock()
-        asyncio.create_task(self.client.run(asset="EURUSD_otc",
-                                            period=self.period))
+        self._task_client = asyncio.create_task(
+            self.client.run(asset="EURUSD_otc", period=self.period))
         # Colector integrado: acumula historial en los ratos libres (misma conexión).
-        asyncio.create_task(self._collect_loop())
+        self._task_collect = asyncio.create_task(self._collect_loop())
+
+    async def stop(self):
+        """
+        Apagado LIMPIO: para el cliente y cancela las tareas de fondo antes de
+        que se cierre el loop. Así no quedan "Task was destroyed" ni tracebacks
+        feos al cerrar (Ctrl+C o cerrar la ventana).
+        """
+        self.connected = False
+        try:
+            self.client.stop()
+        except Exception:
+            pass
+        for t in (getattr(self, "_task_collect", None),
+                  getattr(self, "_task_client", None)):
+            if t is not None:
+                t.cancel()
+                try:
+                    await t
+                except (asyncio.CancelledError, Exception):
+                    pass
 
     def _watch_pick(self, i):
         """

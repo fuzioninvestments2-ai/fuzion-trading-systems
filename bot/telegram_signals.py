@@ -502,7 +502,17 @@ def run():
             asyncio.create_task(collector.run())
             print("📚 Colector 24/7 (2ª conexión) aprendiendo en segundo plano...")
 
-    app = Application.builder().token(token).post_init(_post_init).build()
+    async def _post_shutdown(app):
+        # Apagado LIMPIO: cancela las tareas de fondo antes de cerrar el loop,
+        # para no dejar "Task was destroyed" ni tracebacks al cerrar.
+        if service:
+            try:
+                await service.stop()
+            except Exception:
+                pass
+
+    app = (Application.builder().token(token)
+           .post_init(_post_init).post_shutdown(_post_shutdown).build())
     app.add_handler(CommandHandler(["start", "menu"], start))
     app.add_handler(CallbackQueryHandler(on_button))
 
