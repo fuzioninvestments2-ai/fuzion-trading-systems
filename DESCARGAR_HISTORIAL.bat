@@ -23,8 +23,8 @@ git pull
 python -m pip install BinaryOptionsToolsV2 yfinance >nul 2>&1
 
 echo.
-echo   2) Descargando historial OTC en bloque (rapido)...
-python -m bot.po_history_downloader
+echo   2) Descargando historial OTC (conexion del bot, hacia atras)...
+python -m bot.download_history
 
 echo.
 echo   3) Descargando historial REAL (FX) de los pares mayores...
