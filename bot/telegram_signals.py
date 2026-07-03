@@ -511,10 +511,16 @@ def run():
             except Exception:
                 pass
 
+    async def _on_error(update, context):
+        # Manejador GLOBAL de errores: evita que cualquier fallo suelte un
+        # traceback enorme en pantalla. Solo deja un aviso corto y sigue.
+        print(f"(aviso interno, el bot sigue funcionando: {context.error})")
+
     app = (Application.builder().token(token)
            .post_init(_post_init).post_shutdown(_post_shutdown).build())
     app.add_handler(CommandHandler(["start", "menu"], start))
     app.add_handler(CallbackQueryHandler(on_button))
+    app.add_error_handler(_on_error)
 
     modo = "PRECIOS REALES" if service else "SIMULADO (sin ssid.txt)"
     print(f"🤖 Bot de SEÑALES en marcha [{modo}]. Abre tu bot y pulsa /start.")

@@ -203,8 +203,12 @@ class PocketService:
                             break
                         await asyncio.sleep(1)
                 i += 1
-            except Exception:
-                self.log.exception("Colector integrado: fallo en una ráfaga")
+            except asyncio.CancelledError:
+                raise                              # apagado limpio
+            except Exception as exc:
+                # Aviso CORTO (sin traceback que asuste). Suele ser la conexión
+                # reconectando; el propio cliente se reconecta solo.
+                self.log.warning("Colector: salto una ráfaga (%s)", exc)
                 await asyncio.sleep(2)
             await asyncio.sleep(0.2)               # deja que el análisis tome el lock
 
