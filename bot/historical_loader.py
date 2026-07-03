@@ -22,12 +22,19 @@ SRP: solo descarga y guarda en el repositorio SQLite existente (mismo esquema).
 """
 
 # Mapa de código REAL de Pocket Option -> ticker de Yahoo Finance.
+# 22 pares forex COMPLETOS del menú real de PO. Cada par de divisas en Yahoo es
+# "{PAR}=X". (Metales/cripto quedan aparte; el bot REAL es solo monedas.)
 PO_TO_YF = {
     "EURUSD": "EURUSD=X", "GBPUSD": "GBPUSD=X", "USDJPY": "USDJPY=X",
-    "AUDUSD": "AUDUSD=X", "USDCAD": "USDCAD=X", "USDCHF": "USDCHF=X",
-    "NZDUSD": "NZDUSD=X", "EURJPY": "EURJPY=X", "GBPJPY": "GBPJPY=X",
-    "EURGBP": "EURGBP=X", "XAUUSD": "GC=F", "XAGUSD": "SI=F",
-    "BTCUSD": "BTC-USD", "ETHUSD": "ETH-USD",
+    "USDCHF": "USDCHF=X", "USDCAD": "USDCAD=X", "AUDUSD": "AUDUSD=X",
+    "NZDUSD": "NZDUSD=X", "EURGBP": "EURGBP=X", "EURJPY": "EURJPY=X",
+    "EURCHF": "EURCHF=X", "EURCAD": "EURCAD=X", "EURAUD": "EURAUD=X",
+    "GBPJPY": "GBPJPY=X", "GBPAUD": "GBPAUD=X", "GBPCAD": "GBPCAD=X",
+    "GBPCHF": "GBPCHF=X", "AUDJPY": "AUDJPY=X", "AUDCAD": "AUDCAD=X",
+    "AUDNZD": "AUDNZD=X", "CADJPY": "CADJPY=X", "CHFJPY": "CHFJPY=X",
+    "NZDJPY": "NZDJPY=X",
+    # Metales y cripto: disponibles para OTRO uso, NO para el bot REAL de monedas.
+    "XAUUSD": "GC=F", "XAGUSD": "SI=F", "BTCUSD": "BTC-USD", "ETHUSD": "ETH-USD",
 }
 
 # Intervalos yfinance -> (clave en la BD, cuánto historial pedir).
