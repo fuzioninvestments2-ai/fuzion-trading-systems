@@ -38,6 +38,8 @@ INTERVALOS = [
     ("5m", "tf300", "60d"),
     ("15m", "tf900", "60d"),
     ("30m", "tf1800", "60d"),
+    ("1h", "tf3600", "730d"),      # 1h -> ~2 años (tiempos largos con base real)
+    ("1d", "tf86400", "max"),      # diario -> décadas (sesgo mayor)
 ]
 
 
