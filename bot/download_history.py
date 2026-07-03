@@ -107,8 +107,9 @@ async def _run(assets, do_all=False, batch=5):
                 continue
             print(f"[{asset}] ...", flush=True)
             await _descargar_uno(svc, asset)
-        n = export_db(svc.repo)                 # exporta TRAS CADA lote (no se pierde)
-        print(f"--- Lote {li} listo. Exportados {n} archivos a datasets/ ---",
+        from bot.profiles import OTC_PROFILE
+        n = export_db(svc.repo, out_dir=OTC_PROFILE.datasets_dir)   # a datasets/otc
+        print(f"--- Lote {li} listo. Exportados {n} archivos a datasets/otc ---",
               flush=True)
 
     print(f"\nDescarga completa ({len(assets)} activos). "

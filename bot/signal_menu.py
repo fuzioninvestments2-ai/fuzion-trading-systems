@@ -124,22 +124,41 @@ class SignalMenu:
     lista de tuplas (etiqueta, dato_callback).
     """
 
-    def __init__(self):
+    def __init__(self, mercados=None):
+        """
+        mercados: lista de claves de mercado PERMITIDAS en este bot (para separar
+        el bot real del OTC). Si es None, se muestran todos (compatibilidad).
+        - Bot REAL (Fuzion FX): ["real"] -> solo monedas reales.
+        - Bot OTC (Fuzion OTC): los mercados OTC (otc, crypto, stocks, ...).
+        """
         self._state = {}       # user_id -> {"market","asset","timeframe"}
+        claves = list(mercados) if mercados else list(MARKETS.keys())
+        # Solo claves válidas, en el orden de MARKETS (estable).
+        self.mercados = [k for k in MARKETS if k in claves] or list(MARKETS.keys())
 
     def _st(self, user_id):
         return self._state.setdefault(user_id, {})
 
     # --- Pantallas ---
 
+    def entrada(self, user_id):
+        """
+        Pantalla inicial. Si el bot tiene UN SOLO mercado (p.ej. el real), salta
+        directo a sus activos (no tiene sentido elegir mercado si solo hay uno).
+        """
+        if len(self.mercados) == 1:
+            return self.market_menu(user_id, self.mercados[0])
+        return self.main_menu()
+
     def main_menu(self):
         text = "📊 *Elige el tipo de mercado:*"
-        rows = [[(m["label"], f"market:{key}")] for key, m in MARKETS.items()]
+        rows = [[(MARKETS[key]["label"], f"market:{key}")] for key in self.mercados]
         return text, rows
 
     def market_menu(self, user_id, market_key):
-        if market_key not in MARKETS:
-            return self.main_menu()
+        # Solo mercados permitidos en este bot (aísla real de OTC).
+        if market_key not in MARKETS or market_key not in self.mercados:
+            return self.entrada(user_id)
         self._st(user_id)["market"] = market_key
         self._st(user_id).pop("asset", None)
         assets = MARKETS[market_key]["assets"]
@@ -216,7 +235,7 @@ class SignalMenu:
         Recibe el 'dato' del botón pulsado y devuelve (texto, botones).
         """
         if data == "back:main":
-            return self.main_menu()
+            return self.entrada(user_id)
         if data.startswith("market:"):
             return self.market_menu(user_id, data.split(":", 1)[1])
         if data == "back:market":

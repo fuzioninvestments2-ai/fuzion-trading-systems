@@ -372,10 +372,15 @@ def run(profile_name="OTC"):
                               ContextTypes)
     from telegram.error import BadRequest
 
-    menu = SignalMenu()
+    # Mercados por bot: el real solo muestra monedas reales; el OTC, los OTC.
+    if profile.nombre == "REAL":
+        mercados = ["real"]
+    else:
+        mercados = ["otc", "crypto", "stocks", "commodities", "indices"]
+    menu = SignalMenu(mercados)
 
-    # Si hay SSID -> preparamos el servicio de precios REALES.
-    ssid = _load_ssid()
+    # SSID PROPIO de este bot (su cuenta de PO), para no mezclar con el otro.
+    ssid = _load_ssid(profile.nombre)
     service = None
     collector = None
     if ssid:
@@ -392,7 +397,7 @@ def run(profile_name="OTC"):
 
     async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         modo = "PRECIOS REALES ✅" if service else "datos simulados (sin SSID)"
-        text, rows = menu.main_menu()
+        text, rows = menu.entrada(update.effective_user.id)
         await update.message.reply_text(
             f"🤖 *{profile.titulo}*\n{text}\n_Modo: {modo}_",
             reply_markup=_keyboard(rows), parse_mode="Markdown")

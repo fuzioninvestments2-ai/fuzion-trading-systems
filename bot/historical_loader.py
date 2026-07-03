@@ -139,9 +139,10 @@ def _main():
     import os
     from bot.history import HistoryRepository
     logging_basic()
-    codes = sys.argv[1:] or list(PO_TO_YF.keys())
-    db = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                      "history.db")
+    from bot.profiles import REAL_PROFILE
+    # Bot REAL: solo monedas. Sin argumentos, baja los 22 pares del perfil.
+    codes = sys.argv[1:] or list(REAL_PROFILE.activos)
+    db = REAL_PROFILE.db_path                 # BD PROPIA del real (no se mezcla)
     repo = HistoryRepository(db)
     print(f"Descargando historial REAL de {len(codes)} activos a {db} ...")
     for code in codes:

@@ -49,7 +49,7 @@ def test_real_solo_monedas_sin_cripto():
         Profile(nombre="REAL", titulo="Fuzion FX", es_otc=False, ladder=LADDER_REAL,
                 respeta_horario=True, filtro_volatilidad=True,
                 fuentes_datos=("yfinance",), activos=("BTCUSD",),
-                db_path=":memory:")
+                db_path=":memory:", datasets_dir="datasets/x")
         assert False, "debería rechazar cripto en REAL"
     except ValueError:
         pass
@@ -63,11 +63,14 @@ def test_nombres_visibles():
 
 
 def test_bases_de_datos_separadas():
-    # Bots independientes => historial en BD distinta.
+    # Bots independientes => historial en BD y carpeta de nube DISTINTAS.
     assert OTC_PROFILE.db_path != REAL_PROFILE.db_path
-    assert OTC_PROFILE.db_path.endswith("history_otc.db")
+    assert OTC_PROFILE.db_path.endswith("history.db")        # conserva la actual
     assert REAL_PROFILE.db_path.endswith("history_real.db")
-    print("OK cada bot usa su propia base de datos")
+    assert OTC_PROFILE.datasets_dir != REAL_PROFILE.datasets_dir
+    assert OTC_PROFILE.datasets_dir.replace("\\", "/").endswith("datasets/otc")
+    assert REAL_PROFILE.datasets_dir.replace("\\", "/").endswith("datasets/real")
+    print("OK cada bot: su base de datos y su carpeta de nube (sin mezclar)")
 
 
 def test_perfil_otc_sin_sub_minuto_falla():
@@ -76,7 +79,7 @@ def test_perfil_otc_sin_sub_minuto_falla():
         Profile(nombre="OTC", titulo="Fuzion OTC", es_otc=True, ladder=(60, 300),
                 respeta_horario=False, filtro_volatilidad=False,
                 fuentes_datos=("pocket_option",), activos=("EURUSD_otc",),
-                db_path=":memory:")
+                db_path=":memory:", datasets_dir="datasets/x")
         assert False, "debería fallar"
     except ValueError:
         pass

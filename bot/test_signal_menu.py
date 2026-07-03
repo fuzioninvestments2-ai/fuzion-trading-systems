@@ -50,6 +50,26 @@ def test_flujo_completo():
     print("   " + text.replace("\n", " | "))
 
 
+def test_bot_real_solo_muestra_monedas():
+    # Fuzion FX: un solo mercado -> entra directo a los 22 pares, sin OTC/cripto.
+    real = SignalMenu(["real"])
+    text, rows = real.entrada(1)
+    datos = [b[1] for fila in rows for b in fila]
+    assert any(d == "asset:EUR/USD" for d in datos), datos
+    assert not any("OTC" in str(d) for d in datos)
+    assert "market:crypto" not in datos and "market:stocks" not in datos
+    print("OK bot REAL entra directo a los 22 pares (sin OTC/cripto)")
+
+
+def test_bot_otc_no_muestra_real():
+    # Fuzion OTC: muestra mercados OTC, NO el real.
+    otc = SignalMenu(["otc", "crypto", "stocks", "commodities", "indices"])
+    _, rows = otc.entrada(2)
+    datos = [b[1] for fila in rows for b in fila]
+    assert "market:otc" in datos and "market:real" not in datos
+    print("OK bot OTC muestra mercados OTC, sin el real")
+
+
 def test_estado_por_usuario():
     # Dos usuarios distintos no deben pisarse el estado.
     menu = SignalMenu()
@@ -64,6 +84,8 @@ def test_estado_por_usuario():
 
 if __name__ == "__main__":
     test_flujo_completo()
+    test_bot_real_solo_muestra_monedas()
+    test_bot_otc_no_muestra_real()
     test_estado_por_usuario()
     print("-" * 60)
     print("✅ TODAS LAS PRUEBAS PASARON.")

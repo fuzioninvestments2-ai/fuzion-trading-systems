@@ -44,8 +44,10 @@ cache/
 .coverage
 htmlcov/
 
-# SSID de Pocket Option (sensible, nunca versionar)
+# SSID de Pocket Option (sensible, nunca versionar). Uno por bot:
+# ssid.txt (comun), ssid_otc.txt, ssid_real.txt
 ssid.txt
+ssid_*.txt
 
 # Graficos temporales
 charts_tmp*.png

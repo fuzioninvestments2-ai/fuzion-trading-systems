@@ -148,7 +148,8 @@ async def _run(assets, push=False, rondas=None):
         while rondas is None or ronda < int(rondas):
             ronda += 1
             await _accumulate_round(svc, assets)
-            n = export_db(svc.repo)
+            from bot.profiles import OTC_PROFILE
+            n = export_db(svc.repo, out_dir=OTC_PROFILE.datasets_dir)  # datasets/otc
             total = sum(svc.repo.count(a, "M1") for a in assets)
             print(f"[ronda {ronda}] exportados {n} archivos · {total} velas M1 "
                   f"acumuladas", flush=True)

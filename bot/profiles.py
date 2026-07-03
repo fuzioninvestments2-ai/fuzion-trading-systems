@@ -57,6 +57,7 @@ class Profile:
     fuentes_datos: Tuple[str, ...]  # de dónde saca el historial
     activos: Tuple[str, ...]        # watchlist por defecto
     db_path: str                    # base de datos PROPIA (bots separados)
+    datasets_dir: str               # carpeta PROPIA en la nube (sin mezclar)
     sub_minuto: bool = field(init=False)
 
     def __post_init__(self):
@@ -81,24 +82,28 @@ class Profile:
                     raise ValueError(f"bot REAL es solo monedas: {a} no permitido")
 
 
-def _db(nombre):
-    """Ruta a una BD propia por bot (historial separado: bots independientes)."""
+def _ruta(*partes):
+    """Ruta absoluta desde la raíz del proyecto."""
     import os
     raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(raiz, f"history_{nombre.lower()}.db")
+    return os.path.join(raiz, *partes)
 
 
+# BD por bot. OTC conserva 'history.db' (donde ya está lo descargado, no se pierde);
+# REAL usa la suya. Datasets en carpetas separadas para que la nube no mezcle.
 OTC_PROFILE = Profile(
     nombre="OTC", titulo="Fuzion OTC", es_otc=True, ladder=LADDER_OTC,
     respeta_horario=False, filtro_volatilidad=False,
     fuentes_datos=("pocket_option",),
-    activos=tuple(OTC_MAJORS), db_path=_db("OTC"))
+    activos=tuple(OTC_MAJORS),
+    db_path=_ruta("history.db"), datasets_dir=_ruta("datasets", "otc"))
 
 REAL_PROFILE = Profile(
     nombre="REAL", titulo="Fuzion FX", es_otc=False, ladder=LADDER_REAL,
     respeta_horario=True, filtro_volatilidad=True,
     fuentes_datos=("pocket_option", "tradingview", "yfinance"),
-    activos=tuple(REAL_MAJORS), db_path=_db("REAL"))
+    activos=tuple(REAL_MAJORS),
+    db_path=_ruta("history_real.db"), datasets_dir=_ruta("datasets", "real"))
 
 
 def get_profile(nombre):

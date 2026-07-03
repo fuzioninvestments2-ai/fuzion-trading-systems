@@ -81,17 +81,33 @@ def import_db(repo, in_dir=None):
 
 
 def _main():
+    """
+    CLI por bot (para no mezclar en la nube):
+      python -m bot.dataset_export export OTC   -> history.db     -> datasets/otc/
+      python -m bot.dataset_export export REAL  -> history_real.db-> datasets/real/
+      python -m bot.dataset_export import REAL   (a la inversa)
+    Sin perfil usa la history.db común y datasets/ (compatibilidad).
+    """
     import sys
     from bot.history import HistoryRepository
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    repo = HistoryRepository(os.path.join(root, "history.db"))
     modo = sys.argv[1] if len(sys.argv) > 1 else "export"
-    if modo == "import":
-        n = import_db(repo)
-        print(f"Importadas {n} velas desde datasets/ a history.db")
+    perfil = sys.argv[2] if len(sys.argv) > 2 else None
+    if perfil:
+        from bot.profiles import get_profile
+        p = get_profile(perfil)
+        db_path, carpeta, etiqueta = p.db_path, p.datasets_dir, p.titulo
     else:
-        n = export_db(repo)
-        print(f"Exportados {n} archivos a datasets/  (commit + push para la nube)")
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        db_path, carpeta, etiqueta = (os.path.join(root, "history.db"),
+                                      _datasets_dir(), "comun")
+    repo = HistoryRepository(db_path)
+    if modo == "import":
+        n = import_db(repo, in_dir=carpeta)
+        print(f"[{etiqueta}] Importadas {n} velas desde {carpeta}")
+    else:
+        n = export_db(repo, out_dir=carpeta)
+        print(f"[{etiqueta}] Exportados {n} archivos a {carpeta} "
+              f"(commit + push para la nube)")
 
 
 if __name__ == "__main__":

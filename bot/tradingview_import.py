@@ -148,9 +148,8 @@ def _main():
               '  ej: python -m bot.tradingview_import EURUSD tf3600 EURUSD_1h.csv')
         return
     asset, clave, ruta = sys.argv[1], sys.argv[2], sys.argv[3]
-    db = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                      "history.db")
-    repo = HistoryRepository(db)
+    from bot.profiles import REAL_PROFILE
+    repo = HistoryRepository(REAL_PROFILE.db_path)   # TradingView es del bot REAL
     n = import_tv_file(asset, clave, ruta, repo)
     print(f"Importadas {n} velas de {asset} ({clave}). "
           f"El bot ya las usará para el activo REAL.")

@@ -79,19 +79,36 @@ async def _listen(ws, auth_msg, asset="EURUSD_otc"):
                 print(">> enviado:", msg)
 
 
-def _load_ssid():
+def _load_ssid(nombre=None):
     """
-    Lee el SSID desde (por orden): la variable POCKET_OPTION_SSID, o un archivo
-    'ssid.txt' en la raíz del proyecto. El archivo evita problemas con las
-    muchas comillas del SSID. Nunca se versiona (está en .gitignore).
+    Lee el SSID de Pocket Option. Si se da `nombre` (perfil del bot: 'OTC'/'REAL'),
+    busca PRIMERO el SSID PROPIO de ese bot, para que cada bot use su PROPIA cuenta
+    de PO y puedan correr a la vez SIN mezclarse (dos conexiones = dos cuentas).
+
+    Orden de búsqueda (primero que exista gana):
+      1) POCKET_OPTION_SSID_<NOMBRE>         (env propio del bot)
+      2) ssid_<nombre>.txt                    (archivo propio del bot)
+      3) POCKET_OPTION_SSID                    (env común, compatibilidad)
+      4) ssid.txt                              (archivo común, compatibilidad)
+    Nunca se versiona (los ssid*.txt están en .gitignore).
     """
-    env = os.getenv("POCKET_OPTION_SSID", "").strip()
-    if env:
-        return env
-    ruta = os.path.join(ROOT, "ssid.txt")
-    if os.path.exists(ruta):
-        with open(ruta, "r", encoding="utf-8") as f:
-            return f.read().strip()
+    candidatos = []
+    if nombre:
+        n = str(nombre).strip()
+        candidatos.append(("env", f"POCKET_OPTION_SSID_{n.upper()}"))
+        candidatos.append(("file", os.path.join(ROOT, f"ssid_{n.lower()}.txt")))
+    candidatos.append(("env", "POCKET_OPTION_SSID"))
+    candidatos.append(("file", os.path.join(ROOT, "ssid.txt")))
+    for tipo, ref in candidatos:
+        if tipo == "env":
+            val = os.getenv(ref, "").strip()
+            if val:
+                return val
+        elif os.path.exists(ref):
+            with open(ref, "r", encoding="utf-8") as f:
+                val = f.read().strip()
+            if val:
+                return val
     return ""
 
 
