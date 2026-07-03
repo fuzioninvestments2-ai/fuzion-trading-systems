@@ -377,16 +377,25 @@ def run():
         code = (to_po_code(" ".join(args)) if args
                 else (service._focus or "EURUSD_otc"))
         await update.message.reply_text(
-            f"📥 Buscando historial ANTIGUO de *{code}* hacia atrás…\n"
-            f"_Experimental: tomo lo que Pocket Option tenga (sin inventar). "
-            f"Puede tardar un minuto._", parse_mode="Markdown")
+            f"📥 Buscando historial ANTIGUO de *{code}* hacia atrás, en TODAS "
+            f"las temporalidades…\n_Experimental: tomo lo que Pocket Option "
+            f"tenga (sin inventar). Puede tardar 2-3 minutos._",
+            parse_mode="Markdown")
+        # Escaneamos cada temporalidad clave hacia atrás (M1, 3m, 5m, 15m, 30m).
+        periodos = [(60, "1m"), (180, "3m"), (300, "5m"), (900, "15m"),
+                    (1800, "30m")]
         try:
-            total = await service.scan_backwards(code, period=60,
-                                                 max_days=365, paginas=40)
+            lineas = []
+            for p, etq in periodos:
+                total = await service.scan_backwards(code, period=p,
+                                                     max_days=365, paginas=25)
+                lineas.append(f"  {etq}: *{total}* velas")
             await update.message.reply_text(
-                f"✅ Historial de *{code}*: ahora hay *{total}* velas M1 "
-                f"guardadas. _(Si no subió, PO no da más historial atrás; "
-                f"lo seguimos acumulando en vivo.)_", parse_mode="Markdown")
+                f"✅ Historial de *{code}* (por temporalidad):\n"
+                + "\n".join(lineas)
+                + "\n\n_Si algún número no subió, PO no da más historial atrás "
+                  "en ese tiempo; lo seguimos acumulando en vivo._",
+                parse_mode="Markdown")
         except Exception as e:
             await update.message.reply_text(f"No se pudo escanear: {e}")
 
