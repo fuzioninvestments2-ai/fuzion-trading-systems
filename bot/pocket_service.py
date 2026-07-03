@@ -170,7 +170,8 @@ class PocketService:
             return True
         return False
 
-    async def scan_backwards(self, asset, period=60, max_days=60, paginas=200):
+    async def scan_backwards(self, asset, period=60, max_days=60, paginas=200,
+                             espera=1.3):
         """
         ESCÁNER HACIA ATRÁS: pide a Pocket Option velas cada vez más ANTIGUAS de
         `asset` para acumular su historial (meses/años si PO los sirve). Va desde
@@ -218,7 +219,7 @@ class PocketService:
                     await self.client.set_asset(asset, 60)
                     await self.client.load_history_period(asset, period, end_time,
                                                           index=i)
-                    await asyncio.sleep(1.3)    # esperar respuesta -> _on_history
+                    await asyncio.sleep(espera)  # esperar respuesta -> _on_history
             except (ConnectionClosed, OSError) as exc:
                 # Caída a mitad de página: esperar reconexión y REINTENTAR la misma
                 # página (no abortar). Límite de reintentos para no colgarse.

@@ -114,6 +114,8 @@ async def _run(assets, push=False, rondas=None):
     print(f"Acumulando {len(assets)} activos (5s..1d) hacia adelante. "
           f"Ctrl+C para parar.", flush=True)
     ronda = 0
+    total_prev = None
+    sin_crecer = 0
     try:
         while rondas is None or ronda < int(rondas):
             ronda += 1
@@ -122,6 +124,19 @@ async def _run(assets, push=False, rondas=None):
             total = sum(svc.repo.count(a, "M1") for a in assets)
             print(f"[ronda {ronda}] exportados {n} archivos · {total} velas M1 "
                   f"acumuladas", flush=True)
+            # WATCHDOG: si el historial no crece varias rondas seguidas, casi
+            # siempre es que el SSID caducó (PO desautentica). Avisamos CLARO en
+            # vez de girar en silencio sin guardar nada.
+            if total_prev is not None and total <= total_prev:
+                sin_crecer += 1
+            else:
+                sin_crecer = 0
+            total_prev = total
+            if sin_crecer >= 3:
+                print("\n⚠️  El historial no crece hace 3 rondas. Lo más probable "
+                      "es que el SSID haya CADUCADO. Actualiza ssid.txt (vuelve a "
+                      "copiar la línea 42[\"auth\",...] del navegador) y reinicia.",
+                      flush=True)
             if push:
                 _git_push(svc.log)
     except (KeyboardInterrupt, asyncio.CancelledError):
