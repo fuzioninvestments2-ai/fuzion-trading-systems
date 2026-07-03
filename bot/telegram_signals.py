@@ -19,6 +19,7 @@ Uso:
 import asyncio
 import os
 import sys
+from datetime import datetime, timedelta
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
@@ -166,8 +167,15 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
     desglose = "\n".join(filas) if filas else "  (sin datos suficientes)"
 
     if seg is not None:
-        timing = (f"\n⏱️ *¡ENTRA YA!* (vela en {seg}s)" if seg <= 5
-                  else f"\n⏱️ Entra al ABRIR la próxima vela: *{seg}s*")
+        # HORA EXACTA de entrada (reloj del usuario) = ahora + segundos hasta que
+        # ABRE la próxima vela. Así sabes el momento justo, como los bots que dan
+        # la hora de entrada (ej. 23:50:00), no solo "en Xs".
+        hora_entrada = (datetime.now() + timedelta(seconds=seg)).strftime("%H:%M:%S")
+        if seg <= 5:
+            timing = f"\n⏱️ *¡ENTRA YA!* (nueva vela ~{hora_entrada})"
+        else:
+            timing = (f"\n⏱️ *Entra a las {hora_entrada}* "
+                      f"_(al abrir la vela, en {seg}s)_")
     else:
         timing = ""
     bal = f"\n💰 Balance demo: ${balance:.2f}" if balance else ""
