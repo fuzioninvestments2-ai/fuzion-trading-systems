@@ -383,14 +383,20 @@ class PocketService:
             return ({"veredicto": "🚫 NO OPERAR", "direccion": "⏸️ pocos datos",
                      "fuerza": 0.0, "por_tiempo": {}}, seg, len(ticks))
 
-        # ESCALERA COMPLETA de tiempos (lee toda la línea de tiempo, lo clave es
-        # la ALINEACIÓN). OTC incluye sub-minuto; real empieza en 1m. Cubrimos
-        # 15s → 30m SIN saltos (incluye 2m y 4m) para un análisis completo.
+        # LECTURA ENVOLVENTE: escalera COMPLETA de 5s a 1 día, SIN saltos. El
+        # trader lee toda la escala temporal a la vez: los micro-tiempos (5s-30s)
+        # dan la ENTRADA fina y los macro-tiempos (1h-1d) dan el SESGO/tendencia
+        # mayor. Cuanto más ancha la escalera, más robusta la ALINEACIÓN fractal.
+        # OTC incluye sub-minuto (velas sintéticas de PO); real empieza en 1m.
+        # Un tiempo sin >=6 velas se ignora solo en _combinar (no ensucia nada),
+        # así que añadir 1h-1d es seguro: solo suma cuando ya hay historial.
         is_otc = asset_code.endswith("_otc")
+        _FULL = (5, 10, 15, 30, 60, 120, 180, 240, 300, 600, 900, 1800,
+                 3600, 7200, 14400, 86400)                   # 5s .. 1d
         if is_otc:
-            tfs = (15, 30, 60, 120, 180, 240, 300, 600, 900, 1800)  # 15s..30m
+            tfs = _FULL
         else:
-            tfs = (60, 120, 180, 240, 300, 600, 900, 1800)          # 1m..30m
+            tfs = tuple(t for t in _FULL if t >= 60)         # 1m .. 1d
         # Garantizamos que la temporalidad ELEGIDA por el usuario esté siempre
         # en el panel (p.ej. si pide M2 = 120s, que aparezca su línea de 2m).
         if tf_seconds not in tfs:
