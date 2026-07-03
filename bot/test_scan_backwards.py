@@ -55,6 +55,11 @@ def test_scan_backwards_pagina_y_para():
         def __init__(self, svc):
             self.svc = svc
             self.paginas = 3
+        @property
+        def is_connected(self):
+            return True
+        async def wait_connected(self, timeout=30.0):
+            return True
         async def set_asset(self, asset, period=60):
             pass                                          # no-op (sin red)
         async def load_history_period(self, asset, period, end_time, index=1):
@@ -75,9 +80,60 @@ def test_scan_backwards_pagina_y_para():
     print(f"OK escaneo hacia atrás pagina y se detiene solo ({total} velas)")
 
 
+def test_scan_backwards_sobrevive_caida():
+    """
+    La conexión se cae en la 1ª página (ConnectionClosed) y se recupera: el
+    escaneo debe REINTENTAR y terminar con las velas, no abortar en 0. Esto
+    reproduce el fallo real (1005) que dejaba en 0 las temporalidades largas.
+    """
+    from websockets.exceptions import ConnectionClosedOK
+
+    s = _svc()
+    base = 1_700_000_000
+    s.repo.record_many("EURUSD_otc", "tf900",
+                       [{"timestamp": (base + i * 900) * 1000, "open": 1.1,
+                         "high": 1.1, "low": 1.1, "close": 1.1, "volume": 1}
+                        for i in range(20)])
+
+    class _FlakyClient:
+        def __init__(self, svc):
+            self.svc = svc
+            self._vivo = True
+            self.paginas = 2
+            self.cayo_una_vez = False
+        @property
+        def is_connected(self):
+            return self._vivo
+        async def wait_connected(self, timeout=30.0):
+            self._vivo = True                             # run() reconecta
+            return True
+        async def set_asset(self, asset, period=60):
+            # Primera vez: simula el socket muerto (1005) y se marca caído.
+            if not self.cayo_una_vez:
+                self.cayo_una_vez = True
+                self._vivo = False
+                raise ConnectionClosedOK(None, None)
+        async def load_history_period(self, asset, period, end_time, index=1):
+            if self.paginas <= 0:
+                return
+            self.paginas -= 1
+            cs = [{"time": end_time - (k + 1) * period, "open": 1.1, "high": 1.1,
+                   "low": 1.1, "close": 1.1, "volume": 1} for k in range(10)]
+            self.svc._on_history({"asset": asset, "period": period, "candles": cs})
+
+    s.connected = True
+    s.client = _FlakyClient(s)
+    total = asyncio.run(s.scan_backwards("EURUSD_otc", period=900,
+                                         max_days=365, paginas=50))
+    assert s.client.cayo_una_vez                          # hubo caída
+    assert total >= 35, total                             # y aun así descargó
+    print(f"OK sobrevive a la caída y completa ({total} velas)")
+
+
 if __name__ == "__main__":
     test_store_ohlc_dict()
     test_store_ohlc_lista()
     test_on_history_ruta_ohlc()
     test_scan_backwards_pagina_y_para()
+    test_scan_backwards_sobrevive_caida()
     print("\nTODOS OK — escaneo de historial hacia atrás")

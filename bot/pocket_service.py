@@ -192,12 +192,23 @@ class PocketService:
                 return 0
         limite = end_time - int(max_days) * 86400
         sin_avance = 0
+        reintentos = 0                          # reintentos por caída de conexión
         # Pedimos la conexión con prioridad (el colector cede) y fijamos el foco.
         self._focus = asset
         import contextlib
+        from websockets.exceptions import ConnectionClosed
         for i in range(1, int(paginas) + 1):
             if not self.connected or end_time <= limite or sin_avance >= 3:
                 break
+            # Si el socket se cayó (p.ej. PO cierra con 1005), esperar a que run()
+            # reconecte antes de pedir. Sin esto, la descarga larga (5s->1d) moría
+            # a mitad y las temporalidades grandes quedaban en 0 velas.
+            if not self.client.is_connected:
+                if not await self.client.wait_connected(timeout=30):
+                    self.log.warning("scan_backwards: sin conexión, se corta %s %s",
+                                     asset, key)
+                    break
+                await asyncio.sleep(2)          # dar tiempo a re-autenticar
             antes = self.repo.count(asset, key)
             self._want_analysis = True
             lock = self._conn_lock or contextlib.nullcontext()
@@ -208,6 +219,18 @@ class PocketService:
                     await self.client.load_history_period(asset, period, end_time,
                                                           index=i)
                     await asyncio.sleep(1.3)    # esperar respuesta -> _on_history
+            except (ConnectionClosed, OSError) as exc:
+                # Caída a mitad de página: esperar reconexión y REINTENTAR la misma
+                # página (no abortar). Límite de reintentos para no colgarse.
+                reintentos += 1
+                if reintentos > 5:
+                    self.log.warning("scan_backwards: demasiadas caídas en %s %s",
+                                     asset, key)
+                    break
+                self.log.info("scan_backwards: reconectando (%s)...", exc)
+                await self.client.wait_connected(timeout=30)
+                await asyncio.sleep(2)
+                continue                        # reintenta esta página tras reconectar
             except Exception:
                 self.log.exception("scan_backwards: fallo pidiendo página")
                 break

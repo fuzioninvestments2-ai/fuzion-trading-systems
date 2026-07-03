@@ -44,10 +44,17 @@ async def _run(assets):
     # Arranca SOLO la conexión (no el colector), en segundo plano.
     asyncio.create_task(svc.client.run(asset=assets[0], period=60))
     print("Conectando a Pocket Option...", flush=True)
-    await asyncio.sleep(8)                     # dar tiempo a autenticar
+    # Esperar la conexión REAL (no un sleep a ciegas) + un momento para autenticar.
+    if not await svc.client.wait_connected(timeout=30):
+        print("No se pudo conectar a Pocket Option. Revisa ssid.txt.", flush=True)
+        return
+    await asyncio.sleep(3)
 
     for i, asset in enumerate(assets, 1):
         print(f"[{i}/{len(assets)}] {asset} ...", flush=True)
+        # Si el socket se cayó entre activos, esperar a que reconecte.
+        if not svc.client.is_connected:
+            await svc.client.wait_connected(timeout=30)
         # Asegurar ticks para tener punto de partida del escaneo.
         try:
             await svc.client.set_asset(asset, 60)

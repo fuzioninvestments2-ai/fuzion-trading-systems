@@ -65,10 +65,31 @@ class PocketOptionClient:
     def stop(self):
         self._stopped = True
 
+    @property
+    def is_connected(self):
+        """Hay socket vivo. `close_code` deja de ser None cuando se cierra."""
+        ws = self._ws
+        return ws is not None and getattr(ws, "close_code", None) is None
+
+    async def wait_connected(self, timeout=30.0):
+        """
+        Espera a que run() (re)establezca la conexión tras una caída. Devuelve
+        True si la hubo dentro del tiempo. Necesario para el escaneo de historial:
+        si el socket se cae a mitad, hay que aguardar la reconexión y reintentar,
+        no abortar.
+        """
+        paso, esperado = 0.25, 0.0
+        while esperado < timeout and not self._stopped:
+            if self.is_connected:
+                return True
+            await asyncio.sleep(paso)
+            esperado += paso
+        return self.is_connected
+
     async def set_asset(self, asset, period=60):
-        """Cambia el activo escuchado en caliente (si hay conexión)."""
+        """Cambia el activo escuchado en caliente (si hay conexión viva)."""
         self._asset, self._period = asset, period
-        if self._ws is not None:
+        if self.is_connected:
             await self.change_asset(self._ws, asset, period)
 
     async def run(self, asset="EURUSD_otc", period=60):
@@ -84,7 +105,14 @@ class PocketOptionClient:
                     self._ws = ws
                     self.log.info("Conectado a Pocket Option (%s).",
                                   "demo" if "demo" in self.url else "real")
-                    await self._listen(ws)
+                    try:
+                        await self._listen(ws)
+                    finally:
+                        # Al cerrarse el socket, invalidarlo YA: si queda apuntando
+                        # al ws muerto, set_asset/load_history seguirían enviando
+                        # sobre él (ConnectionClosedOK). None -> el escaneo espera
+                        # la reconexión en vez de fallar.
+                        self._ws = None
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
