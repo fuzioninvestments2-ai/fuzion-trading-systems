@@ -1,0 +1,53 @@
+flowchart TB
+  U([Usuario en Telegram]) --> TG[telegram_signals.py<br/>botones + mensajes]
+  TG --> PS[pocket_service.py<br/>ORQUESTADOR central]
+
+  subgraph CONEXION[Conexion a Pocket Option]
+    PC[pocket_client.py<br/>websocket + reconexion]
+    COL[colector integrado<br/>acumula historial 24/7]
+  end
+  PS <--> PC
+  PS --> COL
+  PC <--> PO[(Pocket Option<br/>precios reales OTC)]
+
+  subgraph MOTOR[Motor de analisis]
+    DA[deep_analysis.py<br/>10 tiempos 15s..30m<br/>alineacion fractal]
+    SC[scoring_strategy.py<br/>8 indicadores votan<br/>pesos por tiempo/regimen]
+    DA --> SC
+  end
+  PS --> DA
+
+  subgraph LECTURAS[Lecturas extra]
+    PAT[candle_patterns<br/>doji/martillo/envolvente]
+    VW[vwap precio justo]
+    LV[levels techo/piso]
+    CH[chart grafico de velas]
+  end
+  PS --> LECTURAS
+
+  subgraph PROTECCION[Proteccion - fuerza NO OPERAR]
+    TR[filtro de tendencia mayor]
+    MAN[manipulation spike/congelado]
+    VD[void_detector feed con huecos]
+    MH[market_hours OTC 24-7 / real L-V]
+    PAY[payout pago bajo]
+  end
+  PS --> PROTECCION
+
+  subgraph APRENDIZAJE[Aprendizaje continuo]
+    CAL[calibration umbral]
+    WL[weight_learning pesos]
+    SL[signal_log acierto REAL]
+    HI[history repositorio]
+  end
+  PS --> APRENDIZAJE
+  APRENDIZAJE --> DB[(history.db<br/>SQLite indexada)]
+
+  subgraph DATOS[Descarga de historial - batch, bot apagado]
+    POD[po_history_downloader<br/>OTC masivo BinaryOptionsToolsV2]
+    HL[historical_loader<br/>FX real yfinance]
+  end
+  DATOS --> DB
+  DB --> PS
+
+  PS --> TG
