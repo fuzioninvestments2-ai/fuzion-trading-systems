@@ -1,0 +1,496 @@
+<style>
+  :root{
+    --bg:#F7F8FA; --panel:#FFFFFF; --panel-2:#F0F2F6;
+    --ink:#141A26; --muted:#5A6478; --faint:#8A93A6;
+    --line:#DEE3EC; --line-strong:#C4CBD9;
+    --up:#0F8F8A; --up-soft:#E1F3F1;
+    --down:#C0532B; --down-soft:#F8E7DE;
+    --core:#4C5BD0; --core-soft:#E7E9FB;
+    --grid:#E8ECF3;
+    --shadow:0 1px 2px rgba(20,26,38,.05),0 6px 20px rgba(20,26,38,.06);
+    --r:14px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0E1420; --panel:#161E2C; --panel-2:#1B2434;
+      --ink:#EAEEF6; --muted:#9AA5B8; --faint:#6B7686;
+      --line:#28303F; --line-strong:#38424F;
+      --up:#3FC9C0; --up-soft:#12312F;
+      --down:#E7855C; --down-soft:#33200F;
+      --core:#8B97F0; --core-soft:#1C2140;
+      --grid:#222B3A;
+      --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 26px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#F7F8FA;--panel:#FFFFFF;--panel-2:#F0F2F6;--ink:#141A26;--muted:#5A6478;
+    --faint:#8A93A6;--line:#DEE3EC;--line-strong:#C4CBD9;--up:#0F8F8A;--up-soft:#E1F3F1;
+    --down:#C0532B;--down-soft:#F8E7DE;--core:#4C5BD0;--core-soft:#E7E9FB;--grid:#E8ECF3;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0E1420;--panel:#161E2C;--panel-2:#1B2434;--ink:#EAEEF6;--muted:#9AA5B8;
+    --faint:#6B7686;--line:#28303F;--line-strong:#38424F;--up:#3FC9C0;--up-soft:#12312F;
+    --down:#E7855C;--down-soft:#33200F;--core:#8B97F0;--core-soft:#1C2140;--grid:#222B3A;
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0}
+  .page{background:var(--bg);color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.55;
+    -webkit-font-smoothing:antialiased;padding:clamp(20px,4vw,52px) clamp(16px,4vw,40px)}
+  .wrap{max-width:1120px;margin:0 auto}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+
+  .eyebrow{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--core);margin:0 0 10px}
+  h1{font-size:clamp(28px,4.6vw,46px);line-height:1.04;font-weight:800;letter-spacing:-.02em;text-wrap:balance;margin:0 0 14px}
+  .lede{font-size:clamp(15px,2.1vw,18px);color:var(--muted);max-width:64ch;margin:0}
+
+  section{margin-top:clamp(34px,5vw,56px)}
+  .sec-head{display:flex;align-items:baseline;gap:12px;margin:0 0 6px}
+  h2{font-size:clamp(19px,2.6vw,24px);font-weight:800;letter-spacing:-.01em;margin:0}
+  .sec-head .n{font-size:13px;font-weight:700;color:var(--faint)}
+  .sec-sub{font-size:13.5px;color:var(--muted);margin:2px 0 20px}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media (max-width:820px){.grid{grid-template-columns:1fr}}
+
+  .ind{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+    box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column}
+  .ind-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:16px 18px 10px}
+  .ind-top h3{margin:0;font-size:17px;font-weight:800;letter-spacing:-.01em}
+  .ind-top .param{font-size:11.5px;color:var(--faint);margin-top:2px;font-family:ui-monospace,Menlo,monospace}
+  .bias{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+    padding:3px 8px;border-radius:6px;white-space:nowrap}
+  .bias.rev{background:var(--up-soft);color:var(--up)}
+  .bias.trend{background:var(--core-soft);color:var(--core)}
+
+  .chart{background:var(--panel-2);border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:10px 14px}
+  .chart svg{display:block;width:100%;height:88px}
+
+  .ind-body{padding:14px 18px 16px;display:flex;flex-direction:column;gap:11px}
+  .blk .lbl{font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);margin:0 0 3px}
+  .blk p{margin:0;font-size:13px;color:var(--ink)}
+  .math{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:9px 11px;
+    font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:12px;color:var(--ink);
+    overflow-x:auto;white-space:nowrap}
+  .votes{display:flex;flex-direction:column;gap:6px}
+  .vote{display:flex;align-items:center;gap:8px;font-size:12.5px}
+  .vote .pill{font-size:10px;font-weight:800;padding:2px 7px;border-radius:5px;min-width:38px;text-align:center}
+  .pill.call{background:var(--up-soft);color:var(--up)}
+  .pill.put{background:var(--down-soft);color:var(--down)}
+  .pill.hold{background:var(--panel-2);color:var(--faint);border:1px solid var(--line)}
+  .wbar{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
+  .wbar .w{font-size:11.5px;font-weight:600;padding:4px 8px;border-radius:7px;background:var(--panel-2);border:1px solid var(--line);font-variant-numeric:tabular-nums}
+  .wbar .w b{color:var(--core)}
+
+  /* velas */
+  .cgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media (max-width:820px){.cgrid{grid-template-columns:1fr 1fr}}
+  @media (max-width:520px){.cgrid{grid-template-columns:1fr}}
+  .cpat{background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);
+    padding:14px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px}
+  .cpat svg{width:70px;height:96px}
+  .cpat h4{margin:0;font-size:14px;font-weight:800}
+  .cpat p{margin:0;font-size:12px;color:var(--muted)}
+  .cpat .dir{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 8px;border-radius:6px}
+  .dir.call{background:var(--up-soft);color:var(--up)}
+  .dir.put{background:var(--down-soft);color:var(--down)}
+  .dir.neu{background:var(--panel-2);color:var(--faint);border:1px solid var(--line)}
+
+  .callout{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--core);
+    border-radius:12px;padding:16px 18px;font-size:13.5px;color:var(--muted)}
+  .callout b{color:var(--ink)}
+  .callout code{background:var(--panel-2);padding:1px 6px;border-radius:5px;font-size:12px}
+  footer{margin-top:52px;padding-top:18px;border-top:1px solid var(--line);font-size:12.5px;color:var(--faint)}
+</style>
+
+<div class="page">
+<div class="wrap">
+
+  <p class="eyebrow">Fuzion Investments · Biblioteca del cerebro</p>
+  <h1>Indicadores y velas — la materia gris del motor</h1>
+  <p class="lede">Cada pieza que lee el motor, por nombre: qué mide, su matemática exacta (la del código), cómo vota (CALL / PUT), y cuánto pesa en cada temporalidad. Los mini-gráficos son ilustrativos, con la flecha de la señal. Todos los parámetros viven en el código y se pueden ajustar.</p>
+
+  <!-- ============ INDICADORES ============ -->
+  <section>
+    <div class="sec-head"><span class="n">01</span><h2>Indicadores (8 votantes)</h2></div>
+    <p class="sec-sub">Ninguno decide solo: cada uno vota y el motor pondera. Peso por tiempo = corto (5s–30s) · medio (1m–5m) · largo (&gt;5m).</p>
+
+    <div class="grid">
+
+      <!-- RSI -->
+      <div class="ind">
+        <div class="ind-top">
+          <div><h3>RSI</h3><div class="param">Relative Strength Index · periodo 14</div></div>
+          <span class="bias rev">Reversión</span>
+        </div>
+        <div class="chart">
+          <svg viewBox="0 0 260 88" preserveAspectRatio="none" aria-hidden="true">
+            <rect x="0" y="60" width="260" height="28" fill="var(--up-soft)"/>
+            <line x1="0" y1="60" x2="260" y2="60" stroke="var(--grid)" stroke-dasharray="3 3"/>
+            <line x1="0" y1="24" x2="260" y2="24" stroke="var(--grid)" stroke-dasharray="3 3"/>
+            <path d="M0,30 C40,20 70,66 100,70 C120,72 130,60 150,44 C175,26 210,34 260,30"
+                  fill="none" stroke="var(--core)" stroke-width="2.5"/>
+            <circle cx="100" cy="70" r="4" fill="var(--up)"/>
+            <path d="M100,70 l0,-22 m-5,7 l5,-7 l5,7" stroke="var(--up)" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="ind-body">
+          <div class="blk"><p class="lbl">Qué mide</p><p>Velocidad y fuerza del movimiento (0–100). Muy bajo = vendido de más (posible rebote ↑); muy alto = comprado de más (posible caída ↓).</p></div>
+          <div class="blk"><p class="lbl">Matemática</p><div class="math">RS = media_ganancias(14) / media_pérdidas(14)
+RSI = 100 − 100 / (1 + RS)</div></div>
+          <div class="blk"><p class="lbl">Cómo vota</p>
+            <div class="votes">
+              <div class="vote"><span class="pill call">CALL</span> RSI &lt; 30 (fuerte) · &lt; 40 (suave)</div>
+              <div class="vote"><span class="pill put">PUT</span> RSI &gt; 70 (fuerte) · &gt; 60 (suave)</div>
+              <div class="vote"><span class="pill hold">HOLD</span> zona media 40–60</div>
+            </div>
+          </div>
+          <div class="blk"><p class="lbl">Peso por tiempo</p>
+            <div class="wbar"><span class="w">base 2.0</span><span class="w">corto <b>2.6</b></span><span class="w">medio 2.0</span><span class="w">largo 1.8</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MACD -->
+      <div class="ind">
+        <div class="ind-top">
+          <div><h3>MACD</h3><div class="param">Moving Average Convergence Divergence · 12, 26, 9</div></div>
+          <span class="bias trend">Tendencia</span>
+        </div>
+        <div class="chart">
+          <svg viewBox="0 0 260 88" preserveAspectRatio="none" aria-hidden="true">
+            <line x1="0" y1="52" x2="260" y2="52" stroke="var(--grid)"/>
+            <g>
+              <rect x="150" y="40" width="8" height="12" fill="var(--up)" opacity=".5"/>
+              <rect x="164" y="34" width="8" height="18" fill="var(--up)" opacity=".6"/>
+              <rect x="178" y="26" width="8" height="26" fill="var(--up)" opacity=".7"/>
+              <rect x="192" y="20" width="8" height="32" fill="var(--up)" opacity=".8"/>
+            </g>
+            <path d="M0,34 C50,44 90,60 130,58 C160,56 200,40 260,28" fill="none" stroke="var(--core)" stroke-width="2.5"/>
+            <path d="M0,44 C50,50 90,58 130,58 C170,58 205,52 260,46" fill="none" stroke="var(--down)" stroke-width="2" stroke-dasharray="4 3"/>
+            <circle cx="131" cy="58" r="4" fill="var(--up)"/>
+            <path d="M131,58 l0,-20 m-5,7 l5,-7 l5,7" stroke="var(--up)" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="ind-body">
+          <div class="blk"><p class="lbl">Qué mide</p><p>El impulso: si la fuerza corta supera a la larga. El CRUCE de la línea sobre su señal marca el cambio de momento.</p></div>
+          <div class="blk"><p class="lbl">Matemática</p><div class="math">MACD  = EMA(12) − EMA(26)
+señal = EMA(9) del MACD
+hist  = MACD − señal</div></div>
+          <div class="blk"><p class="lbl">Cómo vota</p>
+            <div class="votes">
+              <div class="vote"><span class="pill call">CALL</span> cruce ↑ y hist &gt; 0 (fuerte) · hist &gt; 0 (suave)</div>
+              <div class="vote"><span class="pill put">PUT</span> cruce ↓ y hist &lt; 0 · hist &lt; 0</div>
+            </div>
+          </div>
+          <div class="blk"><p class="lbl">Peso por tiempo</p>
+            <div class="wbar"><span class="w">base 3.0</span><span class="w">corto 2.7</span><span class="w">medio 3.0</span><span class="w">largo <b>3.6</b></span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bollinger -->
+      <div class="ind">
+        <div class="ind-top">
+          <div><h3>Bandas de Bollinger</h3><div class="param">periodo 20 · 2 desviaciones</div></div>
+          <span class="bias rev">Reversión</span>
+        </div>
+        <div class="chart">
+          <svg viewBox="0 0 260 88" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M0,18 C60,16 120,22 200,20 C230,19 245,18 260,18" fill="none" stroke="var(--grid)" stroke-width="2"/>
+            <path d="M0,70 C60,72 120,66 200,68 C230,69 245,70 260,70" fill="none" stroke="var(--grid)" stroke-width="2"/>
+            <line x1="0" y1="44" x2="260" y2="44" stroke="var(--grid)" stroke-dasharray="3 3"/>
+            <path d="M0,40 C40,34 70,58 100,66 C120,71 140,58 170,46 C200,36 230,40 260,38" fill="none" stroke="var(--core)" stroke-width="2.5"/>
+            <circle cx="100" cy="66" r="4" fill="var(--up)"/>
+            <path d="M100,66 l0,-20 m-5,7 l5,-7 l5,7" stroke="var(--up)" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="ind-body">
+          <div class="blk"><p class="lbl">Qué mide</p><p>Un “sobre” alrededor del precio. Tocar la banda BAJA = estirado hacia abajo (rebote ↑); la banda ALTA = estirado hacia arriba (rechazo ↓). También detecta compresión (squeeze).</p></div>
+          <div class="blk"><p class="lbl">Matemática</p><div class="math">media = SMA(20)
+sup/inf = media ± 2·desv.est(20)
+%B = (precio − inf) / (sup − inf)</div></div>
+          <div class="blk"><p class="lbl">Cómo vota</p>
+            <div class="votes">
+              <div class="vote"><span class="pill call">CALL</span> %B &lt; 0 (fuera abajo) · &lt; 0.2</div>
+              <div class="vote"><span class="pill put">PUT</span> %B &gt; 1 (fuera arriba) · &gt; 0.8</div>
+            </div>
+          </div>
+          <div class="blk"><p class="lbl">Peso por tiempo</p>
+            <div class="wbar"><span class="w">base 2.0</span><span class="w">corto <b>2.4</b></span><span class="w">medio 2.0</span><span class="w">largo 2.0</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Medias -->
+      <div class="ind">
+        <div class="ind-top">
+          <div><h3>Medias móviles</h3><div class="param">SMA 20 · 50 · 200</div></div>
+          <span class="bias trend">Tendencia</span>
+        </div>
+        <div class="chart">
+          <svg viewBox="0 0 260 88" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M0,64 C80,58 160,40 260,20" fill="none" stroke="var(--core)" stroke-width="2.5"/>
+            <path d="M0,70 C80,66 160,52 260,34" fill="none" stroke="var(--up)" stroke-width="2" opacity=".8"/>
+            <path d="M0,76 C80,74 160,64 260,50" fill="none" stroke="var(--faint)" stroke-width="2" opacity=".7"/>
+            <path d="M235,20 l0,-2 m-16,20 l16,-18 l2,16" stroke="var(--up)" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="ind-body">
+          <div class="blk"><p class="lbl">Qué mide</p><p>La dirección de fondo. Si las tres medias se APILAN en orden y el precio va encima, la tendencia es clara (y a favor de ella se opera).</p></div>
+          <div class="blk"><p class="lbl">Matemática</p><div class="math">SMA(N) = media simple de N cierres
+alcista: precio &gt; SMA20 &gt; SMA50 &gt; SMA200</div></div>
+          <div class="blk"><p class="lbl">Cómo vota</p>
+            <div class="votes">
+              <div class="vote"><span class="pill call">CALL</span> precio &gt; SMA20 &gt; SMA50 &gt; SMA200</div>
+              <div class="vote"><span class="pill put">PUT</span> precio &lt; SMA20 &lt; SMA50 &lt; SMA200</div>
+            </div>
+          </div>
+          <div class="blk"><p class="lbl">Peso por tiempo</p>
+            <div class="wbar"><span class="w">base 2.0</span><span class="w">corto 1.0</span><span class="w">medio 2.0</span><span class="w">largo <b>2.6</b></span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Estocástico -->
+      <div class="ind">
+        <div class="ind-top">
+          <div><h3>Estocástico</h3><div class="param">%K 14 · %D 3</div></div>
+          <span class="bias rev">Reversión</span>
+        </div>
+        <div class="chart">
+          <svg viewBox="0 0 260 88" preserveAspectRatio="none" aria-hidden="true">
+            <rect x="0" y="62" width="260" height="26" fill="var(--up-soft)"/>
+            <line x1="0" y1="62" x2="260" y2="62" stroke="var(--grid)" stroke-dasharray="3 3"/>
+            <line x1="0" y1="20" x2="260" y2="20" stroke="var(--grid)" stroke-dasharray="3 3"/>
+            <path d="M0,30 C40,54 70,74 100,72 C120,70 140,50 175,40 C205,32 235,36 260,32" fill="none" stroke="var(--core)" stroke-width="2.5"/>
+            <path d="M0,38 C40,58 70,72 100,74 C130,75 150,58 180,48 C210,40 240,42 260,40" fill="none" stroke="var(--down)" stroke-width="2" stroke-dasharray="4 3"/>
+            <circle cx="103" cy="73" r="4" fill="var(--up)"/>
+            <path d="M103,73 l0,-20 m-5,7 l5,-7 l5,7" stroke="var(--up)" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="ind-body">
+          <div class="blk"><p class="lbl">Qué mide</p><p>Dónde cierra el precio dentro de su rango reciente. Abajo del todo con cruce ↑ = giro alcista; arriba del todo con cruce ↓ = giro bajista.</p></div>
+          <div class="blk"><p class="lbl">Matemática</p><div class="math">%K = 100·(cierre − mín14) / (máx14 − mín14)
+%D = SMA(3) del %K</div></div>
+          <div class="blk"><p class="lbl">Cómo vota</p>
+            <div class="votes">
+              <div class="vote"><span class="pill call">CALL</span> %K,%D &lt; 20 y cruce ↑ · o &lt; 20</div>
+              <div class="vote"><span class="pill put">PUT</span> %K,%D &gt; 80 y cruce ↓ · o &gt; 80</div>
+            </div>
+          </div>
+          <div class="blk"><p class="lbl">Peso por tiempo</p>
+            <div class="wbar"><span class="w">base 1.0</span><span class="w">corto <b>1.4</b></span><span class="w">medio 1.0</span><span class="w">largo 0.6</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Donchian -->
+      <div class="ind">
+        <div class="ind-top">
+          <div><h3>Canal de Donchian</h3><div class="param">periodo 20 (techo/piso)</div></div>
+          <span class="bias rev">Soporte / resistencia</span>
+        </div>
+        <div class="chart">
+          <svg viewBox="0 0 260 88" preserveAspectRatio="none" aria-hidden="true">
+            <line x1="0" y1="16" x2="260" y2="16" stroke="var(--down)" stroke-width="2" opacity=".55"/>
+            <line x1="0" y1="72" x2="260" y2="72" stroke="var(--up)" stroke-width="2" opacity=".55"/>
+            <path d="M0,40 C40,30 70,60 100,68 C120,72 140,66 170,54 C200,44 230,50 260,46" fill="none" stroke="var(--core)" stroke-width="2.5"/>
+            <circle cx="107" cy="70" r="4" fill="var(--up)"/>
+            <path d="M107,70 l0,-18 m-5,7 l5,-7 l5,7" stroke="var(--up)" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="ind-body">
+          <div class="blk"><p class="lbl">Qué mide</p><p>El techo (máximo) y el piso (mínimo) recientes. Pegado al piso = posible rebote ↑; pegado al techo = posible rechazo ↓.</p></div>
+          <div class="blk"><p class="lbl">Matemática</p><div class="math">techo = máx(20) · piso = mín(20)
+pos = (precio − piso) / (techo − piso)   [0..1]</div></div>
+          <div class="blk"><p class="lbl">Cómo vota</p>
+            <div class="votes">
+              <div class="vote"><span class="pill call">CALL</span> pos ≤ 0.10 (fuerte) · ≤ 0.25</div>
+              <div class="vote"><span class="pill put">PUT</span> pos ≥ 0.90 (fuerte) · ≥ 0.75</div>
+            </div>
+          </div>
+          <div class="blk"><p class="lbl">Peso por tiempo</p>
+            <div class="wbar"><span class="w">base 2.0</span><span class="w">corto 2.0</span><span class="w">medio 2.0</span><span class="w">largo <b>2.4</b></span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VWAP -->
+      <div class="ind">
+        <div class="ind-top">
+          <div><h3>VWAP</h3><div class="param">Volume-Weighted Average Price</div></div>
+          <span class="bias trend">Precio justo</span>
+        </div>
+        <div class="chart">
+          <svg viewBox="0 0 260 88" preserveAspectRatio="none" aria-hidden="true">
+            <line x1="0" y1="52" x2="260" y2="52" stroke="var(--faint)" stroke-width="2" stroke-dasharray="5 4"/>
+            <path d="M0,54 C40,50 70,40 100,34 C140,26 180,30 260,22" fill="none" stroke="var(--core)" stroke-width="2.5"/>
+            <circle cx="150" cy="30" r="4" fill="var(--up)"/>
+            <path d="M150,30 l0,-18 m-5,7 l5,-7 l5,7" stroke="var(--up)" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="ind-body">
+          <div class="blk"><p class="lbl">Qué mide</p><p>El “precio justo” ponderado por volumen. Precio por ENCIMA = compradores al mando (sesgo ↑); por DEBAJO = vendedores (sesgo ↓).</p></div>
+          <div class="blk"><p class="lbl">Matemática</p><div class="math">típico = (alto + bajo + cierre) / 3
+VWAP = Σ(típico·volumen) / Σ(volumen)</div></div>
+          <div class="blk"><p class="lbl">Cómo vota</p>
+            <div class="votes">
+              <div class="vote"><span class="pill call">CALL</span> precio por encima del VWAP</div>
+              <div class="vote"><span class="pill put">PUT</span> precio por debajo del VWAP</div>
+              <div class="vote"><span class="pill hold">fuerza</span> crece con la distancia (0.60 → 0.85)</div>
+            </div>
+          </div>
+          <div class="blk"><p class="lbl">Peso por tiempo</p>
+            <div class="wbar"><span class="w">base 2.0</span><span class="w">corto 1.8</span><span class="w">medio 2.0</span><span class="w">largo <b>2.2</b></span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Patrones -->
+      <div class="ind">
+        <div class="ind-top">
+          <div><h3>Patrones de vela</h3><div class="param">la FORMA de la vela</div></div>
+          <span class="bias rev">Confirmación</span>
+        </div>
+        <div class="chart">
+          <svg viewBox="0 0 260 88" preserveAspectRatio="none" aria-hidden="true">
+            <line x1="70" y1="14" x2="70" y2="34" stroke="var(--up)" stroke-width="2"/>
+            <rect x="60" y="34" width="20" height="14" rx="2" fill="var(--up)"/>
+            <line x1="70" y1="48" x2="70" y2="78" stroke="var(--up)" stroke-width="2"/>
+            <text x="70" y="86" text-anchor="middle" font-size="9" fill="var(--faint)">martillo</text>
+            <line x1="170" y1="14" x2="170" y2="44" stroke="var(--down)" stroke-width="2"/>
+            <rect x="160" y="44" width="20" height="14" rx="2" fill="var(--down)"/>
+            <line x1="170" y1="58" x2="170" y2="66" stroke="var(--down)" stroke-width="2"/>
+            <text x="170" y="86" text-anchor="middle" font-size="9" fill="var(--faint)">estrella</text>
+          </svg>
+        </div>
+        <div class="ind-body">
+          <div class="blk"><p class="lbl">Qué mide</p><p>La historia de UNA vela (o dos): rechazo, reversión o indecisión. Lo que los promedios no ven. El doji avisa de NO entrar.</p></div>
+          <div class="blk"><p class="lbl">Cómo vota</p>
+            <div class="votes">
+              <div class="vote"><span class="pill call">CALL</span> martillo · envolvente ↑ · marubozu ↑</div>
+              <div class="vote"><span class="pill put">PUT</span> estrella fugaz · envolvente ↓ · marubozu ↓</div>
+              <div class="vote"><span class="pill hold">HOLD</span> doji = indecisión (no vota)</div>
+            </div>
+          </div>
+          <div class="blk"><p class="lbl">Peso por tiempo</p>
+            <div class="wbar"><span class="w">base 1.5</span><span class="w">corto <b>1.95</b></span><span class="w">medio 1.5</span><span class="w">largo 1.2</span></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ VELAS ============ -->
+  <section>
+    <div class="sec-head"><span class="n">02</span><h2>Tipos de vela (patrones)</h2></div>
+    <p class="sec-sub">La forma cuenta una historia. El motor mira la última vela (y la previa para envolventes) sobre velas CERRADAS.</p>
+    <div class="cgrid">
+
+      <div class="cpat">
+        <svg viewBox="0 0 40 96" aria-hidden="true">
+          <line x1="20" y1="6" x2="20" y2="26" stroke="var(--up)" stroke-width="3"/>
+          <rect x="11" y="26" width="18" height="16" rx="2" fill="var(--up)"/>
+          <line x1="20" y1="42" x2="20" y2="86" stroke="var(--up)" stroke-width="3"/>
+        </svg>
+        <h4>Martillo</h4>
+        <p>Mecha inferior larga: rechazan los mínimos.</p>
+        <span class="dir call">↑ CALL</span>
+      </div>
+
+      <div class="cpat">
+        <svg viewBox="0 0 40 96" aria-hidden="true">
+          <line x1="20" y1="10" x2="20" y2="54" stroke="var(--down)" stroke-width="3"/>
+          <rect x="11" y="54" width="18" height="16" rx="2" fill="var(--down)"/>
+          <line x1="20" y1="70" x2="20" y2="82" stroke="var(--down)" stroke-width="3"/>
+        </svg>
+        <h4>Estrella fugaz</h4>
+        <p>Mecha superior larga: rechazan los máximos.</p>
+        <span class="dir put">↓ PUT</span>
+      </div>
+
+      <div class="cpat">
+        <svg viewBox="0 0 40 96" aria-hidden="true">
+          <line x1="20" y1="10" x2="20" y2="44" stroke="var(--faint)" stroke-width="3"/>
+          <rect x="10" y="44" width="20" height="4" rx="1" fill="var(--faint)"/>
+          <line x1="20" y1="48" x2="20" y2="84" stroke="var(--faint)" stroke-width="3"/>
+        </svg>
+        <h4>Doji</h4>
+        <p>Cuerpo diminuto: fuerzas empatadas.</p>
+        <span class="dir neu">— indecisión</span>
+      </div>
+
+      <div class="cpat">
+        <svg viewBox="0 0 60 96" aria-hidden="true">
+          <line x1="20" y1="30" x2="20" y2="40" stroke="var(--down)" stroke-width="3"/>
+          <rect x="12" y="40" width="16" height="20" rx="2" fill="var(--down)"/>
+          <line x1="20" y1="60" x2="20" y2="70" stroke="var(--down)" stroke-width="3"/>
+          <line x1="44" y1="20" x2="44" y2="30" stroke="var(--up)" stroke-width="3"/>
+          <rect x="36" y="30" width="16" height="40" rx="2" fill="var(--up)"/>
+          <line x1="44" y1="70" x2="44" y2="80" stroke="var(--up)" stroke-width="3"/>
+        </svg>
+        <h4>Envolvente alcista</h4>
+        <p>La vela ↑ envuelve a la ↓ previa: gira la fuerza.</p>
+        <span class="dir call">↑ CALL</span>
+      </div>
+
+      <div class="cpat">
+        <svg viewBox="0 0 60 96" aria-hidden="true">
+          <line x1="20" y1="30" x2="20" y2="40" stroke="var(--up)" stroke-width="3"/>
+          <rect x="12" y="40" width="16" height="20" rx="2" fill="var(--up)"/>
+          <line x1="20" y1="60" x2="20" y2="70" stroke="var(--up)" stroke-width="3"/>
+          <line x1="44" y1="18" x2="44" y2="28" stroke="var(--down)" stroke-width="3"/>
+          <rect x="36" y="28" width="16" height="42" rx="2" fill="var(--down)"/>
+          <line x1="44" y1="70" x2="44" y2="82" stroke="var(--down)" stroke-width="3"/>
+        </svg>
+        <h4>Envolvente bajista</h4>
+        <p>La vela ↓ envuelve a la ↑ previa: gira la fuerza.</p>
+        <span class="dir put">↓ PUT</span>
+      </div>
+
+      <div class="cpat">
+        <svg viewBox="0 0 40 96" aria-hidden="true">
+          <line x1="20" y1="12" x2="20" y2="14" stroke="var(--up)" stroke-width="3"/>
+          <rect x="10" y="14" width="20" height="68" rx="2" fill="var(--up)"/>
+          <line x1="20" y1="82" x2="20" y2="84" stroke="var(--up)" stroke-width="3"/>
+        </svg>
+        <h4>Marubozu</h4>
+        <p>Casi sin mechas: momento fuerte en una dirección.</p>
+        <span class="dir call">↑ / ↓ momento</span>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ REGIMEN ============ -->
+  <section>
+    <div class="sec-head"><span class="n">03</span><h2>El árbitro: régimen (ADX)</h2></div>
+    <p class="sec-sub">No es votante: decide QUÉ indicadores mandan según si hay tendencia o rango.</p>
+    <div class="callout">
+      <p style="margin:0 0 8px"><b>ADX(14)</b> mide la fuerza de la tendencia (no la dirección).</p>
+      <p style="margin:0 0 8px"><b>ADX ≥ 25 → tendencia (slide):</b> suben MACD y medias; bajan RSI/Bollinger/estocástico (sus reversiones pelean contra la corriente).</p>
+      <p style="margin:0"><b>ADX ≤ 18 → rango (oscillate):</b> suben RSI/Bollinger/estocástico y Donchian (rebotes techo/piso); bajan MACD/medias (cruces falsos). Entre 18 y 25 = mixto (sin ajuste).</p>
+    </div>
+  </section>
+
+  <!-- ============ PARAMETRIZAR ============ -->
+  <section>
+    <div class="sec-head"><span class="n">04</span><h2>Dónde se ajusta cada cosa</h2></div>
+    <p class="sec-sub">Todo es parametrizable en el código. Estos son los archivos:</p>
+    <div class="callout">
+      <p style="margin:0 0 7px"><b>Fórmulas de los indicadores:</b> <code>core/indicators.py</code> (rsi, macd, bollinger, sma/ema, stochastic, adx, atr, vwap).</p>
+      <p style="margin:0 0 7px"><b>Umbrales de voto y pesos:</b> <code>bot/scoring_strategy.py</code> — <span class="mono">BASE_WEIGHTS</span>, <span class="mono">weights_for()</span>, y cada <span class="mono">_*_signal()</span>.</p>
+      <p style="margin:0 0 7px"><b>Patrones de vela:</b> <code>bot/candle_patterns.py</code> (ratios de doji/mecha/marubozu).</p>
+      <p style="margin:0"><b>Aprendizaje (ajuste automático por resultados):</b> <code>bot/weight_learning.py</code> · <code>bot/calibration.py</code> · <code>bot/auto_optimize.py</code>.</p>
+    </div>
+  </section>
+
+  <footer>
+    Biblioteca de referencia de Fuzion Investments. Valores y fórmulas tomados del código real. Los mini-gráficos son ilustrativos (no datos en vivo). Señales educativas, en demo, solo lectura — ningún indicador acierta siempre; la fuerza está en la confluencia.
+  </footer>
+
+</div>
+</div>
