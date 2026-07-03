@@ -23,7 +23,13 @@ años). Nada inventado — son SUS velas reales.
 SRP: solo descarga y guarda. Requiere: pip install BinaryOptionsToolsV2.
 """
 
+import asyncio
 import os
+
+# Pocos activos por defecto (majors) para que sea RÁPIDO. Con "todos" baja todos.
+MAJORS = ["EURUSD_otc", "GBPUSD_otc", "USDJPY_otc", "AUDUSD_otc",
+          "USDCAD_otc", "USDCHF_otc", "EURJPY_otc", "GBPJPY_otc",
+          "AUDCAD_otc", "EURGBP_otc"]
 
 # Temporalidades a descargar y CUÁNTOS DÍAS de historia pedir de cada una.
 # Clave: segundos de la vela. Valor: días hacia atrás. (Se puede ajustar.)
@@ -72,9 +78,15 @@ async def download_asset(client, repo, asset, dias_por_tf=None, logger=None):
     for tf, ndias in dias.items():
         period = int(ndias) * 86400          # segundos de historia a traer
         try:
-            velas = await client.get_candles(asset, period, tf)
-        except Exception:
-            log.exception("get_candles falló para %s tf=%s", asset, tf)
+            # Timeout: si una llamada se cuelga, no congela todo (sigue con la
+            # siguiente). Era la causa de que "no bajara nada".
+            velas = await asyncio.wait_for(
+                client.get_candles(asset, period, tf), timeout=25)
+        except asyncio.TimeoutError:
+            print(f"   {asset} {tf}s: timeout (saltado)", flush=True)
+            continue
+        except Exception as e:
+            print(f"   {asset} {tf}s: error ({e})", flush=True)
             continue
         filas = _to_candles(velas)
         if filas:
@@ -115,8 +127,13 @@ async def _run(assets=None, solo_otc=True):
     except Exception:
         pass
 
-    # Lista de activos: los que pidan, o TODOS los OTC activos.
+    # Lista de activos:
+    #  - sin argumentos -> MAJORS (rápido).
+    #  - "todos"/"all"   -> TODOS los OTC activos.
+    #  - nombres sueltos -> esos.
     if not assets:
+        assets = list(MAJORS)
+    elif len(assets) == 1 and assets[0].lower() in ("todos", "all"):
         try:
             act = await client.active_assets()
             assets = [a.get("symbol") for a in act
@@ -125,12 +142,13 @@ async def _run(assets=None, solo_otc=True):
                 assets = [a for a in assets if a.endswith("_otc")]
         except Exception:
             log.exception("No se pudo obtener la lista de activos")
-            assets = ["EURUSD_otc"]
+            assets = list(MAJORS)
 
-    log.info("Descargando historial de %d activos a %s ...", len(assets), db)
+    print(f"Descargando historial de {len(assets)} activos a {db} ...", flush=True)
     for i, asset in enumerate(assets, 1):
+        print(f"[{i}/{len(assets)}] {asset} ...", flush=True)
         n = await download_asset(client, repo, asset, logger=log)
-        log.info("[%d/%d] %s -> %d velas totales", i, len(assets), asset, n)
+        print(f"   -> {n} velas", flush=True)
 
     try:
         await client.shutdown()
