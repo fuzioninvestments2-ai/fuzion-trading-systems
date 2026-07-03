@@ -200,14 +200,14 @@
 <div class="page">
 <div class="wrap">
 
-  <p class="eyebrow">Sistema de señales · Pocket Option · Demo</p>
-  <h1>Fuzion — dos bots, <span class="otc-t">OTC</span> y <span class="real-t">real</span>, un solo motor</h1>
-  <p class="lede">Dos bots totalmente separados (su Telegram, su cuenta, su historial) que comparten el mismo motor de análisis ya probado. Este es el mapa del sistema y cómo lo enciendes.</p>
+  <p class="eyebrow">Fuzion Investments · Señales para Pocket Option · Demo</p>
+  <h1>Dos bots, dos motores: <span class="otc-t">OTC</span> y <span class="real-t">real</span></h1>
+  <p class="lede">El sistema <b>Fuzion Investments</b> son dos bots totalmente separados —su Telegram, su cuenta, su historial y su propio motor— cada uno afinado a su mercado. Este es el mapa del sistema y cómo lo enciendes.</p>
 
   <div class="legend">
     <span class="chip"><span class="dot otc"></span> Fuzion OTC — mercado OTC 24/7</span>
     <span class="chip"><span class="dot real"></span> Fuzion FX — mercado real (monedas)</span>
-    <span class="chip"><span class="dot core"></span> Motor compartido</span>
+    <span class="chip"><span class="dot core"></span> Dos motores (uno por bot)</span>
   </div>
 
   <!-- ============ DIAGRAMA ============ -->
@@ -265,26 +265,36 @@
     </div>
 
     <div class="connector"></div>
-    <p class="layer-label">Motor de análisis — el mismo para los dos</p>
-    <div class="row">
-      <div class="card core">
-        <span class="tag core">Compartido · probado con 40 tests</span>
-        <h3>Lectura envolvente 5s → 1d</h3>
-        <p class="sub">Lee toda la escala de tiempo: los segundos afinan la entrada, los tiempos largos dan el sesgo. Un tiempo sin datos se ignora solo.</p>
+    <p class="layer-label">Dos motores — uno por bot, afinado a su mercado</p>
+    <div class="row two">
+      <div class="card otc">
+        <span class="tag otc">Motor OTC</span>
+        <h3>Afinado para 24/7 sintético</h3>
+        <p class="sub">Lectura envolvente 5s→1d. Sin cierres ni noticias: el OTC no reacciona a eventos reales.</p>
         <div class="feat">
           <span>8 indicadores que votan</span>
-          <span>Patrones de vela</span>
-          <span>VWAP · niveles techo/piso</span>
+          <span>Patrones · VWAP · niveles</span>
           <span>Compresión (squeeze)</span>
-          <span>Régimen ADX (rango/tendencia)</span>
+          <span>Régimen ADX</span>
           <span>Alineación fractal</span>
-          <span>Aprendizaje de pesos + calibración</span>
-          <span class="only-real">Horario de sesión · solo real</span>
-          <span class="only-real">Filtro de noticias · solo real</span>
+          <span>Aprende pesos + calibra</span>
         </div>
-        <p class="note-inline">Solo lectura: el bot da señales, <b>no coloca órdenes</b>. Siempre en demo.</p>
+      </div>
+      <div class="card real">
+        <span class="tag real">Motor real</span>
+        <h3>Afinado para forex real</h3>
+        <p class="sub">La misma forma de pensar, pero más cauto: el real corre más rápido y se descontrola en noticias.</p>
+        <div class="feat">
+          <span>8 indicadores que votan</span>
+          <span>Patrones · VWAP · niveles</span>
+          <span>Compresión (squeeze)</span>
+          <span>Régimen ADX</span>
+          <span class="only-real">Horario de sesión</span>
+          <span class="only-real">Filtro de noticias</span>
+        </div>
       </div>
     </div>
+    <p class="note-inline" style="text-align:center">Dos motores independientes: cada uno se afina y aprende por separado. Comparten la <b>forma de pensar</b> (los pasos del corazón), no el proceso ni los datos. Solo lectura: <b>no colocan órdenes</b>. Siempre en demo.</p>
 
     <div class="connector"></div>
     <p class="layer-label">Respaldo en la nube (GitHub)</p>
@@ -296,8 +306,8 @@
 
   <!-- ============ EL CORAZON ============ -->
   <section>
-    <div class="sec-head"><span class="n">02</span><h2>El corazón — cómo piensa el motor</h2></div>
-    <p class="lede" style="margin-bottom:22px">El mismo motor para los dos bots. Lee una vela a una vela, en cada paso hay una razón de trader. A la derecha, el archivo del código que lo hace (para que aprendas dónde vive cada cosa).</p>
+    <div class="sec-head"><span class="n">02</span><h2>El corazón — cómo piensa cada motor</h2></div>
+    <p class="lede" style="margin-bottom:22px">Son <b>dos motores</b>, uno por bot. Los dos piensan con estos mismos pasos, pero cada uno afinado a su mercado (el real es más cauto). En cada paso hay una razón de trader; a la derecha, el archivo del código que lo hace (para que aprendas dónde vive cada cosa).</p>
 
     <div class="card core" style="padding:6px 20px">
       <div class="pipe">
