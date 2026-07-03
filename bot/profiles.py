@@ -21,12 +21,14 @@ from dataclasses import dataclass, field
 from typing import List, Tuple
 
 
-# Escalera OTC: 5s..1d (el sub-minuto sí aporta en OTC).
+# Escalera de LECTURA: ambos leen TODA la escala 5s..1d (el usuario quiere la
+# DATA de todos los tiempos). Un tiempo sin >=6 velas se ignora solo, así que si
+# una fuente no da sub-minuto real, simplemente no ensucia la lectura.
+# OJO: leer != operar. El sub-minuto se LEE como contexto, pero el menú del bot
+# real NO ofrece entradas de 5s (empieza en 1m); el usuario no opera 5s.
 LADDER_OTC: Tuple[int, ...] = (5, 10, 15, 30, 60, 120, 180, 240, 300, 600, 900,
                                1800, 3600, 7200, 14400, 86400)
-# Escalera REAL: 1m..1d (las fuentes reales no dan sub-minuto fiable).
-LADDER_REAL: Tuple[int, ...] = (60, 120, 180, 240, 300, 600, 900, 1800,
-                                3600, 7200, 14400, 86400)
+LADDER_REAL: Tuple[int, ...] = LADDER_OTC          # misma escala; se lee todo
 
 # Majors por defecto de cada bot.
 OTC_MAJORS: List[str] = ["EURUSD_otc", "GBPUSD_otc", "USDJPY_otc", "AUDUSD_otc",

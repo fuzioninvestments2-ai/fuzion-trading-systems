@@ -28,15 +28,17 @@ def test_otc_tiene_sub_minuto_y_es_24_7():
     print("OK perfil OTC: sub-minuto, 24/7, solo Pocket Option")
 
 
-def test_real_sin_sub_minuto_con_horario_y_fuentes():
+def test_real_lee_todos_los_tiempos_con_horario_y_fuentes():
     assert REAL_PROFILE.es_otc is False
-    assert REAL_PROFILE.sub_minuto is False and min(REAL_PROFILE.ladder) == 60
+    # LEE toda la escala 5s..1d (el usuario quiere la data de todos los tiempos);
+    # OPERAR 5s es otra cosa (el menú no lo ofrece). Aquí validamos la lectura.
+    assert 5 in REAL_PROFILE.ladder and 86400 in REAL_PROFILE.ladder
     assert REAL_PROFILE.respeta_horario is True        # Lun-Vie, sesión
     assert REAL_PROFILE.filtro_volatilidad is True     # protección noticias
     assert "tradingview" in REAL_PROFILE.fuentes_datos
     assert "yfinance" in REAL_PROFILE.fuentes_datos
     assert all(not a.endswith("_otc") for a in REAL_PROFILE.activos)
-    print("OK perfil REAL: sin sub-minuto, horario, volatilidad, PO+TV+yfinance")
+    print("OK perfil REAL: lee 5s..1d, horario, volatilidad, PO+TV+yfinance")
 
 
 def test_real_solo_monedas_sin_cripto():
@@ -89,7 +91,7 @@ def test_perfil_otc_sin_sub_minuto_falla():
 if __name__ == "__main__":
     test_get_profile()
     test_otc_tiene_sub_minuto_y_es_24_7()
-    test_real_sin_sub_minuto_con_horario_y_fuentes()
+    test_real_lee_todos_los_tiempos_con_horario_y_fuentes()
     test_real_solo_monedas_sin_cripto()
     test_nombres_visibles()
     test_bases_de_datos_separadas()
