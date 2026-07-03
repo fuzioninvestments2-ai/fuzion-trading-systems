@@ -348,55 +348,73 @@ def run():
             f"{text}\n_Modo: {modo}_", reply_markup=_keyboard(rows),
             parse_mode="Markdown")
 
+    async def _leyendo(query, asset_display, tf):
+        # Muestra "🧘 Leyendo…" de forma SEGURA. Si el mensaje es una FOTO (viene
+        # de un análisis anterior), no se puede editar su texto -> lo ignoramos.
+        try:
+            await query.edit_message_text(
+                f"🧘 Leyendo *{asset_display}* ({tf}) con atención…\n"
+                f"_Concentrándome en el mercado unos segundos._",
+                parse_mode="Markdown")
+        except Exception:
+            pass
+
+    async def _do_analysis(query, asset_display, tf):
+        """Hace y envía el análisis de un activo/tiempo (reutilizable)."""
+        if service is None:
+            text, rows = menu.analyze(query.from_user.id)
+            await _safe_edit(query, text, rows)
+            return
+        await _leyendo(query, asset_display, tf)
+        code = to_po_code(asset_display)
+        period = _TF_SECONDS.get(tf, 60)
+        if collector:
+            collector.set_focus(code)
+        result, seg, n = await service.analyze(code, period)
+        text = _format_deep(asset_display, tf, result, seg, service.balance, n)
+        caption = _format_deep(asset_display, tf, result, seg,
+                               service.balance, n, compact=True)
+        # El botón "Analizar de nuevo" LLEVA el activo y el tiempo en su dato, así
+        # funciona SIEMPRE (incluso tras reiniciar el bot, sin memoria previa).
+        rows = [[("🔁 Analizar de nuevo", f"re:{asset_display}:{tf}")],
+                [("📊 Otro activo", "back:market"), ("🏠 Menú", "back:main")]]
+        path = None
+        chart_df = result.get("chart")
+        if chart_df is not None and len(chart_df) >= 5:
+            try:
+                from bot.chart import draw_candles
+                path = os.path.join(ROOT, "charts_tmp.png")
+                draw_candles(chart_df, asset_display, tf, path,
+                             direccion=result.get("direccion", ""),
+                             levels=result.get("levels"))
+            except Exception:
+                path = None
+        await _send_signal(query, caption, text, rows, path)
+
     async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         await query.answer()
         uid = query.from_user.id
+
+        # "Analizar de nuevo" que lleva el activo y el tiempo consigo (re:activo:tf).
+        if query.data.startswith("re:"):
+            try:
+                _, asset_display, tf = query.data.split(":", 2)
+            except ValueError:
+                await query.answer("Vuelve a elegir con /start", show_alert=True)
+                return
+            await _do_analysis(query, asset_display, tf)
+            return
 
         if query.data == "analyze":
             st = menu._st(uid)
             asset_display = st.get("asset")
             tf = st.get("timeframe")
             if not asset_display or not tf:
-                await query.answer("Elige activo y tiempo primero", show_alert=True)
+                await query.answer("Elige activo y tiempo primero (usa /start)",
+                                   show_alert=True)
                 return
-            if service is None:
-                # Sin SSID: usamos la simulación del menú (interfaz).
-                text, rows = menu.analyze(uid)
-            else:
-                await query.edit_message_text(
-                    f"🧘 Leyendo *{asset_display}* ({tf}) con atención…\n"
-                    f"_Concentrándome en el mercado unos segundos para darte "
-                    f"la mejor lectura._", parse_mode="Markdown")
-                code = to_po_code(asset_display)
-                period = _TF_SECONDS.get(tf, 60)
-                # Le decimos al colector que priorice este activo: así sus tiempos
-                # largos se llenan antes para la próxima lectura.
-                if collector:
-                    collector.set_focus(code)
-                result, seg, n = await service.analyze(code, period)
-                text = _format_deep(asset_display, tf, result, seg,
-                                    service.balance, n)
-                caption = _format_deep(asset_display, tf, result, seg,
-                                       service.balance, n, compact=True)
-                rows = [[("🔁 Analizar de nuevo", "analyze")],
-                        [("📊 Otro activo", "back:market"), ("🏠 Menú", "back:main")]]
-                # Dibujamos el gráfico (si hay velas) y enviamos TODO junto:
-                # gráfico + análisis en un SOLO mensaje (foto con pie de foto).
-                path = None
-                chart_df = result.get("chart")
-                if chart_df is not None and len(chart_df) >= 5:
-                    try:
-                        from bot.chart import draw_candles
-                        path = os.path.join(ROOT, "charts_tmp.png")
-                        draw_candles(chart_df, asset_display, tf, path,
-                                     direccion=result.get("direccion", ""),
-                                     levels=result.get("levels"))
-                    except Exception:
-                        path = None
-                await _send_signal(query, caption, text, rows, path)
-                return
-            await _safe_edit(query, text, rows)
+            await _do_analysis(query, asset_display, tf)
             return
 
         text, rows = menu.handle_callback(uid, query.data)
