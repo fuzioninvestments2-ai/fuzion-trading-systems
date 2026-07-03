@@ -21,7 +21,11 @@ OTC_MAJORS = ["EURUSD_otc", "GBPUSD_otc", "USDJPY_otc", "AUDUSD_otc",
               "USDCAD_otc", "AUDCAD_otc", "EURJPY_otc", "GBPJPY_otc",
               "EURGBP_otc", "USDCHF_otc"]
 
-PERIODOS = [(60, "1m"), (180, "3m"), (300, "5m"), (900, "15m"), (1800, "30m")]
+# Rango COMPLETO: de 5s a 1 día. PO dará lo que tenga en cada uno (se detiene solo).
+PERIODOS = [(5, "5s"), (10, "10s"), (15, "15s"), (30, "30s"),
+            (60, "1m"), (120, "2m"), (180, "3m"), (300, "5m"), (600, "10m"),
+            (900, "15m"), (1800, "30m"), (3600, "1h"), (7200, "2h"),
+            (14400, "4h"), (86400, "1d")]
 
 
 async def _run(assets):
