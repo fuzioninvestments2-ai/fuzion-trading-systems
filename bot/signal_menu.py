@@ -72,17 +72,20 @@ MARKETS = {
         "Australia 200 OTC", "Hong Kong 33 OTC"]},
 }
 
-# Tiempos según el mercado (como en Pocket Option):
-#  - OTC: incluye SEGUNDOS (5s..30s) porque PO los ofrece 24/7.
-#  - Real: NO hay sub-minuto; empieza en M1 (como notaste en tus capturas).
-TIMEFRAMES_OTC = ["S5", "S10", "S15", "S30", "M1", "M2", "M3", "M5",
-                  "M10", "M15", "M30", "H1", "H4", "D1"]
-TIMEFRAMES_REAL = ["M1", "M3", "M5", "M15", "M30", "H1", "H4"]
-TIMEFRAMES = TIMEFRAMES_OTC        # por compatibilidad
+# Tiempos OPERABLES (expiración de la orden que elige el usuario): 1m..30m en
+# AMBOS mercados. Regla del usuario: sus órdenes son 1m,2m,3m,5m,10m,15m,30m.
+# Los SEGUNDOS (5s..30s) NO se operan: son el "clic" del ANÁLISIS (lectura fina
+# de la entrada), y se LEEN en el panel, pero no se ofrecen como expiración. Los
+# tiempos altos (1h+) tampoco se operan aquí.
+TIMEFRAMES_OPERABLES = ["M1", "M2", "M3", "M5", "M10", "M15", "M30"]
+TIMEFRAMES_OTC = TIMEFRAMES_OPERABLES
+TIMEFRAMES_REAL = TIMEFRAMES_OPERABLES
+TIMEFRAMES = TIMEFRAMES_OPERABLES        # por compatibilidad
 
 
 def timeframes_for(market_key):
-    return TIMEFRAMES_REAL if market_key == "real" else TIMEFRAMES_OTC
+    # Mismos tiempos operables en real y OTC (los segundos son solo análisis).
+    return TIMEFRAMES_OPERABLES
 
 
 def _simulate_candles(asset, timeframe, n=260):
