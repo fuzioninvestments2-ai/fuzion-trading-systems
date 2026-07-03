@@ -1,0 +1,145 @@
+"""
+bot/accumulator.py
+==================
+ACUMULADOR continuo: mantiene UNA conexión propia a Pocket Option (con el bot de
+Telegram APAGADO) y va apilando historial HACIA ADELANTE. Cada ronda rota por los
+activos, refresca las velas recientes de TODA la escalera (5s..1d) de cada uno y
+deja que se formen velas nuevas en vivo. Al terminar cada ronda exporta a
+datasets/ y, si se pide, lo sube a la nube (git push).
+
+EL PORQUÉ: el escaneo hacia atrás (download_history) topa en el límite que PO
+sirve (~5150 velas). La única forma HONESTA de tener MÁS historia es hacia
+adelante: guardar lo que va llegando en vivo. Cuanto más corra, más profundo el
+historial de los tiempos cortos. No se inventa nada.
+
+Uso (bot de Telegram APAGADO — una sola conexión por SSID):
+  python -m bot.accumulator                        # majors OTC, sin subir
+  python -m bot.accumulator --push                 # además sube a la nube
+  python -m bot.accumulator EURUSD_otc GBPUSD_otc   # activos concretos
+  python -m bot.accumulator --push EURUSD_otc       # concretos + subir
+"""
+
+import asyncio
+
+# Majors OTC por defecto. Pasa otros como argumentos.
+OTC_MAJORS = ["EURUSD_otc", "GBPUSD_otc", "USDJPY_otc", "AUDUSD_otc",
+              "USDCAD_otc", "AUDCAD_otc", "EURJPY_otc", "GBPJPY_otc",
+              "EURGBP_otc", "USDCHF_otc"]
+
+# Escalera completa 5s..1d: en cada ronda pedimos las velas recientes de cada
+# temporalidad para toparlas hacia adelante (PO responde con updateHistoryNewFast).
+LADDER = [5, 10, 15, 30, 60, 120, 180, 240, 300, 600, 900, 1800,
+          3600, 7200, 14400, 86400]
+
+# Segundos que nos quedamos en cada activo dejando formar velas M1 en vivo.
+SEG_POR_ACTIVO = 30
+
+
+def _git_push(logger):
+    """
+    Sube datasets/ a la nube. Defensivo: si git falla (sin credenciales, sin
+    red), avisa y sigue — el acumulador NO se detiene por un fallo al subir.
+    """
+    import subprocess
+    for cmd in (["git", "add", "datasets/"],
+                ["git", "commit", "-m", "datos: acumulador (historial en vivo)"],
+                ["git", "push"]):
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            # 'commit' devuelve !=0 si no hay cambios: es normal, no es error.
+            if r.returncode != 0 and cmd[1] != "commit":
+                logger.warning("git %s: %s", cmd[1], (r.stderr or "").strip()[:200])
+        except Exception as exc:
+            logger.warning("No se pudo %s (%s)", " ".join(cmd), exc)
+            return
+
+
+async def _accumulate_round(svc, assets, seg_por_activo=SEG_POR_ACTIVO):
+    """
+    Una ronda: por cada activo refresca la escalera y acumula velas en vivo.
+    Espera reconexión si el socket se cayó (no aborta). Devuelve total de velas
+    guardadas (según la BD) para poder loguear el avance.
+    """
+    lock = svc._conn_lock or _nulllock()
+    for asset in assets:
+        if not svc.client.is_connected:
+            if not await svc.client.wait_connected(timeout=30):
+                svc.log.warning("acumulador: sin conexión, salto %s", asset)
+                continue
+        try:
+            async with lock:
+                await svc.client.set_asset(asset, 60)
+                # Refresca las velas RECIENTES de toda la escalera (tope adelante).
+                await svc.client.request_history(asset, LADDER)
+                # Deja formar velas M1 en vivo un rato (historia hacia adelante).
+                for _ in range(int(seg_por_activo)):
+                    await asyncio.sleep(1)
+        except Exception as exc:
+            svc.log.warning("acumulador: salto %s (%s)", asset, exc)
+            await asyncio.sleep(1)
+
+
+class _nulllock:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+
+async def _run(assets, push=False, rondas=None):
+    """
+    Bucle continuo. `rondas=None` -> infinito (Ctrl+C para parar). `rondas=N`
+    (para pruebas/uso puntual) -> corre N rondas y sale.
+    """
+    from bot.pocket_service import PocketService
+    from bot.pocket_probe import _load_ssid
+    from bot.dataset_export import export_db
+
+    ssid = _load_ssid()
+    if not ssid:
+        print("Falta ssid.txt en la raíz del proyecto.", flush=True)
+        return
+
+    svc = PocketService(ssid, demo=True)
+    svc.connected = True
+    svc._conn_lock = asyncio.Lock()
+    asyncio.create_task(svc.client.run(asset=assets[0], period=60))
+    print("Acumulador: conectando a Pocket Option...", flush=True)
+    if not await svc.client.wait_connected(timeout=30):
+        print("No se pudo conectar. Revisa ssid.txt.", flush=True)
+        return
+    await asyncio.sleep(3)
+
+    print(f"Acumulando {len(assets)} activos (5s..1d) hacia adelante. "
+          f"Ctrl+C para parar.", flush=True)
+    ronda = 0
+    try:
+        while rondas is None or ronda < int(rondas):
+            ronda += 1
+            await _accumulate_round(svc, assets)
+            n = export_db(svc.repo)
+            total = sum(svc.repo.count(a, "M1") for a in assets)
+            print(f"[ronda {ronda}] exportados {n} archivos · {total} velas M1 "
+                  f"acumuladas", flush=True)
+            if push:
+                _git_push(svc.log)
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        print("\nAcumulador detenido por el usuario.", flush=True)
+    finally:
+        try:
+            await svc.stop()
+        except Exception:
+            pass
+
+
+def _main():
+    import sys
+    args = sys.argv[1:]
+    push = "--push" in args
+    assets = [a for a in args if not a.startswith("--")] or OTC_MAJORS
+    asyncio.run(_run(assets, push=push))
+
+
+if __name__ == "__main__":
+    _main()
