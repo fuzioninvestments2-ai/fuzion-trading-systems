@@ -54,14 +54,16 @@ def _git_push(logger):
             return
 
 
-async def _accumulate_round(svc, assets, seg_por_activo=SEG_POR_ACTIVO):
+async def _accumulate_round(svc, assets, seg_por_activo=SEG_POR_ACTIVO,
+                            verbose=True):
     """
     Una ronda: por cada activo refresca la escalera y acumula velas en vivo.
-    Espera reconexión si el socket se cayó (no aborta). Devuelve total de velas
-    guardadas (según la BD) para poder loguear el avance.
+    Espera reconexión si el socket se cayó (no aborta). Imprime señales de vida
+    por activo (verbose) para que no parezca congelado durante la ronda.
     """
     lock = svc._conn_lock or _nulllock()
-    for asset in assets:
+    n = len(assets)
+    for idx, asset in enumerate(assets, 1):
         if not svc.client.is_connected:
             if not await svc.client.wait_connected(timeout=30):
                 svc.log.warning("acumulador: sin conexión, salto %s", asset)
@@ -74,6 +76,10 @@ async def _accumulate_round(svc, assets, seg_por_activo=SEG_POR_ACTIVO):
                 # Deja formar velas M1 en vivo un rato (historia hacia adelante).
                 for _ in range(int(seg_por_activo)):
                     await asyncio.sleep(1)
+            if verbose:
+                # Señal de vida: activo, cuántos lleva la ronda y su total M1.
+                print(f"   · [{idx}/{n}] {asset}: "
+                      f"{svc.repo.count(asset, 'M1')} velas M1", flush=True)
         except Exception as exc:
             svc.log.warning("acumulador: salto %s (%s)", asset, exc)
             await asyncio.sleep(1)
