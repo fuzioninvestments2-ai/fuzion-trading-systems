@@ -31,8 +31,13 @@ echo   3) Descargando historial REAL (FX) de los pares mayores...
 python -m bot.historical_loader EURUSD GBPUSD USDJPY AUDUSD USDCAD XAUUSD
 
 echo.
+echo   4) Exportando a datasets/ (portable, para la nube)...
+python -m bot.dataset_export export
+
+echo.
 echo ============================================================
-echo   LISTO. El historial quedo guardado en history.db
-echo   Ahora arranca el bot con INICIAR_BOT (doble clic).
+echo   LISTO. Historial en history.db y exportado a datasets/.
+echo   - Para arrancar el bot: doble clic en INICIAR_BOT.
+echo   - Para guardarlo en la nube (GitHub): doble clic en SUBIR_HISTORIAL.
 echo ============================================================
 pause >nul

@@ -49,3 +49,6 @@ ssid.txt
 
 # Graficos temporales
 charts_tmp*.png
+
+# Datasets exportados (historial para la nube) SI se versionan
+!datasets/
