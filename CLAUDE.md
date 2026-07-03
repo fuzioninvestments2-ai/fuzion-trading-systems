@@ -108,3 +108,10 @@ mercado real). No implementar evasión de bloqueos/IP.
 - Emojis en el código o en explicaciones técnicas.
 - EXCEPCIÓN: guiar al usuario a EJECUTAR/OPERAR (pasos numerados simples) sí se
   permite; no es programador.
+
+## REGLAS DE AUTONOMÍA
+- No pedir confirmación para acciones reversibles.
+- Ejecutar código directamente.
+- Si algo falla, corregirlo sin preguntar.
+- Preguntar solo si la acción es destructiva o irreversible (borrar datos,
+  force-push, tocar credenciales, colocar órdenes reales).
