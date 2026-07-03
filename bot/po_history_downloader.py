@@ -34,11 +34,11 @@ MAJORS = ["EURUSD_otc", "GBPUSD_otc", "USDJPY_otc", "AUDUSD_otc",
 # Temporalidades a descargar y CUÁNTOS DÍAS de historia pedir de cada una.
 # Clave: segundos de la vela. Valor: días hacia atrás. (Se puede ajustar.)
 DIAS_POR_TF = {
-    60: 30,      # 1m  -> 30 días
-    180: 60,     # 3m  -> 60 días
-    300: 90,     # 5m  -> 90 días
-    900: 180,    # 15m -> 180 días
-    1800: 365,   # 30m -> 1 año
+    60: 7,       # 1m  -> 7 días  (periodos grandes hacían que PO no respondiera)
+    180: 15,     # 3m  -> 15 días
+    300: 30,     # 5m  -> 30 días
+    900: 60,     # 15m -> 60 días
+    1800: 90,    # 30m -> 90 días
 }
 
 
@@ -74,25 +74,36 @@ async def download_asset(client, repo, asset, dias_por_tf=None, logger=None):
     import logging
     log = logger or logging.getLogger("po_downloader")
     dias = dias_por_tf or DIAS_POR_TF
+    # Suscribir el símbolo primero: sin esto, get_candles suele quedarse esperando.
+    try:
+        await asyncio.wait_for(client.subscribe_symbol(asset), timeout=15)
+        await asyncio.sleep(1.0)
+    except Exception:
+        pass
     total = 0
     for tf, ndias in dias.items():
         period = int(ndias) * 86400          # segundos de historia a traer
+        velas = None
+        # 1) get_candles(asset, period, offset=tamaño de vela). Con timeout.
         try:
-            # Timeout: si una llamada se cuelga, no congela todo (sigue con la
-            # siguiente). Era la causa de que "no bajara nada".
             velas = await asyncio.wait_for(
-                client.get_candles(asset, period, tf), timeout=25)
+                client.get_candles(asset, period, tf), timeout=20)
         except asyncio.TimeoutError:
-            print(f"   {asset} {tf}s: timeout (saltado)", flush=True)
-            continue
+            print(f"   {asset} {tf}s: get_candles timeout", flush=True)
         except Exception as e:
-            print(f"   {asset} {tf}s: error ({e})", flush=True)
-            continue
+            print(f"   {asset} {tf}s: get_candles error ({e})", flush=True)
+        # 2) Respaldo: history(asset, period=tamaño de vela) -> velas recientes.
+        if not velas:
+            try:
+                velas = await asyncio.wait_for(client.history(asset, tf),
+                                               timeout=20)
+            except Exception:
+                velas = None
         filas = _to_candles(velas)
         if filas:
             repo.record_many(asset, _tf_key(tf), filas)
             total += len(filas)
-            log.info("%s %s: %d velas", asset, _tf_key(tf), len(filas))
+            print(f"   {asset} {_tf_key(tf)}: {len(filas)} velas", flush=True)
     return total
 
 
@@ -122,10 +133,12 @@ async def _run(assets=None, solo_otc=True):
         await client.connect()
     except Exception:
         pass                                  # algunas versiones conectan solas
+    await asyncio.sleep(4)                     # dejar que la conexión se estabilice
     try:
         await client.wait_for_assets(timeout=60)
     except Exception:
         pass
+    print("Conectado. Empezando descarga...", flush=True)
 
     # Lista de activos:
     #  - sin argumentos -> MAJORS (rápido).
