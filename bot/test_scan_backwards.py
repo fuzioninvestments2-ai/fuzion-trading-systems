@@ -138,10 +138,55 @@ def test_scan_backwards_sobrevive_caida():
     print(f"OK sobrevive a la caída y completa ({total} velas)")
 
 
+def test_scan_backwards_siembra_sin_punto_de_partida():
+    """
+    Activo SIN velas ni tick: antes devolvía 0 (dejaba el archivo atrás). Ahora
+    SIEMBRA pidiendo historial reciente y luego pagina hacia atrás. El cliente
+    falso entrega velas al fijar el activo (siembra) y en cada página.
+    """
+    s = _svc()
+
+    class _SeedClient:
+        def __init__(self, svc):
+            self.svc = svc
+            self.paginas = 2
+            self.sembrado = False
+        @property
+        def is_connected(self):
+            return True
+        async def wait_connected(self, timeout=30.0):
+            return True
+        async def set_asset(self, asset, period=60):
+            # Al fijar el activo, PO responde con su historial reciente: SIEMBRA.
+            if not self.sembrado:
+                self.sembrado = True
+                base = 1_700_000_000
+                cs = [{"time": base + k * period, "open": 1.1, "high": 1.1,
+                       "low": 1.1, "close": 1.1, "volume": 1} for k in range(10)]
+                self.svc._on_history({"asset": asset, "period": period,
+                                      "candles": cs})
+        async def load_history_period(self, asset, period, end_time, index=1):
+            if self.paginas <= 0:
+                return                                    # fin: silencio
+            self.paginas -= 1
+            cs = [{"time": end_time - (k + 1) * period, "open": 1.1, "high": 1.1,
+                   "low": 1.1, "close": 1.1, "volume": 1} for k in range(10)]
+            self.svc._on_history({"asset": asset, "period": period, "candles": cs})
+
+    s.connected = True
+    s.client = _SeedClient(s)
+    # SIN sembrar nada en la BD ni en _last_tick: debe arrancar solo.
+    total = asyncio.run(s.scan_backwards("NUEVO_otc", period=60,
+                                         max_days=365, paginas=50, espera=0.02))
+    assert total >= 25, total                             # sembró (10) + paginó
+    print(f"OK siembra el punto de partida y no deja el activo en 0 ({total})")
+
+
 if __name__ == "__main__":
     test_store_ohlc_dict()
     test_store_ohlc_lista()
     test_on_history_ruta_ohlc()
     test_scan_backwards_pagina_y_para()
     test_scan_backwards_sobrevive_caida()
+    test_scan_backwards_siembra_sin_punto_de_partida()
     print("\nTODOS OK — escaneo de historial hacia atrás")

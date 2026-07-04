@@ -57,26 +57,17 @@ def _cobertura(repo, asset):
 
 def _git_push(logger):
     """
-    Sube datasets/ a la nube. Defensivo: si git falla (sin credenciales, sin
-    red), avisa y sigue — el acumulador NO se detiene por un fallo al subir.
+    Sube datasets/ a la nube con REINTENTO (pull+push en bucle). Antes era un solo
+    intento: si el remoto avanzaba entre pull y push, se rechazaba ("fetch first")
+    y la ronda no subía. Delegado a bot.cloud_push, que reintenta hasta entrar.
+    Defensivo: si git falla, avisa y sigue — el acumulador NO se detiene.
     """
-    import subprocess
-    # PULL antes de PUSH: si la rama remota tiene commits que este PC no tiene
-    # (p.ej. se trabaja en paralelo desde otra sesión), el push se rechaza. Con un
-    # pull --no-rebase primero, se reconcilia y el push pasa. Los datasets son
-    # archivos nuevos: no chocan con cambios de código.
-    for cmd in (["git", "add", "datasets/"],
-                ["git", "commit", "-m", "datos: acumulador (historial en vivo)"],
-                ["git", "pull", "--no-rebase", "--no-edit"],
-                ["git", "push"]):
-        try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
-            # 'commit' devuelve !=0 si no hay cambios: es normal, no es error.
-            if r.returncode != 0 and cmd[1] not in ("commit", "pull"):
-                logger.warning("git %s: %s", cmd[1], (r.stderr or "").strip()[:200])
-        except Exception as exc:
-            logger.warning("No se pudo %s (%s)", " ".join(cmd), exc)
-            return
+    try:
+        from bot.cloud_push import subir
+        subir(rutas=("datasets/",),
+              mensaje="datos: acumulador (historial en vivo)", logger=logger)
+    except Exception as exc:
+        logger.warning("No se pudo subir (%s)", exc)
 
 
 async def _accumulate_round(svc, assets, seg_por_activo=SEG_POR_ACTIVO,
