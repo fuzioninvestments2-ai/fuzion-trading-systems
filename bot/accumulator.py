@@ -158,19 +158,30 @@ async def _run(assets, push=False, rondas=None):
             total = sum(svc.repo.count(a, "M1") for a in assets)
             print(f"[ronda {ronda}] exportados {n} archivos · {total} velas M1 "
                   f"acumuladas", flush=True)
-            # WATCHDOG: si el historial no crece varias rondas seguidas, casi
-            # siempre es que el SSID caducó (PO desautentica). Avisamos CLARO en
-            # vez de girar en silencio sin guardar nada.
+            # WATCHDOG: si el historial no crece, primero intento un REINICIO
+            # INTERNO de la conexión (caso "socket vivo pero mudo": PO deja de
+            # enviar sin cerrar). Yo mismo reinicio la conexión sin apagar el
+            # proceso ni tocar el otro bot. Solo si NI AUN ASÍ crece, escalo a
+            # "el SSID caducó" (eso sí es externo: hay que refrescarlo a mano).
             if total_prev is not None and total <= total_prev:
                 sin_crecer += 1
             else:
                 sin_crecer = 0
             total_prev = total
-            if sin_crecer >= 3:
-                print("\n⚠️  El historial no crece hace 3 rondas. Lo más probable "
-                      "es que el SSID haya CADUCADO. Actualiza ssid.txt (vuelve a "
-                      "copiar la línea 42[\"auth\",...] del navegador) y reinicia.",
-                      flush=True)
+            if sin_crecer == 2:
+                print("\n⟳ El historial no crece: reinicio la conexión por dentro "
+                      "(sin apagar nada)...", flush=True)
+                try:
+                    if await svc.client.forzar_reconexion():
+                        await svc.client.wait_connected(timeout=30)
+                        await asyncio.sleep(3)     # re-autenticar
+                except Exception as exc:
+                    svc.log.warning("reinicio interno falló (%s)", exc)
+            if sin_crecer >= 4:
+                print("\n⚠️  El historial no crece ni tras reiniciar la conexión. "
+                      "Lo más probable es que el SSID haya CADUCADO. Actualiza "
+                      "ssid.txt (vuelve a copiar la línea 42[\"auth\",...] del "
+                      "navegador) y reinicia.", flush=True)
             if push:
                 _git_push(svc.log)
     except (KeyboardInterrupt, asyncio.CancelledError):

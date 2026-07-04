@@ -64,7 +64,15 @@ def test_scan_backwards_pagina_y_para():
             pass                                          # no-op (sin red)
         async def load_history_period(self, asset, period, end_time, index=1):
             if self.paginas <= 0:
-                return                                    # sin más historial
+                # Fin del historial COMO EN PO REAL: responde, pero reenvía velas
+                # YA conocidas (mismos timestamps, no más antiguas). Dispara el
+                # evento y el conteo NO sube -> el escáner lo cuenta como "fin"
+                # (sin_avance), no como silencio. `base` es el inicio sembrado.
+                cs = [{"time": base + k * 60, "open": 1.1, "high": 1.1,
+                       "low": 1.1, "close": 1.1, "volume": 1} for k in range(3)]
+                self.svc._on_history({"asset": asset, "period": period,
+                                      "candles": cs})
+                return
             self.paginas -= 1
             # Devuelve 10 velas anteriores a end_time.
             cs = [{"time": end_time - (k + 1) * 60, "open": 1.1, "high": 1.1,

@@ -203,6 +203,7 @@ class PocketService:
                 return 0
         limite = end_time - int(max_days) * 86400
         sin_avance = 0
+        sin_respuesta = 0                       # páginas SIN respuesta (lentas/perdidas)
         reintentos = 0                          # reintentos por caída de conexión
         # Pedimos la conexión con prioridad (el colector cede) y fijamos el foco.
         self._focus = asset
@@ -242,11 +243,15 @@ class PocketService:
                                                           index=i)
                     # Espera POR EVENTO: sigue en cuanto llegan las velas; el
                     # `espera` es solo el tope si PO tarda o no responde.
+                    # `respondio` distingue "PO contestó" de "no llegó nada":
+                    # sin esto, una respuesta LENTA se confundía con "fin del
+                    # historial" y se saltaban páginas (dejaba datos atrás).
+                    respondio = True
                     try:
                         await asyncio.wait_for(self._hist_event.wait(),
                                                timeout=espera)
                     except asyncio.TimeoutError:
-                        pass
+                        respondio = False
             except (ConnectionClosed, OSError) as exc:
                 # Caída a mitad de página: esperar reconexión y REINTENTAR la misma
                 # página (no abortar). Límite de reintentos para no colgarse.
@@ -262,10 +267,22 @@ class PocketService:
             except Exception:
                 self.log.exception("scan_backwards: fallo pidiendo página")
                 break
+            # NO RESPONDIÓ: página lenta/perdida. No es "fin del historial":
+            # se REINTENTA la misma ventana (no se salta) y solo se corta tras
+            # muchas seguidas. Así no se dejan páginas atrás por una tardanza.
+            if not respondio:
+                sin_respuesta += 1
+                if sin_respuesta >= 8:
+                    self.log.warning("scan_backwards: %s %s sin respuesta x%d, "
+                                     "se corta", asset, key, sin_respuesta)
+                    break
+                continue                        # reintenta la MISMA end_time
+            sin_respuesta = 0                    # PO contestó: cadena de silencio rota
             df = self.repo.get_recent(asset, key, 5000)
             nuevo_end = (int(df["timestamp"].iloc[0] // 1000) - 1
                          if df is not None and len(df) else end_time)
             avanzo = (self.repo.count(asset, key) > antes and nuevo_end < end_time)
+            # Solo cuenta como "fin" cuando PO RESPONDIÓ y no trajo más antiguas.
             sin_avance = 0 if avanzo else sin_avance + 1
             end_time = min(end_time, nuevo_end)
             self.log.info("scan_backwards %s: pág %d -> %d velas totales",
