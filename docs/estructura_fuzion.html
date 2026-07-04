@@ -617,6 +617,7 @@
       <div class="dcard"><b>Honesto</b><p>El 90–95% es la experiencia del trader; el bot mide su acierto real con su registro. Sin datos de las 12 temporalidades → NO OPERAR (no inventa).</p></div>
     </div>
     <div class="dcard" style="margin-top:14px"><b>🛡️ Barrera anti-basura</b><p>Antes de leer, se descartan las series basura (planas, NaN, corruptas, saltos imposibles) para no producir señales absurdas. Limpieza de disco: <span class="mono">python -m bot.data_quality [otc|real] [--borrar]</span>. Archivo: <span class="mono">data_quality.py</span>.</p></div>
+    <div class="dcard" style="margin-top:12px"><b>⚡ Recopilación por evento (rápida)</b><p>El escaneo avanza EN CUANTO llegan las velas (no espera fija), fija el activo una sola vez y omite el 2h (que PO no sirve). Descarga profunda ~3–4× más rápida, mismo resultado. Archivos: <span class="mono">pocket_service.scan_backwards</span> · <span class="mono">download_history</span>.</p></div>
     <p class="note-inline">Fichas dedicadas: <b>Biblioteca del cerebro</b> (indicadores + matemática), <b>Sistema OTC</b> y <b>Sistema Real</b> (documentos aparte). Ver progreso de datos: <span class="mono">python -m bot.progreso</span>.</p>
   </section>
 
