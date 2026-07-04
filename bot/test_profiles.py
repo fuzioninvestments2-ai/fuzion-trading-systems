@@ -66,10 +66,12 @@ def test_nombres_visibles():
 
 
 def test_flag_usa_sistema():
-    # OTC ya usa el sistema del trader; el real se activa el domingo.
-    assert OTC_PROFILE.usa_sistema is True
+    # Decisión del trader: OTC muestra la TARJETA COMPLETA (motor clásico: chart,
+    # ALERTA, Modo/ADX, fractal, panel con %, Pago, Mejores). Por eso usa_sistema
+    # = False (la lectura visible es la rica, no la tarjeta resumida del sistema).
+    assert OTC_PROFILE.usa_sistema is False
     assert REAL_PROFILE.usa_sistema is False
-    print("OK interruptor: OTC usa el sistema; real apagado (hasta domingo)")
+    print("OK interruptor: OTC y real usan la tarjeta completa (motor clásico)")
 
 
 def test_bases_de_datos_separadas():

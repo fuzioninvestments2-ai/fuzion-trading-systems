@@ -103,7 +103,11 @@ OTC_PROFILE = Profile(
     fuentes_datos=("pocket_option",),
     activos=tuple(OTC_MAJORS),
     db_path=_ruta("history.db"), datasets_dir=_ruta("datasets", "otc"),
-    usa_sistema=True)                # OTC ya usa el sistema del trader
+    usa_sistema=False)               # OTC usa la TARJETA COMPLETA (motor clásico:
+                                     # chart, ALERTA, Modo/ADX, fractal, panel con
+                                     # %, ¡ENTRA YA!, Pago, Mejores) — la que pidió
+                                     # el trader. El sistema de 12 tiempos queda
+                                     # disponible pero la lectura visible es la rica.
 
 REAL_PROFILE = Profile(
     nombre="REAL", titulo="Fuzion POption FX", es_otc=False, ladder=LADDER_REAL,
