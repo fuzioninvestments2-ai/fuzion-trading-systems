@@ -1,0 +1,149 @@
+<style>
+  :root{
+    --bg:#F7F8FA;--panel:#FFFFFF;--panel-2:#F0F2F6;--ink:#141A26;--muted:#5A6478;--faint:#8A93A6;
+    --line:#DEE3EC;--line-strong:#C4CBD9;--real:#B9791A;--real-soft:#F8EEDA;
+    --up:#0F8F8A;--up-soft:#E1F3F1;--down:#C0532B;--down-soft:#F8E7DE;
+    --core:#4C5BD0;--core-soft:#E7E9FB;--good:#2E9E5B;
+    --shadow:0 1px 2px rgba(20,26,38,.05),0 6px 20px rgba(20,26,38,.06);--r:14px;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#0E1420;--panel:#161E2C;--panel-2:#1B2434;--ink:#EAEEF6;--muted:#9AA5B8;--faint:#6B7686;
+    --line:#28303F;--line-strong:#38424F;--real:#E7B24E;--real-soft:#33280F;
+    --up:#3FC9C0;--up-soft:#12312F;--down:#E7855C;--down-soft:#33200F;
+    --core:#8B97F0;--core-soft:#1C2140;--good:#4FC27E;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 26px rgba(0,0,0,.35);}}
+  :root[data-theme="light"]{--bg:#F7F8FA;--panel:#FFFFFF;--panel-2:#F0F2F6;--ink:#141A26;--muted:#5A6478;--faint:#8A93A6;--line:#DEE3EC;--line-strong:#C4CBD9;--real:#B9791A;--real-soft:#F8EEDA;--up:#0F8F8A;--up-soft:#E1F3F1;--down:#C0532B;--down-soft:#F8E7DE;--core:#4C5BD0;--core-soft:#E7E9FB;--good:#2E9E5B;}
+  :root[data-theme="dark"]{--bg:#0E1420;--panel:#161E2C;--panel-2:#1B2434;--ink:#EAEEF6;--muted:#9AA5B8;--faint:#6B7686;--line:#28303F;--line-strong:#38424F;--real:#E7B24E;--real-soft:#33280F;--up:#3FC9C0;--up-soft:#12312F;--down:#E7855C;--down-soft:#33200F;--core:#8B97F0;--core-soft:#1C2140;--good:#4FC27E;}
+
+  *{box-sizing:border-box}body{margin:0}
+  .page{background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.55;-webkit-font-smoothing:antialiased;padding:clamp(20px,4vw,52px) clamp(16px,4vw,40px)}
+  .wrap{max-width:1080px;margin:0 auto}.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  .eyebrow{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--real);margin:0 0 10px}
+  h1{font-size:clamp(28px,4.6vw,44px);line-height:1.05;font-weight:800;letter-spacing:-.02em;text-wrap:balance;margin:0 0 14px}
+  .lede{font-size:clamp(15px,2.1vw,18px);color:var(--muted);max-width:64ch;margin:0}
+  section{margin-top:clamp(34px,5vw,54px)}
+  .sec-head{display:flex;align-items:baseline;gap:12px;margin:0 0 6px}
+  h2{font-size:clamp(19px,2.6vw,24px);font-weight:800;letter-spacing:-.01em;margin:0}
+  .sec-head .n{font-size:13px;font-weight:700;color:var(--faint)}
+  .sec-sub{font-size:13.5px;color:var(--muted);margin:2px 0 18px}
+  .table-scroll{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--panel);box-shadow:var(--shadow)}
+  table{border-collapse:collapse;width:100%;min-width:560px;font-size:13.5px}
+  th,td{text-align:left;padding:12px 15px;border-bottom:1px solid var(--line);vertical-align:top}
+  thead th{font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--faint);font-weight:700;background:var(--panel-2)}
+  tbody tr:last-child td{border-bottom:none}
+  td:first-child{font-weight:700;color:var(--ink)}
+  .c-otc{color:var(--up);font-weight:600}.c-real{color:var(--real);font-weight:600}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:18px 20px}
+  .rule{border-left:3px solid var(--real)}
+  .warn{background:var(--real-soft);border:1px solid transparent;border-left:3px solid var(--real);border-radius:12px;padding:14px 16px;font-size:14px;color:var(--ink)}
+  .warn b{color:var(--real)}
+  .filters{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media (max-width:720px){.filters{grid-template-columns:1fr}}
+  .filt{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:var(--shadow)}
+  .filt h4{margin:0 0 8px;font-size:15px;font-weight:800}
+  .filt ul{margin:6px 0 0;padding-left:18px;font-size:12.5px;color:var(--muted)}.filt li{margin:3px 0}
+  .band{display:flex;justify-content:space-between;font-size:12.5px;padding:6px 10px;border-radius:7px;margin-top:6px}
+  .band.g{background:var(--up-soft);color:var(--up)}.band.w{background:var(--real-soft);color:var(--real)}.band.b{background:var(--down-soft);color:var(--down)}
+  .pill{display:inline-block;font-size:11px;font-weight:800;padding:3px 9px;border-radius:6px;background:var(--real-soft);color:var(--real)}
+  .diff{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media (max-width:720px){.diff{grid-template-columns:1fr}}
+  .dcard{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .dcard b{font-size:13.5px}.dcard p{margin:4px 0 0;font-size:12.5px;color:var(--muted)}
+  footer{margin-top:52px;padding-top:18px;border-top:1px solid var(--line);font-size:12.5px;color:var(--faint)}
+</style>
+
+<div class="page"><div class="wrap">
+
+  <p class="eyebrow">Fuzion POption FX · Sistema del trader</p>
+  <h1>Sistema Mercado Real — misma base, otras reglas</h1>
+  <p class="lede">Los mismos 10 indicadores y 12 temporalidades que el OTC, pero el forex real tiene bancos, noticias y sesiones. Aquí manda la protección. Encodeado en <span class="mono">bot/real_system.py</span> (reutiliza la base del OTC y redefine lo que cambia).</p>
+
+  <div class="warn" style="margin-top:22px"><b>Regla de oro del real:</b> las noticias son EL factor #1. Nunca operar sin verificar el calendario económico.</div>
+
+  <!-- 01 OTC vs REAL -->
+  <section>
+    <div class="sec-head"><span class="n">01</span><h2>OTC vs. mercado real</h2></div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Aspecto</th><th class="c-otc">OTC</th><th class="c-real">Real</th></tr></thead>
+        <tbody>
+          <tr><td>Naturaleza</td><td>Algoritmo sintético de PO</td><td>Forex real (bancos e instituciones)</td></tr>
+          <tr><td>Liquidez</td><td>Sintética (simulada)</td><td>Real (interbancaria)</td></tr>
+          <tr><td>Noticias</td><td>Impacto mínimo</td><td><b>Impacto CRÍTICO</b></td></tr>
+          <tr><td>Volatilidad</td><td>Controlada</td><td>Variable y brusca</td></tr>
+          <tr><td>Spreads</td><td>Fijos</td><td>Variables (0.5–5 pips por sesión)</td></tr>
+          <tr><td>Sesiones</td><td>24/7</td><td>Asia · London · NY (horarios)</td></tr>
+          <tr><td>Patrones y S/R</td><td>Menos fiables</td><td>Más respetados (niveles institucionales)</td></tr>
+          <tr><td>Manipulación</td><td>Por el broker</td><td>Por instituciones/bancos</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 02 base compartida -->
+  <section>
+    <div class="sec-head"><span class="n">02</span><h2>La base es la misma</h2></div>
+    <p class="sec-sub">Mismos 10 indicadores y 12 temporalidades del OTC (mismo detalle en su ficha).</p>
+    <div class="card">
+      <p style="margin:0;font-size:13.5px"><span class="pill">10 indicadores</span> &nbsp; EMA 8/20/50/200 · Stochastic 5,3,3 · Bollinger 14/1.02 · Donchian 20 · RSI 5 · MACD 12,26,9 · Soportes/Resistencias.</p>
+      <p style="margin:10px 0 0;font-size:13.5px"><span class="pill">12 tiempos</span> &nbsp; 5s · 10s · 15s · 30s · 1m · 2m · 3m · 5m · 10m · 15m · 30m · 1H.</p>
+    </div>
+  </section>
+
+  <!-- 03 sinfonia real -->
+  <section>
+    <div class="sec-head"><span class="n">03</span><h2>Sinfonía de dirección — más estricta</h2></div>
+    <p class="sec-sub">Mismos pesos que el OTC, pero para entrar el real exige más acuerdo.</p>
+    <div class="diff">
+      <div class="dcard"><b>Alineación mínima</b><p>OTC: <span class="c-otc">7 de 12</span> &nbsp;·&nbsp; Real: <span class="c-real">8 de 12</span> (más exigente).</p></div>
+      <div class="dcard"><b>EMA 200 en 1H = ley</b><p>Si apunta arriba, solo CALL; si abajo, solo PUT. Nunca en su contra.</p></div>
+    </div>
+    <div class="card rule" style="margin-top:14px">
+      <b>Fórmula de entrada real (CALL):</b> las 10 temporalidades alineadas <b>+ sin noticias en 30 min + spread &lt; 2 pips</b>. Sin esos dos filtros, no se entra aunque la lectura alinee.
+    </div>
+  </section>
+
+  <!-- 04 filtros criticos -->
+  <section>
+    <div class="sec-head"><span class="n">04</span><h2>Filtros críticos</h2></div>
+    <p class="sec-sub">El foco es no perder: si un filtro no pasa, no se entra.</p>
+    <div class="filters">
+      <div class="filt">
+        <h4>📰 Noticias <span class="pill">factor #1</span></h4>
+        <ul>
+          <li><b>15 min antes:</b> no operar.</li>
+          <li><b>Durante:</b> no operar (movimiento brusco).</li>
+          <li><b>30 min después:</b> no operar; esperar a que se calme.</li>
+          <li>Calendario: ForexFactory · Investing.com.</li>
+        </ul>
+      </div>
+      <div class="filt">
+        <h4>📉 Spread</h4>
+        <ul>
+          <li>Máximo aceptable: <b>2 pips</b>.</li>
+          <li>Si &gt; 2 pips: no operar.</li>
+          <li>En noticias sube a 5–10 pips = no operar.</li>
+        </ul>
+      </div>
+      <div class="filt">
+        <h4>💵 % de pago</h4>
+        <div class="band g"><span>75% – 85%</span><span>bueno ✓</span></div>
+        <div class="band w"><span>85% – 92%</span><span>peligroso ⚠</span></div>
+        <div class="band b"><span>&lt; 75%</span><span>NO operar ✗</span></div>
+      </div>
+      <div class="filt">
+        <h4>🕐 Sesiones (EST) <span class="pill">~80% del movimiento</span></h4>
+        <ul>
+          <li><b>Mejor:</b> London Open 2:00–5:00.</li>
+          <li><b>2ª:</b> NY Open 9:30–11:00.</li>
+          <li><b>Evitar:</b> Asia 20:00–00:00 · NY PM 13:00–16:00.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Sistema Mercado Real de Fuzion Investments — reutiliza la base del OTC y redefine lo que cambia (8/12, noticias también durante, spread, sesiones). Encodeado en <span class="mono">bot/real_system.py</span>. Señales educativas en demo, solo lectura. Los % de fiabilidad (85–95%) son la experiencia del trader, no una garantía del bot: el acierto real lo mide su registro de señales.
+  </footer>
+
+</div></div>
