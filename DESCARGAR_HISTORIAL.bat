@@ -8,7 +8,7 @@ REM  (esta descarga abre su propia conexion; no puede haber
 REM   dos con el mismo SSID a la vez).
 REM ============================================================
 title Descargar Historial - Pocket Option OTC + FX
-cd /d "%USERPROFILE%\fuzion-trading-systems"
+cd /d "%~dp0"
 
 echo.
 echo ============================================================

@@ -5,7 +5,7 @@ REM  (carpeta datasets/) a GitHub, para tenerlo en la NUBE.
 REM  Antes: corre DESCARGAR_HISTORIAL (genera datasets/).
 REM ============================================================
 title Subir Historial a la nube (GitHub)
-cd /d "%USERPROFILE%\fuzion-trading-systems"
+cd /d "%~dp0"
 
 echo   Exportando lo ultimo a datasets/ ...
 python -m bot.dataset_export export

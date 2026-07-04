@@ -8,7 +8,7 @@ REM  conexion por SSID). Dejalo corriendo el tiempo que quieras;
 REM  cierra la ventana (o Ctrl+C) para parar.
 REM ============================================================
 title Acumulador de Historial - Pocket Option OTC (en vivo)
-cd /d "%USERPROFILE%\fuzion-trading-systems"
+cd /d "%~dp0"
 
 echo.
 echo ============================================================

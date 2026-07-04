@@ -14,7 +14,7 @@ REM  No tengas Fuzion FX (senales) encendido a la vez que este robot
 REM  baja de PO: son la misma cuenta. Para parar: cierra la ventana.
 REM ============================================================
 title ROBOT REAL - Mercado real sincronizado (yfinance + PO)
-cd /d "%USERPROFILE%\fuzion-trading-systems"
+cd /d "%~dp0"
 
 echo.
 echo ============================================================

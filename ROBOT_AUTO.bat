@@ -11,7 +11,7 @@ REM   - Tu PC debe seguir ENCENDIDA (si la apagas, se detiene).
 REM   - Para parar: cierra esta ventana.
 REM ============================================================
 title ROBOT AUTO - Acumulador continuo Pocket Option
-cd /d "%USERPROFILE%\fuzion-trading-systems"
+cd /d "%~dp0"
 
 echo.
 echo ============================================================

@@ -5,7 +5,7 @@ REM  el bot de senales de Pocket Option OTC (Telegram).
 REM  No necesitas escribir ni pegar nada: solo doble clic.
 REM ============================================================
 title Bot de Senales - Pocket Option OTC
-cd /d "%USERPROFILE%\fuzion-trading-systems"
+cd /d "%~dp0"
 
 echo.
 echo ============================================================

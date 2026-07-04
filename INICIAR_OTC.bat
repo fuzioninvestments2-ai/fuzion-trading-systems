@@ -6,7 +6,7 @@ REM  PROPIOS (separado del bot real, sin cruces).
 REM  Token en .env:  TELEGRAM_BOT_TOKEN_OTC=...
 REM ============================================================
 title Fuzion OTC - Bot de senales (mercado OTC)
-cd /d "%USERPROFILE%\fuzion-trading-systems"
+cd /d "%~dp0"
 
 echo.
 echo   1) Trayendo la ultima version (git pull)...

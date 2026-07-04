@@ -7,7 +7,7 @@ REM  Token en .env:  TELEGRAM_BOT_TOKEN_REAL=...
 REM  Solo monedas (Lun-Vie); calla en noticias de alto impacto.
 REM ============================================================
 title Fuzion FX - Bot de senales (mercado REAL Forex)
-cd /d "%USERPROFILE%\fuzion-trading-systems"
+cd /d "%~dp0"
 
 echo.
 echo   1) Trayendo la ultima version (git pull)...
