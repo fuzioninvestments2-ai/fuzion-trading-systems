@@ -70,6 +70,7 @@ class PocketService:
         self._focus = None           # activo prioritario (el que mira el usuario)
         self._conn_lock = None       # asyncio.Lock (se crea al arrancar el loop)
         self._want_analysis = False  # un análisis está esperando la conexión
+        self._hist_event = None      # asyncio.Event: llegó historial (escaneo rápido)
         self.collect_seconds = 60    # tiempo por activo (>=60 forma 1 vela M1)
 
         self.client = PocketOptionClient(
@@ -92,6 +93,13 @@ class PocketService:
         if closed is not None:
             self.repo.record_candle(asset, "M1", closed)
 
+    def _marcar_historia(self):
+        """Avisa (evento) que acaba de llegar historial: el escáner deja de
+        esperar en fijo y avanza YA. Es la clave de la velocidad."""
+        ev = getattr(self, "_hist_event", None)
+        if ev is not None:
+            ev.set()
+
     def _on_history(self, payload):
         if not isinstance(payload, dict):
             return
@@ -101,6 +109,7 @@ class PocketService:
         # escaneo hacia atrás (loadHistoryPeriod) suele traer velas OHLC.
         candles = payload.get("candles") or payload.get("data")
         if asset and candles and self._store_ohlc_candles(asset, payload, candles):
+            self._marcar_historia()
             return
         hist = payload.get("history", [])
         if not asset or not hist:
@@ -125,6 +134,7 @@ class PocketService:
         velas = cb.closed_candles()
         if velas:
             self.repo.record_many(asset, key, velas)
+            self._marcar_historia()
         # Sembramos el buffer/builder en vivo SOLO si aún no hay nada: NO pisamos
         # lo que _on_tick ya acumuló (antes se borraba en cada cambio de activo).
         if period == 60:
@@ -198,6 +208,10 @@ class PocketService:
         self._focus = asset
         import contextlib
         from websockets.exceptions import ConnectionClosed
+        # EVENTO de historial: avanzamos EN CUANTO llegan las velas (no en fijo).
+        if self._hist_event is None:
+            self._hist_event = asyncio.Event()
+        asset_puesto = False                    # el activo se fija UNA vez (no por página)
         for i in range(1, int(paginas) + 1):
             if not self.connected or end_time <= limite or sin_avance >= 3:
                 break
@@ -210,16 +224,29 @@ class PocketService:
                                      asset, key)
                     break
                 await asyncio.sleep(2)          # dar tiempo a re-autenticar
+                asset_puesto = False            # re-fijar el activo tras reconectar
             antes = self.repo.count(asset, key)
             self._want_analysis = True
             lock = self._conn_lock or contextlib.nullcontext()
             try:
                 async with lock:               # una página a la vez; suelta entre páginas
                     self._want_analysis = False
-                    await self.client.set_asset(asset, 60)
+                    # Fijar el activo SOLO una vez (o tras reconexión): re-pedirlo
+                    # en cada página era espera muerta y ruido de respuestas.
+                    if not asset_puesto:
+                        await self.client.set_asset(asset, 60)
+                        await asyncio.sleep(0.3)
+                        asset_puesto = True
+                    self._hist_event.clear()
                     await self.client.load_history_period(asset, period, end_time,
                                                           index=i)
-                    await asyncio.sleep(espera)  # esperar respuesta -> _on_history
+                    # Espera POR EVENTO: sigue en cuanto llegan las velas; el
+                    # `espera` es solo el tope si PO tarda o no responde.
+                    try:
+                        await asyncio.wait_for(self._hist_event.wait(),
+                                               timeout=espera)
+                    except asyncio.TimeoutError:
+                        pass
             except (ConnectionClosed, OSError) as exc:
                 # Caída a mitad de página: esperar reconexión y REINTENTAR la misma
                 # página (no abortar). Límite de reintentos para no colgarse.

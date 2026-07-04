@@ -74,7 +74,7 @@ def test_scan_backwards_pagina_y_para():
     s.connected = True
     s.client = _FakeClient(s)
     total = asyncio.run(s.scan_backwards("EURUSD_otc", period=60,
-                                         max_days=365, paginas=50))
+                                         max_days=365, paginas=50, espera=0.02))
     # 20 iniciales + 3 páginas * 10 = 50 (sin duplicar).
     assert total >= 45, total
     print(f"OK escaneo hacia atrás pagina y se detiene solo ({total} velas)")
@@ -124,7 +124,7 @@ def test_scan_backwards_sobrevive_caida():
     s.connected = True
     s.client = _FlakyClient(s)
     total = asyncio.run(s.scan_backwards("EURUSD_otc", period=900,
-                                         max_days=365, paginas=50))
+                                         max_days=365, paginas=50, espera=0.02))
     assert s.client.cayo_una_vez                          # hubo caída
     assert total >= 35, total                             # y aun así descargó
     print(f"OK sobrevive a la caída y completa ({total} velas)")
