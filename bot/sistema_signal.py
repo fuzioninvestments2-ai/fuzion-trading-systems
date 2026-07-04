@@ -23,10 +23,12 @@ def _tf_txt(tf):
     return _TF_TXT.get(tf, f"{tf}s")
 
 
-def formatear_senal(res, titulo, asset, tf_operar):
+def formatear_senal(res, titulo, asset, tf_operar, extras=""):
     """
     `res`: salida de veredicto_final. Devuelve el texto de la señal.
     `titulo`: nombre del bot (ej. 'Fuzion POption OTC'). `tf_operar`: expiración.
+    `extras`: bloque de LECTURA opcional (hora de entrada, VWAP, techo/piso,
+    patrones, historial) que se inserta antes del aviso. Vacío = tarjeta simple.
     """
     dir_1h = res.get("direccion_1h", "HOLD")
     ver = res.get("veredicto", "NO OPERAR")
@@ -58,17 +60,58 @@ def formatear_senal(res, titulo, asset, tf_operar):
         f"🧭 {res.get('motivo', '')}"
         f"{filtros_txt}\n"
         f"\n🔎 *12 tiempos:*\n{panel}\n"
+        f"{chr(10) + extras + chr(10) if extras else ''}"
         f"\n⚠️ _Señal educativa, demo, solo lectura. El acierto real lo mide el "
         f"registro; ningún sistema gana siempre._"
     )
 
 
+def lectura_extra(seg, old):
+    """
+    Bloque de LECTURA extra con el mismo formato que la tarjeta clásica:
+    hora de entrada (lo más pedido para operar), VWAP, techo/piso, patrones e
+    historial. `seg`: segundos hasta que ABRE la próxima vela (para la hora de
+    entrada). `old`: dict del análisis clásico (vwap/levels/patrones/m1_count).
+    Devuelve el bloque ya formateado (o "" si no hay nada que mostrar).
+    """
+    from datetime import datetime, timedelta
+    partes = []
+    # HORA DE ENTRADA: el momento EXACTO en que abre la próxima vela del tiempo de
+    # operación. Es lo que faltaba para poder operar (saber cuándo entrar).
+    if seg is not None:
+        hora = (datetime.now() + timedelta(seconds=int(seg))).strftime("%H:%M:%S")
+        if int(seg) <= 5:
+            partes.append(f"⏱️ *¡ENTRA YA!* (nueva vela ~{hora})")
+        else:
+            partes.append(f"⏱️ *Entra a las {hora}* "
+                          f"_(al abrir la vela, en {int(seg)}s)_")
+    old = old or {}
+    pats = old.get("patrones")
+    if pats:
+        partes.append(f"🕯️ *Patrones:* {', '.join(pats)}")
+    vw = old.get("vwap")
+    if vw and vw.get("vwap") is not None:
+        lado = {"CALL": "por ENCIMA (sesgo alcista)",
+                "PUT": "por DEBAJO (sesgo bajista)",
+                "HOLD": "pegado al VWAP (neutral)"}.get(vw.get("side"), "")
+        partes.append(f"📏 *VWAP:* precio {lado} _({vw['dist_pct']:+.2f}%)_")
+    lv = old.get("levels")
+    if lv and (lv.get("resistencias") or lv.get("soportes")):
+        techo = f"{lv['resistencias'][0]:.5f}" if lv.get("resistencias") else "—"
+        piso = f"{lv['soportes'][0]:.5f}" if lv.get("soportes") else "—"
+        partes.append(f"🧱 *Techo:* {techo}  ·  *Piso:* {piso}")
+    m1 = old.get("m1_count")
+    if m1 is not None:
+        partes.append(f"📚 Historial: {m1} velas M1 acumuladas")
+    return "\n".join(partes)
+
+
 def senal(frames, sistema, titulo, asset, tf_operar, payout=None,
-          hay_noticia=False, hora_est=None, spread=None):
+          hay_noticia=False, hora_est=None, spread=None, extras=""):
     """Atajo: calcula el veredicto final y lo formatea de una."""
     res = veredicto_final(frames, sistema, payout=payout, hay_noticia=hay_noticia,
                           hora_est=hora_est, spread=spread)
-    return formatear_senal(res, titulo, asset, tf_operar), res
+    return formatear_senal(res, titulo, asset, tf_operar, extras=extras), res
 
 
 def _clave_repo(tf):
@@ -96,16 +139,18 @@ def frames_desde_repo(repo, sistema, asset, minimo_velas=6):
 
 
 def senal_desde_repo(repo, sistema, titulo, asset, asset_display, tf_operar,
-                     payout=None, hay_noticia=False, hora_est=None, spread=None):
+                     payout=None, hay_noticia=False, hora_est=None, spread=None,
+                     extras=""):
     """
     Construye la señal del sistema para un activo leyendo su historial del repo.
     Devuelve (texto, resultado). Si faltan temporalidades (poca historia), el
     veredicto será NO OPERAR con su motivo — es correcto, no se fuerza.
+    `extras`: bloque de lectura (hora de entrada, VWAP...) ya formateado.
     """
     frames = frames_desde_repo(repo, sistema, asset)
     return senal(frames, sistema, titulo, asset_display, tf_operar,
                  payout=payout, hay_noticia=hay_noticia, hora_est=hora_est,
-                 spread=spread)
+                 spread=spread, extras=extras)
 
 
 def _demo():

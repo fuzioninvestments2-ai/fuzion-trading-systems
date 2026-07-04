@@ -805,7 +805,7 @@ class PocketService:
 
         Devuelve (texto, resultado_sistema, seg, n_ticks).
         """
-        from bot.sistema_signal import senal_desde_repo
+        from bot.sistema_signal import senal_desde_repo, lectura_extra
         # Enfoca el activo y refresca datos. registrar=False: el motor viejo NO
         # guarda su señal; la del SISTEMA se guarda abajo (aprendizaje correcto).
         _old, seg, n = await self.analyze(asset_code, tf_seconds, registrar=False)
@@ -819,9 +819,14 @@ class PocketService:
             from datetime import datetime, timezone
             hora_est = (datetime.now(timezone.utc).hour - 5) % 24
 
+        # LECTURA extra para la tarjeta: hora de entrada (seg) + VWAP/techo/piso/
+        # patrones/historial (del análisis clásico _old). Es lo que el trader pidió
+        # para poder OPERAR: saber cuándo entrar, con la lectura completa.
+        extras = lectura_extra(seg, _old if isinstance(_old, dict) else None)
         texto, res = senal_desde_repo(self.repo, sistema, titulo, asset_code,
                                       asset_display, self._tf_label(tf_seconds),
-                                      payout=pago_pct, hora_est=hora_est)
+                                      payout=pago_pct, hora_est=hora_est,
+                                      extras=extras)
 
         # Registrar la señal del SISTEMA cuando dice OPERAR (para medir su
         # win-rate real y calibrar). Anti-duplicado por horizonte.
