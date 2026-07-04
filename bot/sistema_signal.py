@@ -83,12 +83,16 @@ def frames_desde_repo(repo, sistema, asset, minimo_velas=6):
     lo trata como sin dirección, honesto: no inventa). Para EMA200 hacen falta
     ~200 velas de ese tiempo; si no las hay, ese tiempo no cuenta.
     """
+    from bot.data_quality import frames_limpios
     frames = {}
-    for tf in sistema.TIMEFRAMES_OTC:
+    for tf in sistema.TIMEFRAMES:                # canónico (OTC o real)
         df = repo.get_recent(asset, _clave_repo(tf), 400)
         if df is not None and len(df) >= minimo_velas:
             frames[tf] = df
-    return frames
+    # BARRERA DE SEGURIDAD: descarta series basura (planas, NaN, corruptas, con
+    # saltos imposibles) para no producir señales absurdas. Solo pasan los sanos.
+    limpios, _descartados = frames_limpios(frames)
+    return limpios
 
 
 def senal_desde_repo(repo, sistema, titulo, asset, asset_display, tf_operar,

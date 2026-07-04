@@ -8,7 +8,7 @@ NO OPERAR (honesto, no inventa).
 
 from bot.history import HistoryRepository
 from bot.sistema_signal import frames_desde_repo, senal_desde_repo
-from bot import otc_system
+from bot import otc_system, real_system
 
 
 def _sembrar(repo, asset, tf, n=260, subiendo=True):
@@ -51,8 +51,26 @@ def test_poca_historia_no_opera():
     print("OK poca historia (sin 1H) -> NO OPERAR (honesto, no inventa)")
 
 
+def test_real_no_crashea_y_filtra_sesion():
+    # Regresión: el sistema REAL usaba TIMEFRAMES_OTC (inexistente) y crasheaba.
+    repo = HistoryRepository(":memory:")
+    for tf in real_system.TIMEFRAMES:
+        _sembrar(repo, "EURUSD", tf, subiendo=True)
+    # Sesión buena (London, 3h EST) -> puede operar.
+    _, res = senal_desde_repo(repo, real_system, "Fuzion POption FX", "EURUSD",
+                              "EUR/USD", "M5", payout=82, hora_est=3)
+    assert res["veredicto"] in ("OPERAR", "NO OPERAR")   # no crashea
+    # Sesión a evitar (Asia, 22h EST) -> bloquea aunque alinee.
+    _, res2 = senal_desde_repo(repo, real_system, "Fuzion POption FX", "EURUSD",
+                               "EUR/USD", "M5", payout=82, hora_est=22)
+    if res["veredicto"] == "OPERAR":
+        assert res2["veredicto"] == "NO OPERAR"
+    print("OK sistema REAL no crashea y aplica el filtro de sesión")
+
+
 if __name__ == "__main__":
     test_frames_desde_repo()
     test_senal_operar_desde_repo()
     test_poca_historia_no_opera()
+    test_real_no_crashea_y_filtra_sesion()
     print("\nTODOS OK — señal del sistema construida desde el historial")

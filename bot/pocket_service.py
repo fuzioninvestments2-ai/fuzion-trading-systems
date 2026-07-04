@@ -341,10 +341,14 @@ class PocketService:
             return None
         return int(tf_seconds - (last_ts % tf_seconds))
 
-    async def analyze(self, asset_code, tf_seconds=60):
+    async def analyze(self, asset_code, tf_seconds=60, registrar=True):
         """
         Cambia al activo pedido, espera datos y hace ANÁLISIS PROFUNDO
         multi-temporalidad (la "ecuación": tiempo corto + medio + largo).
+
+        registrar: si False, NO guarda la señal en el tracker (lo usa el camino
+        del SISTEMA del trader, que registra SU propia señal, no la del motor
+        viejo — así el aprendizaje mide el sistema correcto).
 
         Devuelve (resultado_dict, seg_próx_vela, nº_ticks).
         El `resultado_dict` viene de DeepAnalyzer: veredicto, dirección, fuerza,
@@ -676,7 +680,7 @@ class PocketService:
                 else (_SIG_PUT if "PUT" in dfin else None))
         vfin = resultado.get("veredicto", "")
         operable = ("OPERAR" in vfin) or ("OPCIONAL" in vfin)
-        if operable and lado and now_ms and ticks:
+        if registrar and operable and lado and now_ms and ticks:
             # Anti-duplicado: no registrar dos veces dentro del mismo horizonte
             # (si el usuario pulsa "Analizar de nuevo" varias veces seguidas).
             ultimo = self._last_signal.get(asset_code, 0)
@@ -718,14 +722,52 @@ class PocketService:
         Devuelve (texto, resultado_sistema, seg, n_ticks).
         """
         from bot.sistema_signal import senal_desde_repo
-        # Enfoca el activo y refresca datos (descartamos el veredicto viejo).
-        _old, seg, n = await self.analyze(asset_code, tf_seconds)
+        # Enfoca el activo y refresca datos. registrar=False: el motor viejo NO
+        # guarda su señal; la del SISTEMA se guarda abajo (aprendizaje correcto).
+        _old, seg, n = await self.analyze(asset_code, tf_seconds, registrar=False)
         payout = self._payouts.get(asset_code)
         pago_pct = payout if payout is None else float(payout)
+
+        # En el mercado REAL pasamos la hora (para el filtro de sesión). EST ~
+        # UTC-5 (sin ajuste fino de horario de verano; se afina luego).
+        hora_est = None
+        if getattr(sistema, "NOTICIAS_DURANTE", None) is not None:
+            from datetime import datetime, timezone
+            hora_est = (datetime.now(timezone.utc).hour - 5) % 24
+
         texto, res = senal_desde_repo(self.repo, sistema, titulo, asset_code,
                                       asset_display, self._tf_label(tf_seconds),
-                                      payout=pago_pct)
+                                      payout=pago_pct, hora_est=hora_est)
+
+        # Registrar la señal del SISTEMA cuando dice OPERAR (para medir su
+        # win-rate real y calibrar). Anti-duplicado por horizonte.
+        if res.get("veredicto") == "OPERAR":
+            self._registrar_senal_sistema(asset_code, tf_seconds, res)
         return texto, res, seg, n
+
+    def _registrar_senal_sistema(self, asset_code, tf_seconds, res):
+        """Guarda la señal del sistema (dirección de la EMA200 de 1H) en el tracker."""
+        from datetime import datetime, timezone
+        lado = res.get("direccion_1h")
+        if lado not in (_SIG_CALL, _SIG_PUT):
+            return
+        now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+        if now_ms - self._last_signal.get(asset_code, 0) < tf_seconds * 1000:
+            return                                # ya registrada en este horizonte
+        buf = self._ticks.get(asset_code)
+        entry_price = buf[-1][1] if buf else None
+        if entry_price is None:
+            df = self.repo.get_recent(asset_code, "M1", 1)
+            entry_price = (float(df["close"].iloc[-1])
+                           if df is not None and len(df) else None)
+        if entry_price is None:
+            return
+        try:
+            self.tracker.record(asset_code, self._tf_label(tf_seconds), lado,
+                                entry_price, now_ms, tf_seconds)
+            self._last_signal[asset_code] = now_ms
+        except Exception:
+            self.log.exception("No se pudo registrar la señal del sistema")
 
     def _tf_label(self, tf_seconds):
         """Etiqueta legible de un timeframe en segundos (para guardar la señal)."""

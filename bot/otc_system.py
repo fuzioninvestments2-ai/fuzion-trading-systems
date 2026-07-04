@@ -46,6 +46,10 @@ INDICADORES_OTC = [
 
 # --- Las 12 temporalidades que se leen a la vez (segundos) ---
 TIMEFRAMES_OTC = [5, 10, 15, 30, 60, 120, 180, 300, 600, 900, 1800, 3600]
+# Nombres CANÓNICOS (los usan los módulos sin importar si el sistema es OTC o
+# real). Evita fallos por referirse a TIMEFRAMES_OTC en el sistema real.
+TIMEFRAMES = TIMEFRAMES_OTC
+INDICADORES = INDICADORES_OTC
 
 # --- SINFONÍA DE DIRECCIÓN: peso de cada temporalidad en la alineación (%) ---
 # Los tiempos altos mandan (1H define, 30m/15m confirman); los cortos afinan la
