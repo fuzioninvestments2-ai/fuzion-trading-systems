@@ -616,6 +616,7 @@
       <div class="dcard"><b>Interruptor por bot</b><p>OTC: <span style="color:var(--otc)">encendido</span> (usa el sistema ya). Real: <span style="color:var(--real)">apagado</span> hasta el domingo. Reversible.</p></div>
       <div class="dcard"><b>Honesto</b><p>El 90–95% es la experiencia del trader; el bot mide su acierto real con su registro. Sin datos de las 12 temporalidades → NO OPERAR (no inventa).</p></div>
     </div>
+    <div class="dcard" style="margin-top:14px"><b>🛡️ Barrera anti-basura</b><p>Antes de leer, se descartan las series basura (planas, NaN, corruptas, saltos imposibles) para no producir señales absurdas. Limpieza de disco: <span class="mono">python -m bot.data_quality [otc|real] [--borrar]</span>. Archivo: <span class="mono">data_quality.py</span>.</p></div>
     <p class="note-inline">Fichas dedicadas: <b>Biblioteca del cerebro</b> (indicadores + matemática), <b>Sistema OTC</b> y <b>Sistema Real</b> (documentos aparte). Ver progreso de datos: <span class="mono">python -m bot.progreso</span>.</p>
   </section>
 
