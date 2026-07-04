@@ -60,6 +60,7 @@ class Profile:
     activos: Tuple[str, ...]        # watchlist por defecto
     db_path: str                    # base de datos PROPIA (bots separados)
     datasets_dir: str               # carpeta PROPIA en la nube (sin mezclar)
+    usa_sistema: bool = False        # True -> el bot usa el SISTEMA del trader
     sub_minuto: bool = field(init=False)
 
     def __post_init__(self):
@@ -101,14 +102,16 @@ OTC_PROFILE = Profile(
     respeta_horario=False, filtro_volatilidad=False,
     fuentes_datos=("pocket_option",),
     activos=tuple(OTC_MAJORS),
-    db_path=_ruta("history.db"), datasets_dir=_ruta("datasets", "otc"))
+    db_path=_ruta("history.db"), datasets_dir=_ruta("datasets", "otc"),
+    usa_sistema=True)                # OTC ya usa el sistema del trader
 
 REAL_PROFILE = Profile(
     nombre="REAL", titulo="Fuzion POption FX", es_otc=False, ladder=LADDER_REAL,
     respeta_horario=True, filtro_volatilidad=True,
     fuentes_datos=("pocket_option", "tradingview", "yfinance"),
     activos=tuple(REAL_MAJORS),
-    db_path=_ruta("history_real.db"), datasets_dir=_ruta("datasets", "real"))
+    db_path=_ruta("history_real.db"), datasets_dir=_ruta("datasets", "real"),
+    usa_sistema=False)               # real: se activa el domingo (mercado abierto)
 
 
 def get_profile(nombre):

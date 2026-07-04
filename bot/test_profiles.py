@@ -51,7 +51,7 @@ def test_real_solo_monedas_sin_cripto():
         Profile(nombre="REAL", titulo="Fuzion FX", es_otc=False, ladder=LADDER_REAL,
                 respeta_horario=True, filtro_volatilidad=True,
                 fuentes_datos=("yfinance",), activos=("BTCUSD",),
-                db_path=":memory:", datasets_dir="datasets/x")
+                db_path=":memory:", datasets_dir="datasets/x", usa_sistema=False)
         assert False, "debería rechazar cripto en REAL"
     except ValueError:
         pass
@@ -63,6 +63,13 @@ def test_nombres_visibles():
     assert OTC_PROFILE.titulo == "Fuzion POption OTC"
     assert REAL_PROFILE.titulo == "Fuzion POption FX"
     print("OK nombres: Fuzion POption OTC / Fuzion POption FX")
+
+
+def test_flag_usa_sistema():
+    # OTC ya usa el sistema del trader; el real se activa el domingo.
+    assert OTC_PROFILE.usa_sistema is True
+    assert REAL_PROFILE.usa_sistema is False
+    print("OK interruptor: OTC usa el sistema; real apagado (hasta domingo)")
 
 
 def test_bases_de_datos_separadas():
@@ -82,7 +89,7 @@ def test_perfil_otc_sin_sub_minuto_falla():
         Profile(nombre="OTC", titulo="Fuzion OTC", es_otc=True, ladder=(60, 300),
                 respeta_horario=False, filtro_volatilidad=False,
                 fuentes_datos=("pocket_option",), activos=("EURUSD_otc",),
-                db_path=":memory:", datasets_dir="datasets/x")
+                db_path=":memory:", datasets_dir="datasets/x", usa_sistema=False)
         assert False, "debería fallar"
     except ValueError:
         pass
@@ -95,6 +102,7 @@ if __name__ == "__main__":
     test_real_lee_todos_los_tiempos_con_horario_y_fuentes()
     test_real_solo_monedas_sin_cripto()
     test_nombres_visibles()
+    test_flag_usa_sistema()
     test_bases_de_datos_separadas()
     test_perfil_otc_sin_sub_minuto_falla()
     print("\nTODOS OK — perfiles OTC/REAL (dos bots separados)")

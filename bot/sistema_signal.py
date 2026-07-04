@@ -71,6 +71,39 @@ def senal(frames, sistema, titulo, asset, tf_operar, payout=None,
     return formatear_senal(res, titulo, asset, tf_operar), res
 
 
+def _clave_repo(tf):
+    """Clave en la BD: 60 -> 'M1'; el resto -> 'tf<segundos>'."""
+    return "M1" if tf == 60 else f"tf{tf}"
+
+
+def frames_desde_repo(repo, sistema, asset, minimo_velas=6):
+    """
+    Arma las 12 temporalidades del sistema desde el historial guardado.
+    {tf: DataFrame}. Un tiempo sin velas suficientes NO se incluye (el veredicto
+    lo trata como sin dirección, honesto: no inventa). Para EMA200 hacen falta
+    ~200 velas de ese tiempo; si no las hay, ese tiempo no cuenta.
+    """
+    frames = {}
+    for tf in sistema.TIMEFRAMES_OTC:
+        df = repo.get_recent(asset, _clave_repo(tf), 400)
+        if df is not None and len(df) >= minimo_velas:
+            frames[tf] = df
+    return frames
+
+
+def senal_desde_repo(repo, sistema, titulo, asset, asset_display, tf_operar,
+                     payout=None, hay_noticia=False, hora_est=None, spread=None):
+    """
+    Construye la señal del sistema para un activo leyendo su historial del repo.
+    Devuelve (texto, resultado). Si faltan temporalidades (poca historia), el
+    veredicto será NO OPERAR con su motivo — es correcto, no se fuerza.
+    """
+    frames = frames_desde_repo(repo, sistema, asset)
+    return senal(frames, sistema, titulo, asset_display, tf_operar,
+                 payout=payout, hay_noticia=hay_noticia, hora_est=hora_est,
+                 spread=spread)
+
+
 def _demo():
     """Ejemplo con datos alcistas alineados (para VER la señal)."""
     import numpy as np

@@ -707,6 +707,26 @@ class PocketService:
 
         return resultado, seg, len(ticks)
 
+    async def analyze_sistema(self, asset_code, tf_seconds, sistema, titulo,
+                              asset_display):
+        """
+        Análisis con el SISTEMA DEL TRADER (10 indicadores, 12 tiempos, alineación
+        ponderada + ley EMA200-1H + filtros). Reutiliza analyze() SOLO para enfocar
+        el activo y traer datos frescos + el timing de entrada (seg); el veredicto
+        sale de veredicto_final leyendo el historial de las 12 temporalidades.
+
+        Devuelve (texto, resultado_sistema, seg, n_ticks).
+        """
+        from bot.sistema_signal import senal_desde_repo
+        # Enfoca el activo y refresca datos (descartamos el veredicto viejo).
+        _old, seg, n = await self.analyze(asset_code, tf_seconds)
+        payout = self._payouts.get(asset_code)
+        pago_pct = payout if payout is None else float(payout)
+        texto, res = senal_desde_repo(self.repo, sistema, titulo, asset_code,
+                                      asset_display, self._tf_label(tf_seconds),
+                                      payout=pago_pct)
+        return texto, res, seg, n
+
     def _tf_label(self, tf_seconds):
         """Etiqueta legible de un timeframe en segundos (para guardar la señal)."""
         if tf_seconds < 60:

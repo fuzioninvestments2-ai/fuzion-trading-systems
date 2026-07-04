@@ -428,6 +428,19 @@ def run(profile_name="OTC"):
         period = _TF_SECONDS.get(tf, 60)
         if collector:
             collector.set_focus(code)
+
+        # SISTEMA DEL TRADER: si el perfil lo usa (OTC ya; real desde el domingo),
+        # la señal sale con las 12 temporalidades + alineación + ley 1H + filtros.
+        if getattr(profile, "usa_sistema", False):
+            from bot import otc_system, real_system
+            sistema = real_system if profile.nombre == "REAL" else otc_system
+            texto, _res, seg, n = await service.analyze_sistema(
+                code, period, sistema, profile.titulo, asset_display)
+            rows = [[("🔁 Analizar de nuevo", f"re:{asset_display}:{tf}")],
+                    [("📊 Otro activo", "back:market"), ("🏠 Menú", "back:main")]]
+            await _safe_edit(query, texto, rows)
+            return
+
         result, seg, n = await service.analyze(code, period)
         text = _format_deep(asset_display, tf, result, seg, service.balance, n)
         caption = _format_deep(asset_display, tf, result, seg,
