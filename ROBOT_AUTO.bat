@@ -29,7 +29,7 @@ echo [%date% %time%] FASE 1: descarga PROFUNDA 5s..1d de TODOS los OTC (de 5 en 
 echo   Reanudable: salta los que ya esten completos. Sube a la nube al final.
 python -m bot.download_history --all --batch 5
 python -m bot.dataset_export export OTC
-git add datasets/otc & git commit -m "datos OTC: descarga profunda 5s-1d" & git pull --no-rebase --no-edit & git push
+python -m bot.cloud_push "datasets/otc" "datos OTC: descarga profunda 5s-1d"
 
 echo.
 echo [%date% %time%] FASE 2: acumular hacia adelante y subir cada ronda...

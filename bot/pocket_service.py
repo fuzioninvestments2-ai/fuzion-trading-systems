@@ -180,6 +180,37 @@ class PocketService:
             return True
         return False
 
+    async def _sembrar_punto(self, asset, period, key, espera=3.0):
+        """
+        SIEMBRA un punto de partida cuando el activo no dio tick vivo: fija el
+        activo a ESTE periodo (changeSymbol), con lo que PO responde con su
+        historial reciente (updateHistoryNewFast) y _on_history lo guarda. Espera
+        por evento. Devuelve end_time (segundos, la vela más antigua sembrada
+        menos 1) o None si ni así llegó nada. No rompe si el socket está caído:
+        aguarda reconexión, coherente con el reinicio interno.
+        """
+        import contextlib
+        try:
+            if not self.client.is_connected:
+                if not await self.client.wait_connected(timeout=30):
+                    return None
+                await asyncio.sleep(2)
+            lock = self._conn_lock or contextlib.nullcontext()
+            async with lock:
+                self._hist_event.clear()
+                await self.client.set_asset(asset, period)
+                try:
+                    await asyncio.wait_for(self._hist_event.wait(), timeout=espera)
+                except asyncio.TimeoutError:
+                    pass
+        except Exception:
+            return None
+        df = self.repo.get_recent(asset, key, 5000)
+        if df is not None and len(df):
+            return int(df["timestamp"].iloc[0] // 1000) - 1
+        # A veces el tick vivo llega aunque no vengan velas de ese periodo.
+        return int(self._last_tick.get(asset, 0)) or None
+
     async def scan_backwards(self, asset, period=60, max_days=60, paginas=200,
                              espera=1.3):
         """
@@ -193,14 +224,26 @@ class PocketService:
         OTC; tomamos lo que exista, sin inventar nada.
         """
         key = "M1" if period == 60 else f"tf{period}"
+        # EVENTO de historial: se necesita también para SEMBRAR (abajo).
+        if self._hist_event is None:
+            self._hist_event = asyncio.Event()
         df = self.repo.get_recent(asset, key, 5000)
         if df is not None and len(df):
             end_time = int(df["timestamp"].iloc[0] // 1000) - 1
         else:
             end_time = int(self._last_tick.get(asset, 0)) or None
             if not end_time:
-                self.log.warning("scan_backwards: sin punto de partida para %s", asset)
-                return 0
+                # SIN punto de partida: el activo aún no dio un tick vivo (típico
+                # en activos poco líquidos o recién puestos). En vez de rendirse
+                # con 0 velas (dejaba archivos atrás), SEMBRAMOS: pedimos a PO su
+                # historial reciente a ESTE periodo y esperamos por evento; con eso
+                # la BD ya tiene velas y sacamos el punto de partida. Antes esto
+                # dependía de la suerte de una reconexión.
+                end_time = await self._sembrar_punto(asset, period, key)
+                if not end_time:
+                    self.log.warning("scan_backwards: sin punto de partida para "
+                                     "%s (ni sembrando)", asset)
+                    return 0
         limite = end_time - int(max_days) * 86400
         sin_avance = 0
         sin_respuesta = 0                       # páginas SIN respuesta (lentas/perdidas)
@@ -209,9 +252,6 @@ class PocketService:
         self._focus = asset
         import contextlib
         from websockets.exceptions import ConnectionClosed
-        # EVENTO de historial: avanzamos EN CUANTO llegan las velas (no en fijo).
-        if self._hist_event is None:
-            self._hist_event = asyncio.Event()
         asset_puesto = False                    # el activo se fija UNA vez (no por página)
         for i in range(1, int(paginas) + 1):
             if not self.connected or end_time <= limite or sin_avance >= 3:

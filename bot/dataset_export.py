@@ -45,14 +45,37 @@ def export_db(repo, out_dir=None):
             continue
         safe = asset.replace("/", "-").replace(" ", "_")
         path = os.path.join(out_dir, f"{safe}__{tf}.csv.gz")
-        with gzip.open(path, "wt", newline="", encoding="utf-8") as f:
-            w = csv.writer(f)
-            w.writerow(_COLS)
-            for _, r in df.iterrows():
-                w.writerow([int(r["timestamp"]), r["open"], r["high"],
-                            r["low"], r["close"], r.get("volume", 0)])
+        # DETERMINISTA: gzip normalmente incrusta la marca de tiempo actual, así
+        # que el MISMO dato daba bytes distintos en cada export -> git creía que
+        # TODOS los archivos cambiaban y re-subía ~1400 por ronda (push enorme y
+        # choques constantes). Con mtime=0 y filename="", una serie sin cambios
+        # produce bytes IDÉNTICOS: git no ve diferencia y no hay qué commitear.
+        texto = io.StringIO()
+        w = csv.writer(texto)
+        w.writerow(_COLS)
+        for _, r in df.iterrows():
+            w.writerow([int(r["timestamp"]), r["open"], r["high"],
+                        r["low"], r["close"], r.get("volume", 0)])
+        buf = io.BytesIO()
+        with gzip.GzipFile(fileobj=buf, mode="wb", mtime=0, filename="") as gz:
+            gz.write(texto.getvalue().encode("utf-8"))
+        datos = buf.getvalue()
+        # Solo (re)escribir si el contenido cambió: no se toca el mtime del
+        # archivo cuando la serie es idéntica (menos ruido aún para git).
+        if _cambio(path, datos):
+            with open(path, "wb") as f:
+                f.write(datos)
         n += 1
     return n
+
+
+def _cambio(path, datos):
+    """True si el archivo no existe o su contenido (bytes) difiere de `datos`."""
+    try:
+        with open(path, "rb") as f:
+            return f.read() != datos
+    except OSError:
+        return True
 
 
 def import_db(repo, in_dir=None):
