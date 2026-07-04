@@ -70,6 +70,7 @@ class PocketService:
         self._focus = None           # activo prioritario (el que mira el usuario)
         self._conn_lock = None       # asyncio.Lock (se crea al arrancar el loop)
         self._want_analysis = False  # un análisis está esperando la conexión
+        self._hist_event = None      # asyncio.Event: llegó historial (escaneo rápido)
         self.collect_seconds = 60    # tiempo por activo (>=60 forma 1 vela M1)
 
         self.client = PocketOptionClient(
@@ -92,6 +93,13 @@ class PocketService:
         if closed is not None:
             self.repo.record_candle(asset, "M1", closed)
 
+    def _marcar_historia(self):
+        """Avisa (evento) que acaba de llegar historial: el escáner deja de
+        esperar en fijo y avanza YA. Es la clave de la velocidad."""
+        ev = getattr(self, "_hist_event", None)
+        if ev is not None:
+            ev.set()
+
     def _on_history(self, payload):
         if not isinstance(payload, dict):
             return
@@ -101,6 +109,7 @@ class PocketService:
         # escaneo hacia atrás (loadHistoryPeriod) suele traer velas OHLC.
         candles = payload.get("candles") or payload.get("data")
         if asset and candles and self._store_ohlc_candles(asset, payload, candles):
+            self._marcar_historia()
             return
         hist = payload.get("history", [])
         if not asset or not hist:
@@ -125,6 +134,7 @@ class PocketService:
         velas = cb.closed_candles()
         if velas:
             self.repo.record_many(asset, key, velas)
+            self._marcar_historia()
         # Sembramos el buffer/builder en vivo SOLO si aún no hay nada: NO pisamos
         # lo que _on_tick ya acumuló (antes se borraba en cada cambio de activo).
         if period == 60:
@@ -193,11 +203,16 @@ class PocketService:
                 return 0
         limite = end_time - int(max_days) * 86400
         sin_avance = 0
+        sin_respuesta = 0                       # páginas SIN respuesta (lentas/perdidas)
         reintentos = 0                          # reintentos por caída de conexión
         # Pedimos la conexión con prioridad (el colector cede) y fijamos el foco.
         self._focus = asset
         import contextlib
         from websockets.exceptions import ConnectionClosed
+        # EVENTO de historial: avanzamos EN CUANTO llegan las velas (no en fijo).
+        if self._hist_event is None:
+            self._hist_event = asyncio.Event()
+        asset_puesto = False                    # el activo se fija UNA vez (no por página)
         for i in range(1, int(paginas) + 1):
             if not self.connected or end_time <= limite or sin_avance >= 3:
                 break
@@ -210,16 +225,33 @@ class PocketService:
                                      asset, key)
                     break
                 await asyncio.sleep(2)          # dar tiempo a re-autenticar
+                asset_puesto = False            # re-fijar el activo tras reconectar
             antes = self.repo.count(asset, key)
             self._want_analysis = True
             lock = self._conn_lock or contextlib.nullcontext()
             try:
                 async with lock:               # una página a la vez; suelta entre páginas
                     self._want_analysis = False
-                    await self.client.set_asset(asset, 60)
+                    # Fijar el activo SOLO una vez (o tras reconexión): re-pedirlo
+                    # en cada página era espera muerta y ruido de respuestas.
+                    if not asset_puesto:
+                        await self.client.set_asset(asset, 60)
+                        await asyncio.sleep(0.3)
+                        asset_puesto = True
+                    self._hist_event.clear()
                     await self.client.load_history_period(asset, period, end_time,
                                                           index=i)
-                    await asyncio.sleep(espera)  # esperar respuesta -> _on_history
+                    # Espera POR EVENTO: sigue en cuanto llegan las velas; el
+                    # `espera` es solo el tope si PO tarda o no responde.
+                    # `respondio` distingue "PO contestó" de "no llegó nada":
+                    # sin esto, una respuesta LENTA se confundía con "fin del
+                    # historial" y se saltaban páginas (dejaba datos atrás).
+                    respondio = True
+                    try:
+                        await asyncio.wait_for(self._hist_event.wait(),
+                                               timeout=espera)
+                    except asyncio.TimeoutError:
+                        respondio = False
             except (ConnectionClosed, OSError) as exc:
                 # Caída a mitad de página: esperar reconexión y REINTENTAR la misma
                 # página (no abortar). Límite de reintentos para no colgarse.
@@ -235,10 +267,22 @@ class PocketService:
             except Exception:
                 self.log.exception("scan_backwards: fallo pidiendo página")
                 break
+            # NO RESPONDIÓ: página lenta/perdida. No es "fin del historial":
+            # se REINTENTA la misma ventana (no se salta) y solo se corta tras
+            # muchas seguidas. Así no se dejan páginas atrás por una tardanza.
+            if not respondio:
+                sin_respuesta += 1
+                if sin_respuesta >= 8:
+                    self.log.warning("scan_backwards: %s %s sin respuesta x%d, "
+                                     "se corta", asset, key, sin_respuesta)
+                    break
+                continue                        # reintenta la MISMA end_time
+            sin_respuesta = 0                    # PO contestó: cadena de silencio rota
             df = self.repo.get_recent(asset, key, 5000)
             nuevo_end = (int(df["timestamp"].iloc[0] // 1000) - 1
                          if df is not None and len(df) else end_time)
             avanzo = (self.repo.count(asset, key) > antes and nuevo_end < end_time)
+            # Solo cuenta como "fin" cuando PO RESPONDIÓ y no trajo más antiguas.
             sin_avance = 0 if avanzo else sin_avance + 1
             end_time = min(end_time, nuevo_end)
             self.log.info("scan_backwards %s: pág %d -> %d velas totales",
@@ -341,10 +385,14 @@ class PocketService:
             return None
         return int(tf_seconds - (last_ts % tf_seconds))
 
-    async def analyze(self, asset_code, tf_seconds=60):
+    async def analyze(self, asset_code, tf_seconds=60, registrar=True):
         """
         Cambia al activo pedido, espera datos y hace ANÁLISIS PROFUNDO
         multi-temporalidad (la "ecuación": tiempo corto + medio + largo).
+
+        registrar: si False, NO guarda la señal en el tracker (lo usa el camino
+        del SISTEMA del trader, que registra SU propia señal, no la del motor
+        viejo — así el aprendizaje mide el sistema correcto).
 
         Devuelve (resultado_dict, seg_próx_vela, nº_ticks).
         El `resultado_dict` viene de DeepAnalyzer: veredicto, dirección, fuerza,
@@ -676,7 +724,7 @@ class PocketService:
                 else (_SIG_PUT if "PUT" in dfin else None))
         vfin = resultado.get("veredicto", "")
         operable = ("OPERAR" in vfin) or ("OPCIONAL" in vfin)
-        if operable and lado and now_ms and ticks:
+        if registrar and operable and lado and now_ms and ticks:
             # Anti-duplicado: no registrar dos veces dentro del mismo horizonte
             # (si el usuario pulsa "Analizar de nuevo" varias veces seguidas).
             ultimo = self._last_signal.get(asset_code, 0)
@@ -718,14 +766,52 @@ class PocketService:
         Devuelve (texto, resultado_sistema, seg, n_ticks).
         """
         from bot.sistema_signal import senal_desde_repo
-        # Enfoca el activo y refresca datos (descartamos el veredicto viejo).
-        _old, seg, n = await self.analyze(asset_code, tf_seconds)
+        # Enfoca el activo y refresca datos. registrar=False: el motor viejo NO
+        # guarda su señal; la del SISTEMA se guarda abajo (aprendizaje correcto).
+        _old, seg, n = await self.analyze(asset_code, tf_seconds, registrar=False)
         payout = self._payouts.get(asset_code)
         pago_pct = payout if payout is None else float(payout)
+
+        # En el mercado REAL pasamos la hora (para el filtro de sesión). EST ~
+        # UTC-5 (sin ajuste fino de horario de verano; se afina luego).
+        hora_est = None
+        if getattr(sistema, "NOTICIAS_DURANTE", None) is not None:
+            from datetime import datetime, timezone
+            hora_est = (datetime.now(timezone.utc).hour - 5) % 24
+
         texto, res = senal_desde_repo(self.repo, sistema, titulo, asset_code,
                                       asset_display, self._tf_label(tf_seconds),
-                                      payout=pago_pct)
+                                      payout=pago_pct, hora_est=hora_est)
+
+        # Registrar la señal del SISTEMA cuando dice OPERAR (para medir su
+        # win-rate real y calibrar). Anti-duplicado por horizonte.
+        if res.get("veredicto") == "OPERAR":
+            self._registrar_senal_sistema(asset_code, tf_seconds, res)
         return texto, res, seg, n
+
+    def _registrar_senal_sistema(self, asset_code, tf_seconds, res):
+        """Guarda la señal del sistema (dirección de la EMA200 de 1H) en el tracker."""
+        from datetime import datetime, timezone
+        lado = res.get("direccion_1h")
+        if lado not in (_SIG_CALL, _SIG_PUT):
+            return
+        now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+        if now_ms - self._last_signal.get(asset_code, 0) < tf_seconds * 1000:
+            return                                # ya registrada en este horizonte
+        buf = self._ticks.get(asset_code)
+        entry_price = buf[-1][1] if buf else None
+        if entry_price is None:
+            df = self.repo.get_recent(asset_code, "M1", 1)
+            entry_price = (float(df["close"].iloc[-1])
+                           if df is not None and len(df) else None)
+        if entry_price is None:
+            return
+        try:
+            self.tracker.record(asset_code, self._tf_label(tf_seconds), lado,
+                                entry_price, now_ms, tf_seconds)
+            self._last_signal[asset_code] = now_ms
+        except Exception:
+            self.log.exception("No se pudo registrar la señal del sistema")
 
     def _tf_label(self, tf_seconds):
         """Etiqueta legible de un timeframe en segundos (para guardar la señal)."""

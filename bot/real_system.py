@@ -35,6 +35,11 @@ from bot.otc_system import (
     clasificar_payout, indicador, peso_alineacion,
 )
 
+# Nombres CANÓNICOS (igual que en otc_system) para que los módulos funcionen
+# con cualquiera de los dos sistemas sin fallar.
+TIMEFRAMES = TIMEFRAMES_REAL
+INDICADORES = INDICADORES_REAL
+
 # --- DIFERENCIA 1: alineación más estricta (8 de 12, vs 7 en OTC) ---
 ALINEACION_MINIMA = 8
 

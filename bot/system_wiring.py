@@ -140,8 +140,7 @@ def votar_sistema(df, sistema=otc_system):
     low = df["low"]
     precio = _last(close)
 
-    for ind in sistema.INDICADORES_OTC if hasattr(sistema, "INDICADORES_OTC") \
-            else sistema.INDICADORES_REAL:
+    for ind in sistema.INDICADORES:              # canónico (OTC o real)
         clave, tipo = ind["clave"], ind["tipo"]
         if tipo == "ema":
             votos[clave] = _ema_vote(close, precio, ind["periodo"])

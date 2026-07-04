@@ -65,6 +65,24 @@ class PocketOptionClient:
     def stop(self):
         self._stopped = True
 
+    async def forzar_reconexion(self):
+        """
+        REINICIO INTERNO de la conexión, sin apagar el proceso ni tocar los otros
+        bots. Cierra el socket ACTUAL: al cerrarse, el bucle de run() sale del
+        `async with` y reconecta solo (backoff). Sirve para el caso "socket vivo
+        pero mudo": PO deja de enviar sin cerrar, run() no ve excepción y no
+        reconectaría por sí mismo. Devuelve True si había socket que cerrar.
+        """
+        ws = self._ws
+        if ws is None:
+            return False
+        try:
+            await ws.close()                 # dispara la reconexión de run()
+        except Exception:
+            pass
+        self._ws = None                       # invalidar YA (no enviar sobre él)
+        return True
+
     @property
     def is_connected(self):
         """Hay socket vivo. `close_code` deja de ser None cuando se cierra."""

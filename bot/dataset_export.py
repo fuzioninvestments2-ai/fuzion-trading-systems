@@ -35,10 +35,13 @@ def export_db(repo, out_dir=None):
     out_dir = out_dir or _datasets_dir()
     os.makedirs(out_dir, exist_ok=True)
     n = 0
+    from bot.data_quality import MIN_VELAS
     for row in repo.assets_tracked():
         asset, tf = row["asset"], row["timeframe"]
         df = repo.get_recent(asset, tf, 10_000_000)      # todo lo que haya
-        if df is None or len(df) == 0:
+        # Barrera: no exportar series BASURA (muy pocas velas). Evita re-crear
+        # archivos inútiles (p.ej. tf7200 con 2-3 filas que PO apenas sirve).
+        if df is None or len(df) < MIN_VELAS:
             continue
         safe = asset.replace("/", "-").replace(" ", "_")
         path = os.path.join(out_dir, f"{safe}__{tf}.csv.gz")
