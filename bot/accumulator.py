@@ -61,13 +61,18 @@ def _git_push(logger):
     red), avisa y sigue — el acumulador NO se detiene por un fallo al subir.
     """
     import subprocess
+    # PULL antes de PUSH: si la rama remota tiene commits que este PC no tiene
+    # (p.ej. se trabaja en paralelo desde otra sesión), el push se rechaza. Con un
+    # pull --no-rebase primero, se reconcilia y el push pasa. Los datasets son
+    # archivos nuevos: no chocan con cambios de código.
     for cmd in (["git", "add", "datasets/"],
                 ["git", "commit", "-m", "datos: acumulador (historial en vivo)"],
+                ["git", "pull", "--no-rebase", "--no-edit"],
                 ["git", "push"]):
         try:
-            r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
             # 'commit' devuelve !=0 si no hay cambios: es normal, no es error.
-            if r.returncode != 0 and cmd[1] != "commit":
+            if r.returncode != 0 and cmd[1] not in ("commit", "pull"):
                 logger.warning("git %s: %s", cmd[1], (r.stderr or "").strip()[:200])
         except Exception as exc:
             logger.warning("No se pudo %s (%s)", " ".join(cmd), exc)
