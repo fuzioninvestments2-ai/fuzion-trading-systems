@@ -584,6 +584,41 @@
     </div>
   </section>
 
+  <!-- ============ SISTEMA DEL TRADER ============ -->
+  <section>
+    <div class="sec-head"><span class="n">10</span><h2>El sistema del trader — ya ejecutándose</h2></div>
+    <p class="sec-sub">La estrategia del trader (5+ años) encodeada y conectada al motor OTC. El real se activa el domingo. Cada paso es un archivo probado (documentar = ejecutar).</p>
+    <div class="card core">
+      <div class="pipe">
+        <div class="pstep"><div class="num">1</div><div>
+          <h4>Configuración</h4>
+          <p class="mech">Los 10 indicadores con sus parámetros exactos, 12 tiempos, pesos de alineación, filtros.</p>
+          <span class="file">otc_system.py · real_system.py</span></div></div>
+        <div class="pstep"><div class="num">2</div><div>
+          <h4>Votos con tus parámetros</h4>
+          <p class="mech">EMA 8/20/50/200, RSI 5, Stoch 5,3,3, Bollinger 14/1.02, MACD, Donchian, S/R — cada uno vota CALL/PUT.</p>
+          <span class="file">system_wiring.py</span></div></div>
+        <div class="pstep"><div class="num">3</div><div>
+          <h4>Sinfonía + ley EMA200 (1H)</h4>
+          <p class="mech">Alineación ponderada de las 12; solo se opera a favor de la EMA200 de 1H; mínimo 7/12 (OTC) · 8/12 (real).</p>
+          <span class="file">alignment.py</span></div></div>
+        <div class="pstep protect"><div class="num">4</div><div>
+          <h4>Filtros</h4>
+          <p class="mech">Payout (75/85/92); en real también noticias, sesión y spread. Si uno falla, no se entra.</p>
+          <span class="file">filtros.py</span></div></div>
+        <div class="pstep verdict"><div class="num">5</div><div>
+          <h4>Señal</h4>
+          <p class="mech">Veredicto OPERAR/NO, dirección, X/12 alineados y % de peso, panel de 12 tiempos.</p>
+          <span class="file">sistema_signal.py · telegram_signals.py</span></div></div>
+      </div>
+    </div>
+    <div class="diff" style="margin-top:14px">
+      <div class="dcard"><b>Interruptor por bot</b><p>OTC: <span style="color:var(--otc)">encendido</span> (usa el sistema ya). Real: <span style="color:var(--real)">apagado</span> hasta el domingo. Reversible.</p></div>
+      <div class="dcard"><b>Honesto</b><p>El 90–95% es la experiencia del trader; el bot mide su acierto real con su registro. Sin datos de las 12 temporalidades → NO OPERAR (no inventa).</p></div>
+    </div>
+    <p class="note-inline">Fichas dedicadas: <b>Biblioteca del cerebro</b> (indicadores + matemática), <b>Sistema OTC</b> y <b>Sistema Real</b> (documentos aparte). Ver progreso de datos: <span class="mono">python -m bot.progreso</span>.</p>
+  </section>
+
   <footer>
     Fuzion — bot de señales educativas para Pocket Option, en demo y solo lectura. No garantiza aciertos; aporta disciplina y protección. Los precios OTC son sintéticos de PO; el mercado real se lee de fuentes legítimas (PO, TradingView, yfinance), sin scraping ni evasión.
   </footer>

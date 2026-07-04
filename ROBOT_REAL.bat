@@ -42,7 +42,7 @@ if %errorlevel%==0 (
 
 echo [%date% %time%] Exportando y subiendo a la nube (datasets/real)...
 python -m bot.dataset_export export REAL
-git add datasets/real & git commit -m "datos REAL: historial sincronizado" & git push
+git add datasets/real & git commit -m "datos REAL: historial sincronizado" & git pull --no-rebase --no-edit & git push
 
 echo.
 echo [%date% %time%] Ronda lista. Siguiente en 1 hora...
