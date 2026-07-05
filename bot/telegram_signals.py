@@ -220,10 +220,17 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
     desglose = "\n".join(filas) if filas else "  (sin datos suficientes)"
 
     if seg is not None:
-        # HORA EXACTA de entrada (reloj del usuario) = ahora + segundos hasta que
-        # ABRE la próxima vela. Así sabes el momento justo, como los bots que dan
-        # la hora de entrada (ej. 23:50:00), no solo "en Xs".
-        hora_entrada = (datetime.now() + timedelta(seconds=seg)).strftime("%H:%M:%S")
+        # HORA EXACTA de entrada = apertura de la próxima vela. Se calcula desde la
+        # HORA DE MERCADO de PO (último tick) alineada al borde de la vela
+        # (ahora_mercado + seg), NO desde datetime.now() del equipo: si los ticks
+        # van con retraso o el reloj está desfasado, now()+seg daba "hora mal". El
+        # epoch se muestra en la zona horaria local del usuario (fromtimestamp).
+        ahora_mkt = result.get("ahora_mercado")
+        if ahora_mkt:
+            momento = datetime.fromtimestamp(int(ahora_mkt) + int(seg))
+        else:
+            momento = datetime.now() + timedelta(seconds=seg)
+        hora_entrada = momento.strftime("%H:%M:%S")
         if seg <= 5:
             timing = f"\n⏱️ *¡ENTRA YA!* (nueva vela ~{hora_entrada})"
         else:
@@ -492,6 +499,20 @@ def run(profile_name="OTC"):
                 _fusionar_sistema(result, res_sis)
                 if res_sis.get("veredicto") == "OPERAR":
                     service._registrar_senal_sistema(code, period, res_sis)
+                # COHERENCIA GRÁFICO=LECTURA: dibuja las MISMAS velas que el sistema
+                # calificó para el tiempo operado (si están frescas). Así el gráfico
+                # no discrepa de la dirección/panel (el bug "el gráfico no coincide"
+                # venía de dibujar ticks en vivo mientras la señal leía el historial).
+                fop = service.frame_sistema_operativo(code, sistema, period)
+                if fop is not None and len(fop) >= 5:
+                    result["chart"] = fop.tail(45).reset_index(drop=True)
+                    try:
+                        from bot.levels import detect_levels
+                        lv = detect_levels(result["chart"])
+                        if lv.get("soportes") or lv.get("resistencias"):
+                            result["levels"] = lv
+                    except Exception:
+                        pass
             except Exception:
                 logging.exception("No se pudo fusionar el sistema del trader")
 

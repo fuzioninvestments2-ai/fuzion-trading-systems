@@ -596,6 +596,11 @@ class PocketService:
                 break
 
         resultado = analyzer.analyze_frames(frames, regimen=reg)
+        # HORA DE MERCADO (último tick de PO, epoch seg): con esto la hora de
+        # entrada se calcula desde el reloj REAL del mercado alineado al borde de la
+        # vela (ahora_mercado + seg = apertura exacta), no desde datetime.now() del
+        # equipo (que puede ir con retraso/desfase y daba "hora mal").
+        resultado["ahora_mercado"] = self._last_tick.get(asset_code)
         resultado["umbral"] = min_conf
         if win_rate is not None:
             resultado["win_rate_hist"] = win_rate
@@ -804,6 +809,18 @@ class PocketService:
             pass
 
         return resultado, seg, len(ticks)
+
+    def frame_sistema_operativo(self, asset_code, sistema, tf_seconds):
+        """
+        Devuelve el DataFrame FRESCO y limpio que el sistema usó para el tiempo
+        OPERADO (mismas velas que calificó: pasan el filtro de frescura y la
+        barrera anti-basura). Sirve para dibujar el gráfico con EXACTAMENTE los
+        datos que decidieron la dirección -> el gráfico COINCIDE con la lectura.
+        None si ese tiempo no está fresco (entonces se usa el gráfico de ticks).
+        """
+        from bot.sistema_signal import frames_desde_repo
+        frames = frames_desde_repo(self.repo, sistema, asset_code)
+        return frames.get(tf_seconds)
 
     def veredicto_sistema(self, asset_code, sistema, payout=None, hora_est=None,
                           spread=None):
