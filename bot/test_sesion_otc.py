@@ -48,6 +48,18 @@ def test_umbral_es_de_reinicio_no_de_movimiento_normal():
     print("OK un movimiento normal no se confunde con un reinicio de sesión")
 
 
+def test_corta_por_hueco_de_tiempo_mismo_nivel():
+    # EL BUG REAL: sesión vieja al MISMO nivel de precio (0.815), pero de HORAS
+    # atrás, + sesión nueva ahora. Sin cortar por TIEMPO, el gráfico salía con las
+    # velas viejas (08:15-11:10) aunque en vivo eran las 16:33.
+    vieja = _bloque(0.8150, 40, 1_000)                    # ts ~1000s
+    nueva = _bloque(0.8155, 25, 1_000 + 40 + 20_000)      # 20000s después (~5.5h)
+    df = pd.DataFrame(vieja + nueva)
+    recortado = _recortar_sesion_otc(df)
+    assert len(recortado) == 25, f"debe quedar solo la sesión de ahora, quedó {len(recortado)}"
+    print("OK corta por HUECO DE TIEMPO aunque el precio sea del mismo nivel")
+
+
 def test_recorta_ticks_en_el_reset():
     from bot.pocket_service import _recortar_ticks_sesion_otc
     # Ticks de sesión vieja (~0.530) + reset + sesión nueva (~0.544). El detector de
@@ -69,5 +81,6 @@ if __name__ == "__main__":
     test_corta_en_el_reset_de_sesion()
     test_sesion_continua_no_se_recorta()
     test_umbral_es_de_reinicio_no_de_movimiento_normal()
+    test_corta_por_hueco_de_tiempo_mismo_nivel()
     test_recorta_ticks_en_el_reset()
     print("\nTODOS OK — descarte de sesión OTC vieja (gráfico coincide con lo vivo)")

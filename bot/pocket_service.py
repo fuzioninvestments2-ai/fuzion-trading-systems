@@ -44,33 +44,55 @@ LOW_PAYOUT_PCT = 80
 SALTO_SESION_OTC = 0.01          # 1% entre velas consecutivas
 
 
-def _recortar_sesion_otc(df, salto_pct=SALTO_SESION_OTC):
+def _mediana(valores):
+    """Mediana simple (sin numpy). Lista vacía -> 0."""
+    v = sorted(valores)
+    n = len(v)
+    if n == 0:
+        return 0
+    m = n // 2
+    return v[m] if n % 2 else (v[m - 1] + v[m]) / 2.0
+
+
+def _recortar_sesion_otc(df, salto_pct=SALTO_SESION_OTC, gap_factor=5):
     """
-    Deja SOLO la sesión OTC actual. Recorre de atrás hacia adelante y corta en el
-    último SALTO brusco entre velas consecutivas (> salto_pct): ahí Pocket Option
-    reinició el precio sintético. Mezclar sesiones falsea el gráfico y la lectura
-    (el bot mostraba 0.530 de una sesión vieja mientras en vivo iba 0.544).
+    Deja SOLO la sesión OTC actual. Pocket Option reinicia el precio sintético y a
+    veces el bot estuvo apagado: la sesión vieja no debe mezclarse con la de ahora.
+    Se corta en el ÚLTIMO de dos indicios (el más reciente):
+      1) SALTO DE PRECIO entre velas (> salto_pct): reset a otro nivel.
+      2) HUECO DE TIEMPO entre velas (> gap_factor × el periodo típico): la sesión
+         vieja quedó horas atrás (mismo nivel de precio no basta — por eso el
+         gráfico salía en 08:15-11:10 cuando en vivo eran las 16:33).
     Devuelve el tramo continuo más reciente (la sesión de AHORA).
     """
     if df is None or len(df) < 2:
         return df
-    closes = df["close"].to_numpy()
+    closes = df["close"].tolist()
     corte = 0
     for i in range(len(closes) - 1, 0, -1):
         prev = closes[i - 1]
         if prev and abs(closes[i] - prev) / abs(prev) > salto_pct:
             corte = i
             break
+    if "timestamp" in df.columns and len(df) >= 3:
+        ts = [int(x) for x in df["timestamp"].tolist()]
+        difs = [ts[i] - ts[i - 1] for i in range(1, len(ts))]
+        med = _mediana([d for d in difs if d > 0])
+        if med > 0:
+            for i in range(len(ts) - 1, 0, -1):
+                if ts[i] - ts[i - 1] > gap_factor * med:
+                    corte = max(corte, i)
+                    break
     return df.iloc[corte:].reset_index(drop=True) if corte > 0 else df
 
 
-def _recortar_ticks_sesion_otc(ticks, salto_pct=SALTO_SESION_OTC):
+def _recortar_ticks_sesion_otc(ticks, salto_pct=SALTO_SESION_OTC, gap_seg=120):
     """
-    Igual que _recortar_sesion_otc pero sobre la lista de TICKS [(ts, precio), ...].
-    El buffer de ticks puede cruzar un reinicio de sesión OTC; si no se corta, el
-    detector de manipulación ve ese salto como un "spike anormal" y BLOQUEA señales
-    válidas (falso positivo), y las velas sub-minuto salen deformadas. Deja solo los
-    ticks desde el último salto brusco (la sesión de ahora).
+    Como _recortar_sesion_otc pero sobre TICKS [(ts_seg, precio), ...]. El buffer
+    puede cruzar un reinicio de sesión OTC; sin cortar, el detector de manipulación
+    ve el salto como "spike anormal" y BLOQUEA señales (falso positivo), y las velas
+    sub-minuto salen deformadas. Corta en el más reciente de: salto de PRECIO
+    (> salto_pct) o HUECO de tiempo entre ticks (> gap_seg segundos).
     """
     if not ticks or len(ticks) < 2:
         return ticks
@@ -79,6 +101,10 @@ def _recortar_ticks_sesion_otc(ticks, salto_pct=SALTO_SESION_OTC):
         prev = ticks[i - 1][1]
         if prev and abs(ticks[i][1] - prev) / abs(prev) > salto_pct:
             corte = i
+            break
+    for i in range(len(ticks) - 1, 0, -1):
+        if ticks[i][0] - ticks[i - 1][0] > gap_seg:      # hueco de tiempo
+            corte = max(corte, i)
             break
     return ticks[corte:] if corte > 0 else ticks
 
@@ -624,13 +650,23 @@ class PocketService:
             stored = self.repo.get_recent(asset_code, clave, 300)
             if stored is not None and len(stored) >= 6:
                 if is_otc:
-                    # Deja solo la SESIÓN ACTUAL (corta en el reset de PO). Si tras
-                    # recortar el último precio sigue lejos del precio en vivo, todo
-                    # el tramo es de una sesión vieja -> se descarta y se reconstruye.
+                    # Deja solo la SESIÓN ACTUAL (corta en el reset de PO por precio
+                    # o por hueco de tiempo). Luego descarta si el tramo que queda es
+                    # de otra sesión: (a) precio lejos del vivo, o (b) su última vela
+                    # es VIEJA (horas atrás) — aunque el nivel se parezca. Esto último
+                    # arregla el gráfico que salía en 08:15-11:10 con el vivo en 16:33.
                     stored = _recortar_sesion_otc(stored)
+                    descartar = False
                     if (precio_vivo and len(stored) and abs(
                             float(stored["close"].iloc[-1]) - precio_vivo)
                             / precio_vivo > SALTO_SESION_OTC):
+                        descartar = True
+                    ahora_mkt = self._last_tick.get(asset_code)
+                    if not descartar and ahora_mkt and len(stored):
+                        newest_s = int(stored["timestamp"].iloc[-1]) / 1000.0
+                        if ahora_mkt - newest_s > max(tf * 3, 300):
+                            descartar = True          # vela vieja: no es de ahora
+                    if descartar:
                         stored = None
                 if stored is not None and len(stored) >= 6:
                     frames[tf] = stored
