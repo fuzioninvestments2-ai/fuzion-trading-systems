@@ -28,14 +28,31 @@ cuando el problema es técnico (no de un proyecto en concreto):
 | 08 | `08-notifications` | Telegram + tarjeta (chart, panel, hora de entrada) |
 | 09 | `09-backtesting` | Backtest y aprendizaje (medir aciertos, calibrar) |
 | 10 | `10-monitoring-logging` | Progreso, auditoría, logs, robot 24/7 |
+| 11 | `11-database-persistence` | Sqlite: velas, señales, aprendizaje (por bot) |
+| 12 | `12-multi-pair-manager` | Muchos pares: watchlist, foco, menú alfabético |
+| 13 | `13-multi-timeframe` | Sinfonía de dirección: 12 tiempos, pesos, 7/12 |
+| 14 | `14-parameter-optimization` | Calibrar/optimizar pesos por resultado real |
+| 16 | `16-security-encryption` | Secretos (SSID, tokens) — nunca en git |
+| 20 | `20-deployment` | Lanzadores .bat, robot 24/7, subida a la nube |
 
 ## Cómo usarlo (centralizado)
 - ¿Ajuste/corrección del **OTC**? → `proyecto-otc` (y de ahí al módulo compartido).
 - ¿Ajuste/corrección del **Real**? → `proyecto-real`.
 - ¿Cambio técnico de un módulo (indicadores, conexión, tarjeta)? → el skill `0X`.
 
-## Faltan a propósito: 06 y 07
-`06-order-execution` y `07-position-manager` **NO existen** — Fuzion es de
-SEÑALES: demo, solo lectura, **NO coloca órdenes**. Automatizar órdenes reales es
-lo que este proyecto evita (y el mayor riesgo para el dinero). El `05-protection`
-cubre lo sano de "gestión de riesgo": bloquea señales malas, no ejecuta operaciones.
+## Faltan a propósito (Fuzion es de SEÑALES, no coloca órdenes)
+Estos módulos de la lista genérica **NO se crean** porque implican OPERAR solo /
+poner órdenes reales — justo lo que este proyecto evita (demo, solo lectura) y el
+mayor riesgo para el dinero:
+- `06-order-execution` — ejecutar órdenes.
+- `07-position-manager` — gestionar posiciones abiertas.
+- `17-dca-strategy` — promediar comprando (coloca órdenes).
+- `18-grid-trading` — rejilla de órdenes automáticas.
+
+El `05-protection` cubre lo sano de "gestión de riesgo": bloquea señales malas.
+
+Otros de la lista, pendientes (no imprescindibles hoy):
+- `15-sentiment-analysis` — Fuzion tiene filtro de NOTICIAS (`news_filter`), no
+  análisis de sentimiento; se puede adaptar si se quiere.
+- `19-web-dashboard` — panel web: sería un desarrollo nuevo (hoy la interfaz es
+  Telegram + `bot/progreso`).
