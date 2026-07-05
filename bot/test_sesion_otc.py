@@ -48,8 +48,26 @@ def test_umbral_es_de_reinicio_no_de_movimiento_normal():
     print("OK un movimiento normal no se confunde con un reinicio de sesión")
 
 
+def test_recorta_ticks_en_el_reset():
+    from bot.pocket_service import _recortar_ticks_sesion_otc
+    # Ticks de sesión vieja (~0.530) + reset + sesión nueva (~0.544). El detector de
+    # manipulación mira estos precios: sin cortar, el salto del reset = "spike" falso.
+    viejos = [(1000 + i, 0.5300 + i * 0.00001) for i in range(50)]
+    nuevos = [(2000 + i, 0.5440 + i * 0.00001) for i in range(30)]
+    out = _recortar_ticks_sesion_otc(viejos + nuevos)
+    assert len(out) == 30, f"debe quedar solo la sesión nueva, quedó {len(out)}"
+    assert abs(out[0][1] - 0.5440) < 0.001
+    # Y sobre esos precios el detector NO debe ver spike (ya no cruza el reset).
+    from bot.manipulation import ManipulationGuard
+    precios = [p for _, p in out]
+    assert not ManipulationGuard().check(precios)["suspicious"], \
+        "sin el salto de sesión no debe haber spike falso"
+    print("OK corta ticks en el reset -> sin spike falso que bloquee señales")
+
+
 if __name__ == "__main__":
     test_corta_en_el_reset_de_sesion()
     test_sesion_continua_no_se_recorta()
     test_umbral_es_de_reinicio_no_de_movimiento_normal()
+    test_recorta_ticks_en_el_reset()
     print("\nTODOS OK — descarte de sesión OTC vieja (gráfico coincide con lo vivo)")

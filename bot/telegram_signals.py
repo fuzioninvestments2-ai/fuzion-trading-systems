@@ -222,7 +222,7 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
         if v["velas"] < 6:
             estado = "· _(pocos)_"
         elif v["dir"] == "NEUTRAL":
-            estado = "▫️ neutral"
+            estado = "▫️ Neu"
         else:
             estado = f"{_dot(v['conf'])} {v['conf']:.0%}"
         celdas.append(f"`{_tf_label(tfs):>4}` {flecha} {estado}")

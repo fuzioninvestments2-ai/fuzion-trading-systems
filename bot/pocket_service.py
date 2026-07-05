@@ -64,6 +64,25 @@ def _recortar_sesion_otc(df, salto_pct=SALTO_SESION_OTC):
     return df.iloc[corte:].reset_index(drop=True) if corte > 0 else df
 
 
+def _recortar_ticks_sesion_otc(ticks, salto_pct=SALTO_SESION_OTC):
+    """
+    Igual que _recortar_sesion_otc pero sobre la lista de TICKS [(ts, precio), ...].
+    El buffer de ticks puede cruzar un reinicio de sesión OTC; si no se corta, el
+    detector de manipulación ve ese salto como un "spike anormal" y BLOQUEA señales
+    válidas (falso positivo), y las velas sub-minuto salen deformadas. Deja solo los
+    ticks desde el último salto brusco (la sesión de ahora).
+    """
+    if not ticks or len(ticks) < 2:
+        return ticks
+    corte = 0
+    for i in range(len(ticks) - 1, 0, -1):
+        prev = ticks[i - 1][1]
+        if prev and abs(ticks[i][1] - prev) / abs(prev) > salto_pct:
+            corte = i
+            break
+    return ticks[corte:] if corte > 0 else ticks
+
+
 class PocketService:
     def __init__(self, ssid, demo=True, period=60, logger=None,
                  db_path=None, wait_seconds=10.0):
@@ -503,6 +522,10 @@ class PocketService:
             await asyncio.sleep(self.wait_seconds)
             seg = self.seconds_to_next_candle(asset_code, tf_seconds)
             ticks = list(self._ticks.get(asset_code, []))
+            # OTC: usar SOLO los ticks de la sesión actual (cortar en el reset de PO).
+            # Evita el "spike anormal" falso que bloqueaba señales y deforma velas.
+            if asset_code.endswith("_otc"):
+                ticks = _recortar_ticks_sesion_otc(ticks)
         # POCOS TICKS EN VIVO: solo es "pocos datos" si TAMPOCO hay historial
         # guardado. Antes salía siempre vacío al reiniciar (ticks en vivo = 0),
         # aunque en disco hubiera miles de velas: el análisis lee el HISTORIAL
