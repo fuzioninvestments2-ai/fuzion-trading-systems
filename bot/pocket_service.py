@@ -37,6 +37,32 @@ from bot.levels import detect_levels
 # candel"). Un payout más bajo empeora el valor esperado de cada operación.
 LOW_PAYOUT_PCT = 80
 
+# Salto de precio (fracción) que delata un REINICIO de sesión OTC. Pocket Option
+# genera precios SINTÉTICOS y al reiniciar la sesión el precio "salta" a otro nivel
+# (p.ej. de 0.530 a 0.544). Un salto entre velas consecutivas mayor a esto se trata
+# como frontera de sesión: lo anterior es de OTRA sesión y no debe mezclarse.
+SALTO_SESION_OTC = 0.01          # 1% entre velas consecutivas
+
+
+def _recortar_sesion_otc(df, salto_pct=SALTO_SESION_OTC):
+    """
+    Deja SOLO la sesión OTC actual. Recorre de atrás hacia adelante y corta en el
+    último SALTO brusco entre velas consecutivas (> salto_pct): ahí Pocket Option
+    reinició el precio sintético. Mezclar sesiones falsea el gráfico y la lectura
+    (el bot mostraba 0.530 de una sesión vieja mientras en vivo iba 0.544).
+    Devuelve el tramo continuo más reciente (la sesión de AHORA).
+    """
+    if df is None or len(df) < 2:
+        return df
+    closes = df["close"].to_numpy()
+    corte = 0
+    for i in range(len(closes) - 1, 0, -1):
+        prev = closes[i - 1]
+        if prev and abs(closes[i] - prev) / abs(prev) > salto_pct:
+            corte = i
+            break
+    return df.iloc[corte:].reset_index(drop=True) if corte > 0 else df
+
 
 class PocketService:
     def __init__(self, ssid, demo=True, period=60, logger=None,
@@ -552,6 +578,10 @@ class PocketService:
         analyzer = DeepAnalyzer(timeframes=tfs, min_conf=min_conf)
         analyzer.learned = learned            # pesos aprendidos por indicador
         suaves = analyzer._filtrar_ruido(ticks)
+        # Precio EN VIVO (último tick). Sirve para descartar historial de sesiones
+        # OTC viejas: si las velas guardadas terminan LEJOS del precio de ahora, son
+        # de otra sesión (PO reinició) y no deben usarse -> se reconstruye lo vivo.
+        precio_vivo = float(ticks[-1][1]) if ticks else None
         frames = {}
         for tf in tfs:
             # 1) HISTORIAL GUARDADO primero (para TODOS los tiempos, incluido el
@@ -562,17 +592,29 @@ class PocketService:
             clave = "M1" if tf == 60 else f"tf{tf}"
             stored = self.repo.get_recent(asset_code, clave, 300)
             if stored is not None and len(stored) >= 6:
-                frames[tf] = stored
-                continue
-            # 2) Sub-minuto sin guardar: construir desde los ticks recientes.
+                if is_otc:
+                    # Deja solo la SESIÓN ACTUAL (corta en el reset de PO). Si tras
+                    # recortar el último precio sigue lejos del precio en vivo, todo
+                    # el tramo es de una sesión vieja -> se descarta y se reconstruye.
+                    stored = _recortar_sesion_otc(stored)
+                    if (precio_vivo and len(stored) and abs(
+                            float(stored["close"].iloc[-1]) - precio_vivo)
+                            / precio_vivo > SALTO_SESION_OTC):
+                        stored = None
+                if stored is not None and len(stored) >= 6:
+                    frames[tf] = stored
+                    continue
+            # 2) Sub-minuto sin guardar: construir desde los ticks recientes (ya son
+            #    de la sesión viva).
             if tf < 60:
                 cb = CandleBuilder(tf)
                 for t, p in suaves:
                     cb.add_tick(p, t * 1000.0)
                 frames[tf] = cb.to_dataframe(include_forming=True)
                 continue
-            # 3) Tiempos largos sin guardar: agregar desde M1; si tampoco, ticks.
-            agg = self._aggregate_m1(asset_code, tf)
+            # 3) Tiempos largos sin guardar: agregar desde M1 (solo sesión actual en
+            #    OTC); si tampoco, ticks.
+            agg = self._aggregate_m1(asset_code, tf, recortar_sesion=is_otc)
             if agg is None or len(agg) < 6:
                 cb = CandleBuilder(tf)
                 for t, p in suaves:
@@ -953,7 +995,8 @@ class PocketService:
             return f"{tf_seconds // 60}m"
         return f"{tf_seconds // 3600}h"
 
-    def _aggregate_m1(self, asset, tf_seconds, incluir_formacion=False):
+    def _aggregate_m1(self, asset, tf_seconds, incluir_formacion=False,
+                      recortar_sesion=False):
         """
         Agrega las velas M1 ACUMULADAS en el historial a un timeframe mayor.
         Cuantas más velas M1 haya guardado el bot, más velas del tiempo largo
@@ -961,12 +1004,16 @@ class PocketService:
 
         incluir_formacion=True: añade la vela M1 EN FORMACIÓN (el minuto en curso)
         antes de agregar, para que el gráfico llegue hasta AHORA y no vaya atrás.
+        recortar_sesion=True (OTC): usa solo las M1 de la SESIÓN ACTUAL (corta en el
+        reset de PO) para no agregar precios de una sesión sintética vieja.
         """
         import pandas as pd
         m1 = self.repo.get_recent(asset, "M1", 5000)
         if m1 is None or len(m1) == 0:
             return None
         m1 = m1.copy()
+        if recortar_sesion:
+            m1 = _recortar_sesion_otc(m1)
         if incluir_formacion:
             b = self._builders.get(asset)
             f = b.forming_candle() if b is not None else None
