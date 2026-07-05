@@ -217,7 +217,9 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
     filas = []
     for i in range(0, len(celdas), 3):
         filas.append("  ".join(celdas[i:i + 3]))
-    desglose = "\n".join(filas) if filas else "  (sin datos suficientes)"
+    desglose = ("\n".join(filas) if filas else
+                "  (aún sin datos de este activo — dale unos segundos o descarga "
+                "su historial)")
 
     if seg is not None:
         # HORA EXACTA de entrada = apertura de la próxima vela, en el RELOJ LOCAL del
@@ -373,7 +375,12 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
         else:
             aprendido = ""
 
-    return (f"📈 *{asset_display}*   ⏱️ *{tf}*   _(datos en vivo)_ ✅\n"
+    # Encabezado HONESTO: si el activo aún no tiene temporalidades con datos
+    # (recién cambiado, sin historial), no decimos "datos en vivo" — avisamos que
+    # está cargando, para no confundir con el gráfico de OTRO activo de arriba.
+    cabecera = ("_(datos en vivo)_ ✅" if por
+                else "_(cargando datos de este activo…)_ ⏳")
+    return (f"📈 *{asset_display}*   ⏱️ *{tf}*   {cabecera}\n"
             f"{alerta}\n"
             f"\n*{veredicto}*\n"
             f"Dirección: {direccion}{modo}\n"
@@ -534,7 +541,11 @@ def run(profile_name="OTC"):
         if chart_df is not None and len(chart_df) >= 5:
             try:
                 from bot.chart import draw_candles
-                path = os.path.join(ROOT, "charts_tmp.png")
+                # Nombre de archivo ÚNICO por activo+tiempo: así NUNCA se envía el
+                # gráfico de otro activo (antes, un archivo compartido 'charts_tmp'
+                # podía dejar pegado el gráfico anterior a la tarjeta nueva).
+                safe = "".join(c if c.isalnum() else "_" for c in f"{code}_{tf}")
+                path = os.path.join(ROOT, f"chart_{safe}.png")
                 draw_candles(chart_df, asset_display, tf, path,
                              direccion=result.get("direccion", ""),
                              levels=result.get("levels"))
