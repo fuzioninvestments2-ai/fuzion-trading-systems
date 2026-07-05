@@ -548,21 +548,26 @@ class PocketService:
         suaves = analyzer._filtrar_ruido(ticks)
         frames = {}
         for tf in tfs:
+            # 1) HISTORIAL GUARDADO primero (para TODOS los tiempos, incluido el
+            #    sub-minuto). Clave: 'M1' para 60s; 'tf<seg>' el resto. Así la
+            #    tarjeta tiene datos AL INSTANTE tras un reinicio, sin esperar a
+            #    que se calienten los ticks en vivo (antes el sub-minuto salía
+            #    vacío y 60s buscaba 'tf60' en vez de 'M1' -> "pocos datos").
+            clave = "M1" if tf == 60 else f"tf{tf}"
+            stored = self.repo.get_recent(asset_code, clave, 300)
+            if stored is not None and len(stored) >= 6:
+                frames[tf] = stored
+                continue
+            # 2) Sub-minuto sin guardar: construir desde los ticks recientes.
             if tf < 60:
                 cb = CandleBuilder(tf)
                 for t, p in suaves:
                     cb.add_tick(p, t * 1000.0)
                 frames[tf] = cb.to_dataframe(include_forming=True)
                 continue
-            # 1) Velas REALES de PO a ese periodo (si las pedimos y llegaron).
-            stored = self.repo.get_recent(asset_code, f"tf{tf}", 300)
-            if stored is not None and len(stored) >= 6:
-                frames[tf] = stored
-                continue
-            # 2) Si no, agregamos desde el historial M1 acumulado.
+            # 3) Tiempos largos sin guardar: agregar desde M1; si tampoco, ticks.
             agg = self._aggregate_m1(asset_code, tf)
             if agg is None or len(agg) < 6:
-                # 3) Último recurso: construir desde los ticks recientes.
                 cb = CandleBuilder(tf)
                 for t, p in suaves:
                     cb.add_tick(p, t * 1000.0)
