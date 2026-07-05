@@ -165,6 +165,11 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
 
     celdas = []
     for tfs, v in sorted(por.items()):
+        # El trader OPERA de 5s a 30m: solo esos se MUESTRAN en el panel. Los
+        # tiempos mayores (1h/2h/4h/1D) SÍ se analizan por dentro (dan el sesgo/
+        # tendencia mayor) pero NO se listan aquí para no ensuciar la lectura.
+        if tfs >= 3600:
+            continue
         # En COMPACTO (pie de foto ≤1024) ocultamos los tiempos aún SIN datos:
         # con la escalera 5s→1d hay hasta 16 filas y los largos tardan en
         # llenarse; mostrarlos vacíos desborda el mensaje y no aporta lectura.
@@ -337,7 +342,7 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
         else:
             aprendido = ""
 
-    return (f"📈 *{asset_display}*   ⏱️ *{tf}*   (REALES ✅)\n"
+    return (f"📈 *{asset_display}*   ⏱️ *{tf}*   _(datos en vivo)_ ✅\n"
             f"{alerta}\n"
             f"\n*{veredicto}*\n"
             f"Dirección: {direccion}{modo}\n"
