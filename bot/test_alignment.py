@@ -82,6 +82,21 @@ def test_sin_frames_no_opera():
     print("OK sin datos frescos -> NO OPERAR")
 
 
+def test_ancla_salta_tiempo_alto_neutral():
+    # El tiempo más alto disponible queda NEUTRAL/plano, pero los de abajo son
+    # alcistas claros. El ancla debe SALTAR al mayor CON dirección (antes anulaba
+    # todo con "0/12" aunque el panel estuviera casi todo verde).
+    frames = {tf: _df(subiendo=True) for tf in TFS if tf not in (3600, 1800)}
+    plano = pd.DataFrame({"open": [100.0] * 12, "high": [100.1] * 12,
+                          "low": [99.9] * 12, "close": [100.0] * 12})
+    frames[1800] = plano                       # 30m sin dirección (plano)
+    r = evaluar_alineacion(frames, otc_system)
+    assert r["direccion_1h"] == CALL, r
+    assert r["alineados"] >= otc_system.ALINEACION_MINIMA, r
+    print(f"OK ancla salta el tiempo alto neutral -> usa la tendencia clara "
+          f"({r['alineados']}/{r['total_tf']})")
+
+
 if __name__ == "__main__":
     test_frames_alcistas_operar_call()
     test_frames_bajistas_operar_put()
@@ -89,4 +104,5 @@ if __name__ == "__main__":
     test_real_mas_estricto()
     test_sin_1h_usa_tiempo_mayor()
     test_sin_frames_no_opera()
+    test_ancla_salta_tiempo_alto_neutral()
     print("\nTODOS OK — sinfonía de dirección (alineación ponderada + tiempo mayor)")

@@ -132,10 +132,18 @@ def evaluar_alineacion(frames, sistema):
 
     # Dirección MAYOR (ancla de tendencia): idealmente 1H (EMA200). Pero en OTC el
     # precio es SINTÉTICO y Pocket Option lo REINICIA, así que un 1h VIEJO no aplica
-    # al mercado de AHORA. Solo llegan aquí los tiempos FRESCOS (filtrados antes);
-    # si no hay 1H fresco, el ancla es el tiempo más ALTO disponible. Así la
-    # dirección coincide con lo que se ve EN VIVO (no se mezcla viejo con vivo).
-    tf_ancla = 3600 if 3600 in dir_por_tf else (max(dir_por_tf) if dir_por_tf else 0)
+    # al mercado de AHORA. Solo llegan aquí los tiempos FRESCOS (filtrados antes).
+    # El ancla es el tiempo más ALTO CON DIRECCIÓN CLARA (no HOLD): si el más alto
+    # está neutral (indecisión) NO debe anular una tendencia clara de los tiempos de
+    # abajo (antes daba "0/12" con el panel casi todo verde). Se prefiere 1H si marca
+    # dirección; si no, el mayor decisivo disponible.
+    decisivos = [tf for tf, d in dir_por_tf.items() if d in (CALL, PUT)]
+    if 3600 in dir_por_tf and dir_por_tf[3600] in (CALL, PUT):
+        tf_ancla = 3600
+    elif decisivos:
+        tf_ancla = max(decisivos)
+    else:
+        tf_ancla = max(dir_por_tf) if dir_por_tf else 0
     dir_1h = dir_por_tf.get(tf_ancla, HOLD)
     total_tf = len(dir_por_tf)
 
