@@ -483,13 +483,21 @@ class PocketService:
                 await self.client.set_asset(asset_code, 60)
             except Exception:
                 self.log.exception("No se pudo cambiar de activo")
-            # Si el activo tiene POCO historial, pedimos a PO más profundidad a
-            # varios periodos (5m/15m/30m) para que los tiempos largos no salgan
-            # "pocos datos". Solo cuando hace falta (no molesta a los ya cargados).
+            # Pedimos a PO su HISTORIAL NATIVO de la sesión actual para los tiempos
+            # que la tarjeta necesita: el que se OPERA (para que el GRÁFICO salga
+            # lleno, no con pocas velas) y los largos (5m/15m/30m, para que no salgan
+            # "pocos datos"). request_history usa changeSymbol (seguro) y vuelve al
+            # activo. Solo se piden los periodos a los que les FALTA profundidad, así
+            # no molesta a lo ya cargado ni se repite en cada análisis.
             try:
-                if self.repo.count(asset_code, "M1") < 120:
-                    await self.client.request_history(asset_code,
-                                                      (300, 900, 1800))
+                periodos = {300, 900, 1800}
+                if tf_seconds >= 60:
+                    periodos.add(tf_seconds)         # el tiempo operado -> gráfico
+                faltos = tuple(p for p in sorted(periodos)
+                               if self.repo.count(
+                                   asset_code, "M1" if p == 60 else f"tf{p}") < 120)
+                if faltos:
+                    await self.client.request_history(asset_code, faltos)
             except Exception:
                 self.log.exception("No se pudo pedir historial profundo")
             await asyncio.sleep(self.wait_seconds)
