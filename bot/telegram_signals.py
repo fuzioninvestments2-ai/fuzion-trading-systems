@@ -163,7 +163,7 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
         # aceptable (amarillo); por debajo, débil.
         return "🟢" if conf >= 0.25 else ("🟡" if conf >= 0.15 else "▫️")
 
-    filas = []
+    celdas = []
     for tfs, v in sorted(por.items()):
         # En COMPACTO (pie de foto ≤1024) ocultamos los tiempos aún SIN datos:
         # con la escalera 5s→1d hay hasta 16 filas y los largos tardan en
@@ -172,12 +172,18 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
             continue
         flecha = emo.get(v["dir"], "⏸️")
         if v["velas"] < 6:
-            estado = "·  _(pocos datos)_"
+            estado = "· _(pocos)_"
         elif v["dir"] == "NEUTRAL":
             estado = "▫️ neutral"
         else:
             estado = f"{_dot(v['conf'])} {v['conf']:.0%}"
-        filas.append(f"`{_tf_label(tfs):>4}`  {flecha}  {estado}")
+        celdas.append(f"`{_tf_label(tfs):>4}` {flecha} {estado}")
+    # DOS COLUMNAS: la escalera tiene hasta 16 tiempos; en una sola columna la
+    # tarjeta queda larguísima y ocupa toda la pantalla. Emparejando de a dos, el
+    # panel queda la MITAD de alto (más ancho, se lee de un vistazo).
+    filas = []
+    for i in range(0, len(celdas), 2):
+        filas.append("   ".join(celdas[i:i + 2]))
     desglose = "\n".join(filas) if filas else "  (sin datos suficientes)"
 
     if seg is not None:
@@ -509,31 +515,29 @@ def run(profile_name="OTC"):
         """
         from telegram.error import BadRequest
         kb = _keyboard(rows)
-
-        async def _foto(cap, markdown):
-            with open(path, "rb") as fimg:
-                await query.message.reply_photo(
-                    photo=fimg, caption=cap, reply_markup=kb,
-                    parse_mode="Markdown" if markdown else None)
-
-        if path:
-            plano = caption.replace("*", "").replace("`", "").replace("_", "")
-            for cap, md in ((caption, True), (plano, False)):
-                try:
-                    await _foto(cap, md)
-                    try:
-                        await query.message.delete()   # quita el "Leyendo…"
-                    except Exception:
-                        pass
-                    return
-                except BadRequest:
-                    continue        # formato roto o pie muy largo -> siguiente intento
-            # Respaldo: no se pudo unir -> foto aparte + texto COMPLETO por separado.
+        chat = query.message.chat
+        # OPCIÓN A: el GRÁFICO va primero (mensaje propio, arriba) y la tarjeta
+        # COMPLETA debajo. Así el gráfico no llega desfasado ni se recorta por el
+        # límite de 1024 del pie de foto. `caption` (versión compacta) ya no se usa.
+        try:
+            await query.message.delete()          # quita el "🧘 Leyendo…"
+        except Exception:
+            pass
+        if path:                                   # 1) gráfico primero
             try:
-                await _foto("📈", False)
+                with open(path, "rb") as fimg:
+                    await chat.send_photo(photo=fimg)
             except Exception:
                 pass
-        await _safe_edit(query, text, rows)
+        # 2) Tarjeta COMPLETA debajo, con respaldo en texto plano si el Markdown falla.
+        try:
+            await chat.send_message(text, reply_markup=kb, parse_mode="Markdown")
+        except BadRequest:
+            plano = text.replace("*", "").replace("`", "").replace("_", "")
+            try:
+                await chat.send_message(plano, reply_markup=kb)
+            except Exception:
+                pass
 
     async def _safe_edit(query, text, rows):
         """
