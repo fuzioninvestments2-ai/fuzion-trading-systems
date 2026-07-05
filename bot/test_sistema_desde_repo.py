@@ -12,12 +12,16 @@ from bot import otc_system, real_system
 
 
 def _sembrar(repo, asset, tf, n=260, subiendo=True):
+    import time
     key = "M1" if tf == 60 else f"tf{tf}"
+    # Velas FRESCAS: la última cae ~ahora, para pasar el filtro de frescura (en OTC
+    # solo cuenta lo reciente; el historial viejo no aplica al mercado de ahora).
+    base = int(time.time()) - n * int(tf)
     velas = []
     for i in range(n):
         c = 100 + (i if subiendo else (n - i)) * 0.2
-        velas.append({"timestamp": i * tf * 1000, "open": c, "high": c + 0.15,
-                      "low": c - 0.15, "close": c, "volume": 1})
+        velas.append({"timestamp": (base + i * int(tf)) * 1000, "open": c,
+                      "high": c + 0.15, "low": c - 0.15, "close": c, "volume": 1})
     repo.record_many(asset, key, velas)
 
 

@@ -126,12 +126,27 @@ def frames_desde_repo(repo, sistema, asset, minimo_velas=6):
     lo trata como sin dirección, honesto: no inventa). Para EMA200 hacen falta
     ~200 velas de ese tiempo; si no las hay, ese tiempo no cuenta.
     """
+    import time
     from bot.data_quality import frames_limpios
+    ahora_ms = time.time() * 1000
     frames = {}
     for tf in sistema.TIMEFRAMES:                # canónico (OTC o real)
         df = repo.get_recent(asset, _clave_repo(tf), 400)
-        if df is not None and len(df) >= minimo_velas:
-            frames[tf] = df
+        if df is None or len(df) < minimo_velas:
+            continue
+        # FRESCURA: en OTC el precio es sintético y Pocket Option lo REINICIA, así
+        # que el historial VIEJO no aplica al mercado de AHORA. Solo cuenta el
+        # tiempo cuya ÚLTIMA vela es reciente (no mezclar viejo con vivo -> el
+        # gráfico y la dirección coinciden). Tolerancia ~2 velas de ese tiempo
+        # (mín 3 min); un 1h de la descarga de días atrás queda fuera.
+        try:
+            newest_ms = int(df["timestamp"].iloc[-1])
+            tol_ms = max(int(tf) * 2, 180) * 1000
+            if ahora_ms - newest_ms > tol_ms:
+                continue                          # datos viejos: no cuentan
+        except Exception:
+            pass
+        frames[tf] = df
     # BARRERA DE SEGURIDAD: descarta series basura (planas, NaN, corruptas, con
     # saltos imposibles) para no producir señales absurdas. Solo pasan los sanos.
     limpios, _descartados = frames_limpios(frames)

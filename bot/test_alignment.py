@@ -65,11 +65,21 @@ def test_real_mas_estricto():
     print(f"OK real usa mínimo 8/12 (OTC 7/12) — veredicto: {r['veredicto']}")
 
 
-def test_sin_1h_no_opera():
+def test_sin_1h_usa_tiempo_mayor():
+    # En OTC el 1h viejo no aplica (PO resetea). Si no hay 1H fresco, el ancla de
+    # dirección es el tiempo más ALTO disponible (aquí 30m). Con todo alcista y
+    # alineado, SÍ opera (antes exigía 1H y no operaba).
     frames = {tf: _df(subiendo=True) for tf in TFS if tf != 3600}   # sin 1H
     r = evaluar_alineacion(frames, otc_system)
+    assert r["veredicto"] == "OPERAR" and r["direccion_1h"] == "CALL"
+    print("OK sin 1H usa el tiempo mayor disponible como ancla -> OPERAR")
+
+
+def test_sin_frames_no_opera():
+    # Sin ningún tiempo (nada fresco) -> NO OPERAR (honesto, no inventa).
+    r = evaluar_alineacion({}, otc_system)
     assert r["veredicto"] == "NO OPERAR"
-    print("OK sin 1H (dirección absoluta) -> NO OPERAR")
+    print("OK sin datos frescos -> NO OPERAR")
 
 
 if __name__ == "__main__":
@@ -77,5 +87,6 @@ if __name__ == "__main__":
     test_frames_bajistas_operar_put()
     test_ley_ema200_1h_veta_contra()
     test_real_mas_estricto()
-    test_sin_1h_no_opera()
-    print("\nTODOS OK — sinfonía de dirección (alineación ponderada + ley 1H)")
+    test_sin_1h_usa_tiempo_mayor()
+    test_sin_frames_no_opera()
+    print("\nTODOS OK — sinfonía de dirección (alineación ponderada + tiempo mayor)")

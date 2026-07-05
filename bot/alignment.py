@@ -122,15 +122,20 @@ def evaluar_alineacion(frames, sistema):
     """
     dir_por_tf = {tf: direccion_timeframe(df, tf) for tf, df in frames.items()}
 
-    # Dirección absoluta: la de 1H (3600). Si no hay 1H o es HOLD -> no se opera.
-    dir_1h = dir_por_tf.get(3600, HOLD)
+    # Dirección MAYOR (ancla de tendencia): idealmente 1H (EMA200). Pero en OTC el
+    # precio es SINTÉTICO y Pocket Option lo REINICIA, así que un 1h VIEJO no aplica
+    # al mercado de AHORA. Solo llegan aquí los tiempos FRESCOS (filtrados antes);
+    # si no hay 1H fresco, el ancla es el tiempo más ALTO disponible. Así la
+    # dirección coincide con lo que se ve EN VIVO (no se mezcla viejo con vivo).
+    tf_ancla = 3600 if 3600 in dir_por_tf else (max(dir_por_tf) if dir_por_tf else 0)
+    dir_1h = dir_por_tf.get(tf_ancla, HOLD)
     total_tf = len(dir_por_tf)
 
     if dir_1h == HOLD:
         return {"direccion_1h": HOLD, "dir_por_tf": dir_por_tf,
                 "alineados": 0, "total_tf": total_tf, "peso_favor": 0.0,
                 "veredicto": "NO OPERAR",
-                "motivo": "La EMA 200 en 1H no marca dirección clara (ley absoluta)."}
+                "motivo": "El tiempo mayor disponible no marca dirección clara."}
 
     # Solo se opera A FAVOR de 1H. Contamos y pesamos las que coinciden.
     alineados = sum(1 for d in dir_por_tf.values() if d == dir_1h)
@@ -138,13 +143,15 @@ def evaluar_alineacion(frames, sistema):
                      for tf, d in dir_por_tf.items() if d == dir_1h)
 
     minimo = sistema.ALINEACION_MINIMA
+    etq = ("1H" if tf_ancla >= 3600 else
+           f"{tf_ancla}s" if tf_ancla < 60 else f"{tf_ancla // 60}m")
     if alineados >= minimo:
         veredicto = "OPERAR"
-        motivo = (f"{alineados}/{total_tf} tiempos a favor de la EMA200 de 1H "
+        motivo = (f"{alineados}/{total_tf} tiempos a favor de la tendencia de {etq} "
                   f"({peso_favor}% de peso). Mínimo {minimo}.")
     else:
         veredicto = "NO OPERAR"
-        motivo = (f"Solo {alineados}/{total_tf} alineados con 1H "
+        motivo = (f"Solo {alineados}/{total_tf} alineados con {etq} "
                   f"(hacen falta {minimo}).")
 
     return {"direccion_1h": dir_1h, "dir_por_tf": dir_por_tf,
