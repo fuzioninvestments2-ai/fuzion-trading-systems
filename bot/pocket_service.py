@@ -545,7 +545,13 @@ class PocketService:
                     await self.client.request_history(asset_code, faltos)
             except Exception:
                 self.log.exception("No se pudo pedir historial profundo")
-            await asyncio.sleep(self.wait_seconds)
+            # ESPERA ADAPTATIVA (precisión en tiempo): si el activo YA está CALIENTE
+            # (tiene flujo de ticks acumulado), no hace falta esperar 10s — se lee
+            # casi al instante para que el análisis refleje AHORA (clave en 5s/10s).
+            # Solo si está FRÍO (recién cambiado, sin ticks) se espera a que lleguen
+            # datos. Así "Analizar de nuevo" sale al momento, sin retraso.
+            caliente = len(self._ticks.get(asset_code, [])) >= 50
+            await asyncio.sleep(2.0 if caliente else self.wait_seconds)
             seg = self.seconds_to_next_candle(asset_code, tf_seconds)
             ticks = list(self._ticks.get(asset_code, []))
             # OTC: usar SOLO los ticks de la sesión actual (cortar en el reset de PO).
