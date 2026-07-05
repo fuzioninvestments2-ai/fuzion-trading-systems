@@ -55,6 +55,7 @@ class PocketService:
         self._calib = {}             # asset -> umbral aprendido (calibración)
         self._weights = {}           # asset -> pesos aprendidos por indicador
         self._payouts = {}           # asset -> % de pago (payout) de Pocket Option
+        self._frames_recientes = {}  # asset -> {tf: DataFrame} FRESCO del último analyze
         self._last_dir = {}          # asset -> (direccion, ts) para estabilidad
         self._last_signal = {}       # asset -> ts_ms de la última señal registrada
         self.tracker = SignalTracker(self.repo)   # ciclo de aprendizaje real
@@ -579,6 +580,12 @@ class PocketService:
                 agg = cb.to_dataframe(include_forming=True)
             frames[tf] = agg
 
+        # Guarda las velas FRESCAS (todas las temporalidades, recién construidas de
+        # ticks + M1 + agregación) para que el SISTEMA del trader lea EXACTAMENTE lo
+        # mismo que se acaba de calcular en vivo — no el historial viejo del repo.
+        # Así el panel, la dirección y el gráfico salen de la MISMA fuente fresca.
+        self._frames_recientes[asset_code] = frames
+
         # RÉGIMEN (Oscillate/Slide) desde un tiempo medio con datos. Se calcula
         # ANTES del análisis para AJUSTAR los pesos de indicadores: en tendencia
         # mandan MACD/medias; en rango mandan los rebotes techo/piso (RSI/Bollinger).
@@ -810,30 +817,68 @@ class PocketService:
 
         return resultado, seg, len(ticks)
 
+    def _frames_para_sistema(self, asset_code, sistema):
+        """
+        Velas para el SISTEMA del trader, en SUS 12 temporalidades exactas. Usa las
+        velas FRESCAS del último analyze (ticks + M1 + agregación, todas al día); si
+        no hay (aún no se analizó este activo), cae al historial del repo. Pasa la
+        barrera anti-basura. PORQUÉ: antes leía solo el repo con filtro de frescura y
+        descartaba casi todos los tiempos largos -> nunca alineaba 7/12 -> "no operar"
+        constante. Con las velas frescas, los 12 tiempos están presentes y al día.
+        """
+        from bot.data_quality import frames_limpios
+        from bot.sistema_signal import frames_desde_repo
+        recientes = self._frames_recientes.get(asset_code)
+        if recientes:
+            sel = {tf: recientes[tf] for tf in sistema.TIMEFRAMES
+                   if tf in recientes and recientes[tf] is not None
+                   and len(recientes[tf]) >= 6}
+            limpios, _ = frames_limpios(sel)
+            if limpios:
+                return limpios
+        return frames_desde_repo(self.repo, sistema, asset_code)
+
     def frame_sistema_operativo(self, asset_code, sistema, tf_seconds):
         """
-        Devuelve el DataFrame FRESCO y limpio que el sistema usó para el tiempo
-        OPERADO (mismas velas que calificó: pasan el filtro de frescura y la
-        barrera anti-basura). Sirve para dibujar el gráfico con EXACTAMENTE los
-        datos que decidieron la dirección -> el gráfico COINCIDE con la lectura.
-        None si ese tiempo no está fresco (entonces se usa el gráfico de ticks).
+        DataFrame FRESCO que el sistema usó para el tiempo OPERADO (mismas velas que
+        calificó). Sirve para dibujar el gráfico con EXACTAMENTE los datos que
+        decidieron la dirección -> el gráfico COINCIDE con la lectura. None si ese
+        tiempo no tiene datos (entonces se usa el gráfico de ticks del motor).
         """
-        from bot.sistema_signal import frames_desde_repo
-        frames = frames_desde_repo(self.repo, sistema, asset_code)
-        return frames.get(tf_seconds)
+        return self._frames_para_sistema(asset_code, sistema).get(tf_seconds)
+
+    def panel_sistema(self, asset_code, sistema):
+        """
+        Panel de las 12 temporalidades del trader: por cada tiempo, la dirección es
+        el CONSENSO de sus 10 indicadores y la 'conf' es la fracción de indicadores
+        que coinciden (fuerza 0-1). Es lo que se muestra en la tarjeta -> el panel es
+        SU sistema exacto (no el motor viejo, que tenía tiempos ajenos como 4m).
+        Devuelve {tf: {"dir": "CALL"|"PUT"|"NEUTRAL", "conf": 0-1, "velas": n}}.
+        """
+        from bot.system_wiring import votar_sistema, direccion
+        frames = self._frames_para_sistema(asset_code, sistema)
+        panel = {}
+        for tf in sistema.TIMEFRAMES:
+            df = frames.get(tf)
+            if df is None or len(df) < 6:
+                continue
+            votos = votar_sistema(df, sistema)
+            d, n_call, n_put = direccion(votos)
+            panel[tf] = {"dir": "NEUTRAL" if d == "HOLD" else d,
+                         "conf": max(n_call, n_put) / 10.0, "velas": len(df)}
+        return panel
 
     def veredicto_sistema(self, asset_code, sistema, payout=None, hora_est=None,
                           spread=None):
         """
         Veredicto del SISTEMA EXACTO del trader (10 indicadores votan por tiempo,
         alineación ponderada 7/12, ley EMA200-1H, filtros). Lee las 12 temporalidades
-        del historial y devuelve el dict de veredicto_final (direccion_1h, veredicto,
+        FRESCAS y devuelve el dict de veredicto_final (direccion_1h, veredicto,
         alineados, total_tf, peso_favor, dir_por_tf, filtros, motivo). Sin red.
         Se usa para FUSIONAR: la tarjeta rica se decide con este veredicto.
         """
-        from bot.sistema_signal import frames_desde_repo
         from bot.filtros import veredicto_final
-        frames = frames_desde_repo(self.repo, sistema, asset_code)
+        frames = self._frames_para_sistema(asset_code, sistema)
         return veredicto_final(frames, sistema, payout=payout,
                                hora_est=hora_est, spread=spread)
 

@@ -220,16 +220,12 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
     desglose = "\n".join(filas) if filas else "  (sin datos suficientes)"
 
     if seg is not None:
-        # HORA EXACTA de entrada = apertura de la próxima vela. Se calcula desde la
-        # HORA DE MERCADO de PO (último tick) alineada al borde de la vela
-        # (ahora_mercado + seg), NO desde datetime.now() del equipo: si los ticks
-        # van con retraso o el reloj está desfasado, now()+seg daba "hora mal". El
-        # epoch se muestra en la zona horaria local del usuario (fromtimestamp).
-        ahora_mkt = result.get("ahora_mercado")
-        if ahora_mkt:
-            momento = datetime.fromtimestamp(int(ahora_mkt) + int(seg))
-        else:
-            momento = datetime.now() + timedelta(seconds=seg)
+        # HORA EXACTA de entrada = apertura de la próxima vela, en el RELOJ LOCAL del
+        # usuario (datetime.now() + segundos que faltan). Se usa el reloj del equipo
+        # a propósito: es la hora que el trader ve en su pantalla. `seg` viene
+        # alineado al borde de la vela (hora de mercado de PO), así el conteo es
+        # exacto aunque la hora absoluta dependa del reloj local.
+        momento = datetime.now() + timedelta(seconds=int(seg))
         hora_entrada = momento.strftime("%H:%M:%S")
         if seg <= 5:
             timing = f"\n⏱️ *¡ENTRA YA!* (nueva vela ~{hora_entrada})"
@@ -497,6 +493,16 @@ def run(profile_name="OTC"):
                 res_sis = service.veredicto_sistema(code, sistema, payout=payout,
                                                     hora_est=hora_est)
                 _fusionar_sistema(result, res_sis)
+                # PANEL = TU sistema: 12 temporalidades exactas con el consenso de
+                # los 10 indicadores (no el motor viejo, que metía tiempos ajenos
+                # como 4m y direcciones sueltas -> "desorden"). Cada tiempo muestra
+                # su dirección de consenso y su fuerza (indicadores que coinciden).
+                try:
+                    panel = service.panel_sistema(code, sistema)
+                    if panel:
+                        result["por_tiempo"] = panel
+                except Exception:
+                    logging.exception("No se pudo armar el panel del sistema")
                 if res_sis.get("veredicto") == "OPERAR":
                     service._registrar_senal_sistema(code, period, res_sis)
                 # COHERENCIA GRÁFICO=LECTURA: dibuja las MISMAS velas que el sistema

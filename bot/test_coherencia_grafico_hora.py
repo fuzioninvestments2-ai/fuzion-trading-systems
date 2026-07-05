@@ -37,8 +37,10 @@ class _SvcMinimo:
     """Solo lo necesario para probar frame_sistema_operativo sin websocket."""
     def __init__(self, repo):
         self.repo = repo
-    # reutiliza el método real por composición (mismo código que el servicio):
+        self._frames_recientes = {}      # vacío -> cae al historial del repo
+    # reutiliza los métodos reales por composición (mismo código que el servicio):
     from bot.pocket_service import PocketService
+    _frames_para_sistema = PocketService._frames_para_sistema
     frame_sistema_operativo = PocketService.frame_sistema_operativo
 
 
