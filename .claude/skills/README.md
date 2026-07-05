@@ -31,28 +31,27 @@ cuando el problema es técnico (no de un proyecto en concreto):
 | 11 | `11-database-persistence` | Sqlite: velas, señales, aprendizaje (por bot) |
 | 12 | `12-multi-pair-manager` | Muchos pares: watchlist, foco, menú alfabético |
 | 13 | `13-multi-timeframe` | Sinfonía de dirección: 12 tiempos, pesos, 7/12 |
+| 06 | `06-order-execution` | LÍMITE: el bot NO coloca órdenes; traspaso a ejecución MANUAL |
+| 07 | `07-position-manager` | LÍMITE: no abre/administra posiciones; se administra el registro |
 | 14 | `14-parameter-optimization` | Calibrar/optimizar pesos por resultado real |
+| 15 | `15-sentiment-analysis` | Sentimiento/noticias — SOLO Real (en OTC no aplica) |
 | 16 | `16-security-encryption` | Secretos (SSID, tokens) — nunca en git |
+| 17 | `17-dca-strategy` | LÍMITE: sin DCA/martingala (peligroso en binarias) |
+| 18 | `18-grid-trading` | LÍMITE: sin grid (no aplica a binarias) |
+| 19 | `19-web-dashboard` | Panel web de SOLO LECTURA, uno por proyecto |
 | 20 | `20-deployment` | Lanzadores .bat, robot 24/7, subida a la nube |
+
+Los 20 skills de la lista están creados. Los numerados existen todos (01-20).
 
 ## Cómo usarlo (centralizado)
 - ¿Ajuste/corrección del **OTC**? → `proyecto-otc` (y de ahí al módulo compartido).
 - ¿Ajuste/corrección del **Real**? → `proyecto-real`.
 - ¿Cambio técnico de un módulo (indicadores, conexión, tarjeta)? → el skill `0X`.
 
-## Faltan a propósito (Fuzion es de SEÑALES, no coloca órdenes)
-Estos módulos de la lista genérica **NO se crean** porque implican OPERAR solo /
-poner órdenes reales — justo lo que este proyecto evita (demo, solo lectura) y el
-mayor riesgo para el dinero:
-- `06-order-execution` — ejecutar órdenes.
-- `07-position-manager` — gestionar posiciones abiertas.
-- `17-dca-strategy` — promediar comprando (coloca órdenes).
-- `18-grid-trading` — rejilla de órdenes automáticas.
-
-El `05-protection` cubre lo sano de "gestión de riesgo": bloquea señales malas.
-
-Otros de la lista, pendientes (no imprescindibles hoy):
-- `15-sentiment-analysis` — Fuzion tiene filtro de NOTICIAS (`news_filter`), no
-  análisis de sentimiento; se puede adaptar si se quiere.
-- `19-web-dashboard` — panel web: sería un desarrollo nuevo (hoy la interfaz es
-  Telegram + `bot/progreso`).
+## Skills de LÍMITE (Fuzion es de SEÑALES, no coloca órdenes)
+`06`, `07`, `17`, `18` existen con su nombre exacto, pero **documentan el límite**:
+el proyecto es de solo lectura (regla `no negociable` en `CLAUDE.md`), así que esos
+skills explican dónde para el bot, por qué, y cómo la señal pasa a **ejecución
+MANUAL** del humano. No contienen lógica que coloque órdenes reales. Si se quiere
+ejecución automática, es un cambio de propósito que exige confirmación explícita y,
+aun así, solo demo + confirmación manual por operación (nunca fuego automático).
