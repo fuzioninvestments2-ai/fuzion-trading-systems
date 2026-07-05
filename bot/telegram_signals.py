@@ -156,7 +156,22 @@ def _fusionar_sistema(result, res):
     result["direccion"] = {"CALL": "⬆️ UP (CALL)", "PUT": "⬇️ DOWN (PUT)"}.get(
         d1h, "⏸️ sin dirección clara")
     result["fuerza"] = res.get("peso_favor", 0) / 100.0
-    result["coinciden"] = f"{res.get('alineados', 0)}/{res.get('total_tf', 12)}"
+    # Alineación SOBRE LAS 12 temporalidades del trader (su regla es 7 de 12). Se
+    # muestra el denominador 12 — no el nº de tiempos con datos — para que se vea
+    # cuántos FALTAN por confirmar (antes salía "7/7" y parecía perfecto cuando en
+    # realidad 5 tiempos no tenían datos).
+    alin = res.get("alineados", 0)
+    presentes = res.get("total_tf", 0)
+    result["coinciden"] = f"{alin}/12"
+    result["sistema_presentes"] = presentes
+    result["sistema_motivo"] = res.get("motivo", "")
+    result["_es_sistema"] = True                     # la tarjeta oculta lo del motor viejo
+    # Si la protección (vacío/manipulación) tumbó una señal que el sistema aprobaba,
+    # se dice explícitamente (así el NO OPERAR con dirección CALL tiene su porqué).
+    if res.get("veredicto") == "OPERAR" and not op:
+        result["sistema_motivo"] = ("Sistema alineado, pero la protección bloquea: "
+                                    + ", ".join(result.get("manipulacion")
+                                                or result.get("vacio") or ["datos raros"]))
     dpt = res.get("dir_por_tf", {})
     for tf_s, info in result.get("por_tiempo", {}).items():
         d = dpt.get(tf_s)
@@ -302,12 +317,22 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
             alerta += (f"\n🧱 *PEGADO AL PISO* ({na[1]}): zona de soporte → "
                        "puede rebotar al alza")
 
-    explicacion = result.get("explicacion", "")
-    expl = f"\n🧭 *Lectura:* _{explicacion}_" if explicacion else ""
+    # LECTURA / MOTIVO. Cuando manda TU sistema, el motivo es el del sistema (la
+    # razón real del veredicto: alineación, ley EMA200-1H o filtro), no la lectura
+    # del motor viejo — así el NO OPERAR SIEMPRE dice por qué, sin contradicciones.
+    es_sistema = result.get("_es_sistema")
+    if es_sistema:
+        motivo_sis = result.get("sistema_motivo", "")
+        expl = f"\n🧭 *Motivo:* _{motivo_sis}_" if motivo_sis else ""
+    else:
+        explicacion = result.get("explicacion", "")
+        expl = f"\n🧭 *Lectura:* _{explicacion}_" if explicacion else ""
 
-    # Alineación FRACTAL: cuántos de TODOS los tiempos apuntan igual (0-100%).
+    # Alineación FRACTAL del motor viejo: se OCULTA con el sistema (contradecía la
+    # alineación del trader, p.ej. "fractal 4/9" vs "sistema 7/12"). Solo se muestra
+    # cuando no manda el sistema.
     frac = result.get("alineacion_fractal")
-    if frac is not None:
+    if frac is not None and not es_sistema:
         fractal_txt = (f"\n🧬 *Alineación fractal:* {frac:.0%} "
                        f"_({result.get('fractal_txt', '')})_")
     else:
@@ -325,9 +350,13 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
     modo = (f"\n📐 Modo: {reg_map.get(reg, '')}"
             + (f" _(ADX {adxv})_" if adxv is not None else "")) if reg else ""
 
-    # Patrones de vela (la FORMA de la vela): confirmación o indecisión.
+    # Patrones de vela (la FORMA de la vela): confirmación o indecisión. Con TU
+    # sistema se OCULTA el patrón GLOBAL del motor viejo (uno solo, de un tiempo
+    # suelto): contradecía la lectura (p.ej. "Marubozu bajista" junto a un CALL).
+    # Los patrones se leen POR temporalidad dentro del consenso de indicadores.
     pats = result.get("patrones")
-    patrones = f"\n🕯️ *Patrones:* {', '.join(pats)}" if pats else ""
+    patrones = (f"\n🕯️ *Patrones:* {', '.join(pats)}"
+                if (pats and not es_sistema) else "")
 
     # VWAP: de qué lado del "precio justo" estamos (contexto profesional).
     vw = result.get("vwap")
@@ -361,9 +390,9 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
     # MODO COMPACTO (para el pie de foto ≤1024): recortamos solo lo educativo
     # largo. Se conserva el PANEL completo (15s→30m), las alertas y el timing.
     if compact:
-        if explicacion:
+        if not es_sistema and result.get("explicacion"):
             # Solo las 2 primeras frases (incluye el aviso de tendencia si lo hay).
-            frases = explicacion.split(". ")
+            frases = result["explicacion"].split(". ")
             corta = ". ".join(frases[:2]).strip().rstrip(".")
             expl = f"\n🧭 *Lectura:* _{corta}._"
         bal = ""                                   # el balance se ve en el menú
@@ -380,11 +409,19 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
     # está cargando, para no confundir con el gráfico de OTRO activo de arriba.
     cabecera = ("_(datos en vivo)_ ✅" if por
                 else "_(cargando datos de este activo…)_ ⏳")
+    # Con TU sistema: aviso de cuántas de las 12 temporalidades faltan por datos
+    # (los tiempos largos y el sub-minuto tardan en llenarse). Así se entiende un
+    # veredicto con pocos tiempos confirmados.
+    faltan_txt = ""
+    if es_sistema:
+        pres = result.get("sistema_presentes", 0)
+        if pres < 12:
+            faltan_txt = f" _· faltan {12 - pres} tiempos por datos_"
     return (f"📈 *{asset_display}*   ⏱️ *{tf}*   {cabecera}\n"
             f"{alerta}\n"
             f"\n*{veredicto}*\n"
             f"Dirección: {direccion}{modo}\n"
-            f"🎯 Alineación: *{fuerza:.0%}*  ({coinciden}){fractal_txt}{expl}{patrones}{vwap_txt}{niveles_txt}\n\n"
+            f"🎯 Alineación: *{fuerza:.0%}*  ({coinciden}){faltan_txt}{fractal_txt}{expl}{patrones}{vwap_txt}{niveles_txt}\n\n"
             f"🔎 *Panel de tiempos:*\n{desglose}\n"
             f"{timing}{pago}{bal}{aprendido}{cobertura}\n\n"
             f"⚠️ _No es recomendación; ningún bot acierta siempre. Demo._")
