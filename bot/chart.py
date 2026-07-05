@@ -61,7 +61,9 @@ def draw_candles(df, asset, tf, path, direccion="", n=40, levels=None):
     if len(d) == 0:
         raise ValueError("sin velas para dibujar")
 
-    fig, ax = plt.subplots(figsize=(8, 4.2))
+    # Más ANCHO (16:9): el trader lo pidió más ancho y simétrico para leer mejor
+    # las velas y los niveles techo/piso sin que se vean apretadas.
+    fig, ax = plt.subplots(figsize=(11.5, 5.0))
     fig.patch.set_facecolor("#0e1621")
     ax.set_facecolor("#0e1621")
 
@@ -109,6 +111,6 @@ def draw_candles(df, asset, tf, path, direccion="", n=40, levels=None):
 
     ax.set_xlim(-1, len(d))
     fig.tight_layout()
-    fig.savefig(path, dpi=95, facecolor=fig.get_facecolor())
+    fig.savefig(path, dpi=110, facecolor=fig.get_facecolor(), bbox_inches="tight")
     plt.close(fig)
     return path
