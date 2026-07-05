@@ -75,14 +75,28 @@ def _bollinger_vote(close, periodo=14, desv=1.02):
 
 
 def _macd_vote(close, fast=12, slow=26, signal=9):
-    """MACD 12,26,9: histograma > 0 alcista, < 0 bajista (cruce = más fuerte)."""
+    """
+    MACD 12,26,9: la DIRECCIÓN sale de la LÍNEA MACD vs cero (EMA12 vs EMA26), no
+    del signo del histograma. PORQUÉ: en una tendencia SOSTENIDA la línea y la
+    señal corren casi paralelas y el histograma se queda pegado a cero (incluso
+    negativo por el ruido) aunque el precio suba con fuerza — el histograma es
+    ciego a la dirección ahí. La línea MACD por encima de cero = régimen alcista
+    (CALL); por debajo = bajista (PUT). El histograma solo mide la FUERZA/momento;
+    se usa de desempate cuando la línea está pegada a cero.
+    """
     macd_line, signal_line, hist = Indicators.macd(close, fast, slow, signal)
+    m = _last(macd_line)
     h = _last(hist)
-    if h is None:
+    if m is None:
         return HOLD
-    if h > 0:
+    if m > 0:
         return CALL
-    if h < 0:
+    if m < 0:
+        return PUT
+    # Línea exactamente en cero (raro): desempata el momento (histograma).
+    if h is not None and h > 0:
+        return CALL
+    if h is not None and h < 0:
         return PUT
     return HOLD
 

@@ -9,7 +9,7 @@ del trader (EMA 8/20/50/200, RSI 5, etc.).
 import numpy as np
 import pandas as pd
 
-from bot.system_wiring import votar_sistema, direccion, _rsi_vote, _ema_vote
+from bot.system_wiring import votar_sistema, direccion, _rsi_vote, _ema_vote, _macd_vote
 from bot.scoring_strategy import CALL, PUT
 from bot import otc_system, real_system
 
@@ -68,6 +68,17 @@ def test_usa_parametros_del_trader():
     print("OK usa RSI 5 y EMA 8 (parámetros del trader)")
 
 
+def test_macd_lee_direccion_no_solo_histograma():
+    # REGRESIÓN: en tendencia SOSTENIDA el histograma se queda pegado a cero (o
+    # negativo por ruido) aunque el precio suba con fuerza -> antes MACD votaba PUT
+    # contra una subida clarísima. La dirección debe salir de la LÍNEA MACD vs 0.
+    sube = pd.Series([100 + i * 1.0 for i in range(120)], dtype=float)
+    assert _macd_vote(sube) == CALL, "MACD debe votar CALL en subida sostenida"
+    baja = pd.Series([100 + (120 - i) * 1.0 for i in range(120)], dtype=float)
+    assert _macd_vote(baja) == PUT, "MACD debe votar PUT en bajada sostenida"
+    print("OK MACD lee la dirección (línea vs 0), no solo el signo del histograma")
+
+
 def test_real_usa_misma_base():
     votos = votar_sistema(_df("alcista"), real_system)
     assert len(votos) == 10
@@ -79,5 +90,6 @@ if __name__ == "__main__":
     test_tendencia_alcista_emas_call()
     test_tendencia_bajista_emas_put()
     test_usa_parametros_del_trader()
+    test_macd_lee_direccion_no_solo_histograma()
     test_real_usa_misma_base()
     print("\nTODOS OK — cableado del sistema del usuario al cálculo real")
