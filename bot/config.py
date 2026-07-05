@@ -49,9 +49,14 @@ class TradingConfig:
     max_consecutive_losses: int = 5
     max_drawdown_percent: float = 0.20   # 20%
 
-    # --- Martingale (opcional, con TOPE — nunca infinito) ---
+    # --- Martingale ---
+    # NEUTRALIZADO por diseño: Fuzion es de SEÑALES (solo lectura, no coloca
+    # órdenes). Doblar tras perder (martingala) funde la cuenta en una racha
+    # normal, así que NINGÚN preset la activa y el bot en vivo no la usa. El campo
+    # y su TOPE se conservan solo para poder validar el límite en un test (que el
+    # doblado nunca sea infinito); requiere opt-in explícito y jamás ejecuta.
     martingale_enabled: bool = False
-    martingale_max_steps: int = 4        # como en LIEBBOT
+    martingale_max_steps: int = 4        # tope duro si alguien la activara a mano
     martingale_multiplier: float = 2.0
 
     # --- Filtro de pago (payout) ---
@@ -101,9 +106,11 @@ def get_preset(name):
     """
     Devuelve una TradingConfig preconfigurada.
 
-    - conservador: pocas señales, muy filtradas, sin martingale.
+    - conservador: pocas señales, muy filtradas.
     - moderado: equilibrio.
-    - agresivo: más señales (más riesgo).
+    - agresivo: más señales (más riesgo), PERO sin martingala (ver arriba).
+
+    Ningún preset activa martingala: solo cambia la exigencia de votos/confianza.
     """
     name = name.lower()
     if name == "conservador":
@@ -113,8 +120,7 @@ def get_preset(name):
         return TradingConfig(stack_method="moderate", martingale_enabled=False,
                              target_profit=5.0, max_loss_per_session=15.0)
     if name == "agresivo":
-        return TradingConfig(stack_method="aggressive", martingale_enabled=True,
-                             martingale_max_steps=3, target_profit=10.0,
-                             max_loss_per_session=20.0)
+        return TradingConfig(stack_method="aggressive", martingale_enabled=False,
+                             target_profit=10.0, max_loss_per_session=20.0)
     raise ValueError(f"preset desconocido: {name} "
                      f"(usa: conservador | moderado | agresivo)")
