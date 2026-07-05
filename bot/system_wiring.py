@@ -88,7 +88,12 @@ def _macd_vote(close, fast=12, slow=26, signal=9):
 
 
 def _donchian_vote(high, low, close, periodo=20):
-    """Donchian 20: cerca del piso = CALL; cerca del techo = PUT."""
+    """
+    Donchian 20 = canal de RUPTURA (no reversión). El trader lo lee así: el precio
+    tocando/rompiendo el BORDE SUPERIOR es fuerza alcista y CONTINUACIÓN (CALL);
+    rompiendo el borde INFERIOR es fuerza bajista (PUT). Es lo contrario de un
+    oscilador: en Donchian el extremo confirma el movimiento, no lo revierte.
+    """
     if close is None or len(close) < periodo:
         return HOLD
     hh = _last(high.rolling(periodo).max())
@@ -97,9 +102,9 @@ def _donchian_vote(high, low, close, periodo=20):
     if None in (hh, ll, p) or hh == ll:
         return HOLD
     pos = (p - ll) / (hh - ll)
-    if pos <= 0.10:
+    if pos >= 0.90:                           # pegado/rompiendo el techo -> fuerza alcista
         return CALL
-    if pos >= 0.90:
+    if pos <= 0.10:                           # pegado/rompiendo el piso -> fuerza bajista
         return PUT
     return HOLD
 

@@ -120,7 +120,15 @@ def evaluar_alineacion(frames, sistema):
       veredicto    : "OPERAR" | "NO OPERAR"
       motivo       : texto
     """
-    dir_por_tf = {tf: direccion_timeframe(df, tf) for tf, df in frames.items()}
+    # Dirección de CADA tiempo = CONSENSO de los 10 indicadores del trader (no un
+    # solo indicador). Cada temporalidad lee los 10 (EMA 8/20/50/200, Stoch, Boll,
+    # Donchian, RSI, MACD, S/R) y gana la mayoría. Así el panel es estable y alinea
+    # cuando el mercado tiene tendencia (antes, un indicador suelto daba ruido).
+    from bot.system_wiring import votar_sistema, direccion as _consenso
+    dir_por_tf = {}
+    for tf, df in frames.items():
+        d, _nc, _np = _consenso(votar_sistema(df, sistema))
+        dir_por_tf[tf] = d
 
     # Dirección MAYOR (ancla de tendencia): idealmente 1H (EMA200). Pero en OTC el
     # precio es SINTÉTICO y Pocket Option lo REINICIA, así que un 1h VIEJO no aplica
