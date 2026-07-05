@@ -17,6 +17,7 @@ Uso:
 """
 
 import asyncio
+import logging
 import os
 import sys
 from datetime import datetime, timedelta
@@ -134,6 +135,33 @@ def _tf_label(seconds):
     if seconds < 86400:
         return f"{seconds // 3600}h"
     return "1D"
+
+
+def _fusionar_sistema(result, res):
+    """
+    FUSIÓN: mete el veredicto del SISTEMA del trader (10 indicadores, 7/12,
+    EMA200-1H) dentro del `result` de la tarjeta rica. Así la DECISIÓN la toma su
+    sistema exacto y la PRESENTACIÓN rica se mantiene (chart, VWAP, panel, hora de
+    entrada, Pago, Mejores). Sobrescribe veredicto/dirección/fuerza/coincidencias y
+    la dirección de cada tiempo del panel (conserva conf%/velas de la lectura fina).
+    """
+    d1h = res.get("direccion_1h", "HOLD")
+    op = res.get("veredicto") == "OPERAR"
+    # PROTECCIÓN MANDA: si el motor rico detecta manipulación o VACÍO de mercado
+    # (feed no fiable), NO OPERAR aunque el sistema del trader diga que sí. La
+    # protección nunca se salta (disciplina, no forzar entradas sobre datos raros).
+    if result.get("manipulacion") or result.get("vacio"):
+        op = False
+    result["veredicto"] = "✅ OPERAR" if op else "🚫 NO OPERAR"
+    result["direccion"] = {"CALL": "⬆️ UP (CALL)", "PUT": "⬇️ DOWN (PUT)"}.get(
+        d1h, "⏸️ sin dirección clara")
+    result["fuerza"] = res.get("peso_favor", 0) / 100.0
+    result["coinciden"] = f"{res.get('alineados', 0)}/{res.get('total_tf', 12)}"
+    dpt = res.get("dir_por_tf", {})
+    for tf_s, info in result.get("por_tiempo", {}).items():
+        d = dpt.get(tf_s)
+        if d in ("CALL", "PUT", "HOLD"):
+            info["dir"] = "NEUTRAL" if d == "HOLD" else d
 
 
 def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False):
@@ -440,19 +468,33 @@ def run(profile_name="OTC"):
         if collector:
             collector.set_focus(code)
 
-        # SISTEMA DEL TRADER: si el perfil lo usa (OTC ya; real desde el domingo),
-        # la señal sale con las 12 temporalidades + alineación + ley 1H + filtros.
+        # FUSIÓN: si el perfil usa el SISTEMA del trader, el VEREDICTO lo decide su
+        # sistema exacto (10 indicadores, 7/12, EMA200-1H, filtros) y la tarjeta
+        # RICA (chart, VWAP, panel, hora de entrada, Pago, Mejores) se mantiene.
+        sistema = None
         if getattr(profile, "usa_sistema", False):
             from bot import otc_system, real_system
             sistema = real_system if profile.nombre == "REAL" else otc_system
-            texto, _res, seg, n = await service.analyze_sistema(
-                code, period, sistema, profile.titulo, asset_display)
-            rows = [[("🔁 Analizar de nuevo", f"re:{asset_display}:{tf}")],
-                    [("📊 Otro activo", "back:market"), ("🏠 Menú", "back:main")]]
-            await _safe_edit(query, texto, rows)
-            return
 
-        result, seg, n = await service.analyze(code, period)
+        # registrar=(sin sistema): el motor viejo guarda su señal solo si NO hay
+        # sistema; con sistema, se registra la señal del SISTEMA (aprendizaje correcto).
+        result, seg, n = await service.analyze(code, period,
+                                               registrar=(sistema is None))
+        if sistema is not None:
+            payout = service._payouts.get(code)
+            hora_est = None
+            if getattr(sistema, "NOTICIAS_DURANTE", None) is not None:
+                from datetime import datetime, timezone
+                hora_est = (datetime.now(timezone.utc).hour - 5) % 24
+            try:
+                res_sis = service.veredicto_sistema(code, sistema, payout=payout,
+                                                    hora_est=hora_est)
+                _fusionar_sistema(result, res_sis)
+                if res_sis.get("veredicto") == "OPERAR":
+                    service._registrar_senal_sistema(code, period, res_sis)
+            except Exception:
+                logging.exception("No se pudo fusionar el sistema del trader")
+
         text = _format_deep(asset_display, tf, result, seg, service.balance, n)
         caption = _format_deep(asset_display, tf, result, seg,
                                service.balance, n, compact=True)

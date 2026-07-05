@@ -805,6 +805,21 @@ class PocketService:
 
         return resultado, seg, len(ticks)
 
+    def veredicto_sistema(self, asset_code, sistema, payout=None, hora_est=None,
+                          spread=None):
+        """
+        Veredicto del SISTEMA EXACTO del trader (10 indicadores votan por tiempo,
+        alineación ponderada 7/12, ley EMA200-1H, filtros). Lee las 12 temporalidades
+        del historial y devuelve el dict de veredicto_final (direccion_1h, veredicto,
+        alineados, total_tf, peso_favor, dir_por_tf, filtros, motivo). Sin red.
+        Se usa para FUSIONAR: la tarjeta rica se decide con este veredicto.
+        """
+        from bot.sistema_signal import frames_desde_repo
+        from bot.filtros import veredicto_final
+        frames = frames_desde_repo(self.repo, sistema, asset_code)
+        return veredicto_final(frames, sistema, payout=payout,
+                               hora_est=hora_est, spread=spread)
+
     async def analyze_sistema(self, asset_code, tf_seconds, sistema, titulo,
                               asset_display):
         """
