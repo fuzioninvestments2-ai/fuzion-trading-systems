@@ -468,7 +468,12 @@ class PocketService:
             await asyncio.sleep(self.wait_seconds)
             seg = self.seconds_to_next_candle(asset_code, tf_seconds)
             ticks = list(self._ticks.get(asset_code, []))
-        if len(ticks) < 50:
+        # POCOS TICKS EN VIVO: solo es "pocos datos" si TAMPOCO hay historial
+        # guardado. Antes salía siempre vacío al reiniciar (ticks en vivo = 0),
+        # aunque en disco hubiera miles de velas: el análisis lee el HISTORIAL
+        # (abajo), así que si lo hay, seguimos y la tarjeta sale con datos.
+        hist_m1 = self.repo.count(asset_code, "M1")
+        if len(ticks) < 50 and hist_m1 < 60:
             return ({"veredicto": "🚫 NO OPERAR", "direccion": "⏸️ pocos datos",
                      "fuerza": 0.0, "por_tiempo": {}}, seg, len(ticks))
 
