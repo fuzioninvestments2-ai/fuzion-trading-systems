@@ -164,7 +164,9 @@ class SignalMenu:
             return self.entrada(user_id)
         self._st(user_id)["market"] = market_key
         self._st(user_id).pop("asset", None)
-        assets = MARKETS[market_key]["assets"]
+        # ALFABÉTICO: así el trader encuentra el par rápido (AUD.., CAD.., EUR..,
+        # GBP.., USD..) sin buscar por toda la lista.
+        assets = sorted(MARKETS[market_key]["assets"])
         # Tres activos por fila -> se ve más "cuadrado" y compacto.
         rows = []
         for i in range(0, len(assets), 3):

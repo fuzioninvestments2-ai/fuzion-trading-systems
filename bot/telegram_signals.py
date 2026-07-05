@@ -178,12 +178,12 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
         else:
             estado = f"{_dot(v['conf'])} {v['conf']:.0%}"
         celdas.append(f"`{_tf_label(tfs):>4}` {flecha} {estado}")
-    # DOS COLUMNAS: la escalera tiene hasta 16 tiempos; en una sola columna la
-    # tarjeta queda larguísima y ocupa toda la pantalla. Emparejando de a dos, el
-    # panel queda la MITAD de alto (más ancho, se lee de un vistazo).
+    # TRES COLUMNAS: la escalera tiene hasta 16 tiempos; en una columna la tarjeta
+    # queda larguísima. De a tres queda ~1/3 de alto (más ancho, se lee de un
+    # vistazo, mejor alineado).
     filas = []
-    for i in range(0, len(celdas), 2):
-        filas.append("   ".join(celdas[i:i + 2]))
+    for i in range(0, len(celdas), 3):
+        filas.append("  ".join(celdas[i:i + 3]))
     desglose = "\n".join(filas) if filas else "  (sin datos suficientes)"
 
     if seg is not None:
