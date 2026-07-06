@@ -34,6 +34,12 @@ alineación, calla (disciplina y protección, no promesas).
   7. Confirmación por tiempo: cortos/medios ≥ 60%, largos (1h+) ≥ 70%.
   Umbrales calibrables al inicio de `validacion_senal.py`.
 
+## Sistema ponderado 5s-15m (`bot/cuantico.py`)
+Fórmulas del trader: señal por timeframe (momentum, RSI, Bollinger, MACD,
+Estocástico, volumen) → probabilidad ponderada (pesos 15/50/35%) × correlación C →
+convergencia logarítmica. `validate_signal_90` decide (convergencia≥90 + prob +
+filtros). Ver skill 13 para el detalle y la nota de calibración de la probabilidad.
+
 ## Archivos
 - `bot/alignment.py` — `direccion_timeframe(df, tf)` (regla por tiempo) y
   `evaluar_alineacion(frames, sistema)` (aplica la ley 1H + mínimo).

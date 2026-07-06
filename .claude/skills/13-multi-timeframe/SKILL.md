@@ -33,6 +33,23 @@ Los micro-tiempos (5s-30s) dan la ENTRADA fina; los medios (1m-5m) la dirección
 los macro (15m-1H) el SESGO/tendencia mayor. La entrada perfecta = mayoría alineada
 con 1H + payout≥75 + sin noticias + sesión activa.
 
+## SISTEMA PONDERADO 5s-15m (`bot/cuantico.py`)
+Análisis de 9 timeframes con pesos por grupo y fórmulas del trader:
+- **Ultra-cortos** (5s,10s,15s) = 15% · **Cortos** (1m,2m,3m,5m) = 50% ·
+  **Medios** (10m,15m) = 35%.
+- `calculate_timeframe_signal(df)` → (dir ±1, fuerza 0-1, %). Combina momentum,
+  RSI, Bollinger, MACD, Estocástico (+volumen).
+- `calculate_quantum_probability(frames)` → probabilidad = |Σ(w·s·f)/Σw|·C·100
+  (C = correlación por nº alineados: 9→1.0, 8→0.89, 7→0.78, <7→0.67).
+- `calculate_logarithmic_convergence(alineados)` → ln(1+alineados)/ln(1+9)·100
+  (7/9=90.3%, 8/9=95.4%, 9/9=100%).
+- `validate_signal_90(frames, datos, payout, hora_utc)` → OPERAR solo si
+  convergencia≥90 Y probabilidad≥umbral Y filtros. Panel: `display_timeframe_panel`.
+- Backtest: `backtest_quantum_system(db, 100)`.
+- ⚠️ La probabilidad LITERAL rinde ~40% en tendencia fuerte (MACD/Stoch aportan
+  poca fuerza): el gate operativo real es la CONVERGENCIA (7/9). Umbrales
+  calibrables arriba de `cuantico.py`.
+
 ## GESTIÓN ESTRICTA DE TIMEFRAMES (`validate_signal`)
 - **Prohibido operar si faltan tiempos por datos**: los 12 configurados deben tener
   velas. Si falta alguno → NO OPERAR (no se decide a ciegas).

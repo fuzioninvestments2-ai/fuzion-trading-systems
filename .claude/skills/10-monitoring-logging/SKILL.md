@@ -17,7 +17,12 @@ Ver qué está haciendo el bot y si los datos están sanos, sin apagar nada.
   ```bash
   python -m bot.auditoria [real]
   ```
-- `bot/signal_log.py` — historial de señales para medir win-rate real.
+- `bot/signal_log.py` — historial de señales para medir win-rate real (columna
+  `meta` con los datos de calidad de cada señal).
+- `bot/cuantico.display_timeframe_panel(frames)` — PANEL visual del análisis de los
+  9 tiempos (5s-15m) con dirección/%, probabilidad, convergencia y veredicto.
+- `bot/simular_reglas.py` / `bot/cuantico.backtest_quantum_system(db)` — reporte:
+  cuántas señales se filtran y el win-rate estimado de las que pasan.
 - `logs/` — salida de ejecución.
 
 ## Robot 24/7 (autónomo)
