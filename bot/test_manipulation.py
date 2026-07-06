@@ -46,6 +46,19 @@ def test_spike():
     print("✅ (B) Spike detectado:", r["reasons"])
 
 
+def test_movimiento_direccional_no_es_spike():
+    # Un movimiento FUERTE y direccional (vela grande a favor de la tendencia, sin
+    # rebote) NO es manipulación -> el trader lo opera. No debe marcarse "spike".
+    g = ManipulationGuard()
+    precios = _normal(120)
+    salto = precios[-1]
+    for k in range(1, 40):                     # empujón sostenido hacia arriba
+        precios.append(salto + k * 2.0)
+    r = g.check(precios)
+    assert not any("spike" in x for x in r["reasons"]), r
+    print("✅ (B2) Movimiento direccional (sin rebote) NO se marca como spike.")
+
+
 def test_congelado():
     g = ManipulationGuard()
     # Mitad normal, mitad congelado (mismo precio repetido).
@@ -58,6 +71,7 @@ def test_congelado():
 if __name__ == "__main__":
     test_normal_no_sospechoso()
     test_spike()
+    test_movimiento_direccional_no_es_spike()
     test_congelado()
     print("-" * 60)
     print("✅ TODAS LAS PRUEBAS PASARON.")

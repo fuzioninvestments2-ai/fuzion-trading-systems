@@ -42,11 +42,21 @@ class ManipulationGuard:
         abs_r = np.abs(rets)
         reasons = []
 
-        # 1. SPIKE: el mayor salto vs el movimiento típico (mediana).
+        # 1. SPIKE de MANIPULACIÓN: un salto GRANDE que REBOTA enseguida (wick que
+        #    sube y vuelve, o baja y vuelve). PORQUÉ: un movimiento DIRECCIONAL real
+        #    (una vela fuerte a favor de la tendencia) también da un salto grande, y
+        #    ese SÍ se opera — no es manipulación. Solo es sospechoso si el salto se
+        #    REVIERTE de golpe (el precio no se queda: es un pico fabricado). Antes
+        #    marcaba cualquier salto grande y bloqueaba entradas válidas en OTC.
         nz = abs_r[abs_r > 0]
         med = np.median(nz) if nz.size else 0.0
-        if med > 0 and abs_r.max() > self.spike_factor * med:
-            reasons.append("spike de precio anormal")
+        if med > 0:
+            i = int(np.argmax(abs_r))
+            if abs_r[i] > self.spike_factor * med and i + 1 < rets.size:
+                revierte = (np.sign(rets[i + 1]) != np.sign(rets[i])
+                            and abs_r[i + 1] > 0.5 * abs_r[i])
+                if revierte:
+                    reasons.append("spike de precio anormal")
 
         # 2. CONGELADO: demasiados ticks sin cambio.
         if np.mean(abs_r == 0) > self.freeze_ratio:
