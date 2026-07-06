@@ -1012,16 +1012,32 @@ class PocketService:
         cal = self._calib.get(asset_code)
         if cal:
             datos["umbral_aprendido"] = cal.get("min_conf")
-        df_op = frames.get(tf_operar) or frames9.get(300)
-        if df_op is not None and len(df_op) >= 20:
-            from bot.levels import detect_levels
-            pip = 0.01 if "JPY" in asset_code.upper() else 0.0001
-            precio = float(df_op["close"].iloc[-1])
-            lv = detect_levels(df_op)
-            niveles = list(lv.get("resistencias") or []) + list(lv.get("soportes") or [])
-            if niveles:
-                d_pips = min(abs(precio - float(x)) for x in niveles) / pip
-                datos["cerca_sr"] = d_pips < 15.0
+        # SOPORTES/RESISTENCIAS confirmados: solo cuentan los niveles que aparecen
+        # en M1 Y en M5 (coinciden entre tiempos, <= 10 pips) — así se descartan S/R
+        # mal calculados de un solo tiempo. Si el precio está a < 20 pips de un nivel
+        # CONFIRMADO -> NO OPERAR (regla de oro).
+        from bot.levels import detect_levels
+        from bot.cuantico import SR_PIPS_MIN
+        pip = 0.01 if "JPY" in asset_code.upper() else 0.0001
+        df_m1, df_m5 = frames.get(60), frames.get(300)
+        precio = None
+        for cand in (frames.get(tf_operar), df_m5, df_m1):
+            if cand is not None and len(cand) >= 20:
+                precio = float(cand["close"].iloc[-1])
+                break
+        if precio is not None and df_m1 is not None and df_m5 is not None \
+                and len(df_m1) >= 20 and len(df_m5) >= 20:
+            def _niv(df):
+                lv = detect_levels(df)
+                return [float(x) for x in (list(lv.get("resistencias") or [])
+                                           + list(lv.get("soportes") or []))]
+            n_m1, n_m5 = _niv(df_m1), _niv(df_m5)
+            tol = 10 * pip                         # coincidencia M1/M5: <= 10 pips
+            confirmados = [a for a in n_m1
+                           if any(abs(a - b) <= tol for b in n_m5)]
+            if confirmados:
+                d_pips = min(abs(precio - x) for x in confirmados) / pip
+                datos["cerca_sr"] = d_pips < SR_PIPS_MIN
                 datos["dist_sr_pips"] = d_pips
 
         hora_utc = datetime.now(timezone.utc).hour

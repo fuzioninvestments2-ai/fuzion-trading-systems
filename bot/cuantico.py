@@ -38,6 +38,7 @@ TOTAL_TF = len(TIMEFRAMES_9)
 PROB_MIN = 90.0              # probabilidad mínima para OPERAR
 CONV_MIN = 90.0             # convergencia logarítmica mínima
 PROB_MIN_PAYOUT_BAJO = 95.0  # si payout < 80% se exige más
+SR_PIPS_MIN = 20.0          # distancia mínima a soporte/resistencia (pips)
 HORAS_BAJA_VOL = set(range(22, 24)) | {0, 1}   # 22:00-02:00 UTC: evitar
 
 
@@ -202,7 +203,7 @@ def validate_signal_90(frames, datos=None, payout=None, hora_utc=None):
         # REGLA DE ORO: no operar pegado a soporte/resistencia.
         if datos.get("cerca_sr"):
             return no(f"precio pegado a S/R ({datos.get('dist_sr_pips', 0):.0f} pips "
-                      f"< 15)")
+                      f"< {SR_PIPS_MIN:.0f})")
         # Win-rate histórico >= 60% (cuando ya hay >=10 señales medidas).
         if datos.get("senales_medidas", 0) >= 10:
             wr = datos.get("win_rate_hist")
