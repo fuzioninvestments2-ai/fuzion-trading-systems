@@ -62,9 +62,30 @@ def test_tendencia_corta_fuerte_cuenta():
           f"— 'corta pero alta sigue'")
 
 
+def _giro_baja(n=260, caida=40):
+    # Sube casi todo el tramo y CAE fuerte al final (giro brusco): las EMAs siguen
+    # marcando UP (retraso), pero el movimiento REAL de ahora es DOWN.
+    xs = [100 + i * 0.15 for i in range(n - caida)]
+    ult = xs[-1]
+    xs += [ult - j * 0.6 for j in range(1, caida + 1)]     # caída fuerte
+    c = pd.Series(xs, dtype=float)
+    return pd.DataFrame({"open": c.shift(1).fillna(c.iloc[0]),
+                         "high": c + 0.1, "low": c - 0.1, "close": c})
+
+
+def test_giro_brusco_momentum_manda():
+    frames = {tf: _giro_baja() for tf in TFS}
+    r = calcular_danza(frames, otc_system, 300)
+    # El movimiento real de AHORA es a la baja -> el momentum debe llevar la
+    # dirección a PUT, aunque las EMAs (con retraso) aún marquen UP.
+    assert r["direccion_1h"] == "PUT", r
+    print(f"OK giro brusco: momentum manda -> PUT (score {r['score']})")
+
+
 if __name__ == "__main__":
     test_tendencia_alcista_opera_call()
     test_tendencia_bajista_opera_put()
     test_mercado_plano_no_opera()
     test_tendencia_corta_fuerte_cuenta()
+    test_giro_brusco_momentum_manda()
     print("\nTODOS OK — fórmula de la danza")

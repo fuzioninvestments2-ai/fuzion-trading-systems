@@ -37,6 +37,31 @@ UMBRAL_GATILLO = 0.25        # confirmación mínima de los tiempos cortos
 UMBRAL_PARTICIPACION = 0.12  # fracción mínima del peso que debe estar EN MOVIMIENTO
 ZONA_MAX = 0.10              # nudge máximo por soporte/resistencia
 
+# Mezcla dirección(regla, EMAs) vs MOMENTUM (movimiento real reciente). El momentum
+# lidera para captar el movimiento de AHORA (las EMAs van con retraso y en un giro
+# brusco marcan la dirección vieja). Suman ~1.
+PESO_DIRECCION = 0.5
+PESO_MOMENTUM = 0.5
+MOM_VELAS = 5                # velas recientes para medir el momentum
+
+
+def _momentum(df, k=MOM_VELAS):
+    """
+    Movimiento REAL reciente, normalizado por la volatilidad típica: cuántos
+    'movimientos normales' recorrió el precio en las últimas k velas, con signo.
+    +1 = subida fuerte y limpia; −1 = bajada fuerte; ~0 = lateral/choppy. Capta el
+    giro de AHORA que las EMAs (con retraso) no ven.
+    """
+    if df is None or len(df) < k + 2:
+        return 0.0
+    close = df["close"]
+    tipico = float(close.diff().abs().tail(20).mean())
+    if tipico <= 0:
+        return 0.0
+    mov = float(close.iloc[-1]) - float(close.iloc[-1 - k])
+    m = mov / (k * tipico)
+    return max(-1.0, min(1.0, m))
+
 
 def _peso_eff(sistema, tf):
     return sistema.peso_alineacion(tf) + PISO_PESO
@@ -73,6 +98,7 @@ def calcular_danza(frames, sistema, tf_operar):
     """
     dir_por_tf, fuerza_por_tf = {}, {}
     num = den_part = den_all = 0.0
+    mom_num = 0.0
     for tf, df in frames.items():
         lec = leer_tiempo(df, tf, sistema)
         dir_por_tf[tf] = lec["dir"]
@@ -81,6 +107,7 @@ def calcular_danza(frames, sistema, tf_operar):
         num += _signo(lec["dir"]) * lec["fuerza"] * w
         den_part += lec["fuerza"] * w          # peso EN MOVIMIENTO (participación)
         den_all += w
+        mom_num += _momentum(df) * w           # movimiento real reciente, pesado
     total_tf = len(frames)
     # PARTICIPACIÓN: cuánto del peso posible está de verdad moviéndose. Si casi nada
     # se mueve (mercado plano/indeciso) no hay danza -> no se opera.
@@ -89,12 +116,17 @@ def calcular_danza(frames, sistema, tf_operar):
         return {"direccion_1h": HOLD, "veredicto": "NO OPERAR", "peso_favor": 0.0,
                 "alineados": 0, "total_tf": total_tf, "dir_por_tf": dir_por_tf,
                 "fuerza_por_tf": fuerza_por_tf, "score": 0.0, "gatillo": False,
-                "motivo": "El mercado no se mueve lo suficiente (poca danza): espera."}
+                "motivo": "El mercado no se mueve lo suficiente ahora: espera."}
 
-    # Score = consenso direccional entre los tiempos QUE SE MUEVEN (normalizado por
-    # participación, no por todos). Así una tendencia CORTA pero FUERTE manda aunque
-    # los tiempos altos estén planos ("corta pero alta sigue").
-    score = num / den_part
+    # Score = MEZCLA de dos criterios:
+    #  (a) DIRECCIÓN (regla de cada tiempo, EMAs): el sesgo estructural.
+    #  (b) MOMENTUM (movimiento real reciente): capta el giro de AHORA que las EMAs,
+    #      con retraso, no ven (por eso el bot marcaba UP en una caída clara).
+    # La dirección se normaliza por participación (los que se mueven) -> una tendencia
+    # corta pero fuerte manda. El momentum por todo el peso (0 en los laterales).
+    score_dir = num / den_part
+    score_mom = mom_num / den_all if den_all else 0.0
+    score = PESO_DIRECCION * score_dir + PESO_MOMENTUM * score_mom
     score += _zona(frames.get(tf_operar))      # zona S/R del tiempo operado
     score = max(-1.0, min(1.0, score))
 
@@ -117,19 +149,19 @@ def calcular_danza(frames, sistema, tf_operar):
 
     etq = ("1H" if tf_operar >= 3600 else
            f"{tf_operar}s" if tf_operar < 60 else f"{tf_operar // 60}m")
+    lado = "CALL" if direccion == CALL else "PUT"
     if direccion == HOLD or fuerza < UMBRAL_DANZA:
         veredicto, motivo = "NO OPERAR", (
-            f"Danza sin fuerza clara ({peso_favor}%): los tiempos no se alinean "
-            f"lo suficiente en una dirección.")
+            f"Fuerza insuficiente ({peso_favor}%): los tiempos y el movimiento no "
+            f"marcan una dirección clara todavía.")
     elif not gatillo:
         veredicto, motivo = "NO OPERAR", (
-            f"Dirección {('CALL' if direccion == CALL else 'PUT')} con fuerza "
-            f"{peso_favor}%, pero falta gatillo en el tiempo corto (5s-1m): espera "
-            f"la confirmación de entrada.")
+            f"Dirección {lado} con fuerza {peso_favor}%, pero falta confirmación en "
+            f"el tiempo corto (5s-1m): espera el punto de entrada.")
     else:
         veredicto, motivo = "OPERAR", (
-            f"Danza a favor de {('CALL' if direccion == CALL else 'PUT')} "
-            f"({peso_favor}% de fuerza) con gatillo en corto. Entrada en {etq}.")
+            f"{lado} con {peso_favor}% de fuerza (tiempos + movimiento) y "
+            f"confirmación en corto. Entrada en {etq}.")
 
     return {"direccion_1h": direccion, "veredicto": veredicto,
             "peso_favor": peso_favor, "alineados": alineados, "total_tf": total_tf,

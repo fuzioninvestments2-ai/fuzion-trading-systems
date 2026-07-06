@@ -1004,7 +1004,7 @@ class PocketService:
         res["filtros"] = filt
         if res["veredicto"] == "OPERAR" and not filt["pasa"]:
             res["veredicto"] = "NO OPERAR"
-            res["motivo"] = "Danza a favor, pero un filtro bloquea: " + \
+            res["motivo"] = "Señal a favor, pero un filtro bloquea: " + \
                             "; ".join(filt["fallos"])
         return res
 
