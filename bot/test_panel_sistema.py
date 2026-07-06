@@ -1,15 +1,16 @@
 """
 bot/test_panel_sistema.py
 =========================
-Valida SIN red que el PANEL de la tarjeta salga del SISTEMA del trader (sus 12
-temporalidades, consenso de los 10 indicadores) usando las velas FRESCAS del
-último analyze — no del motor viejo (que metía tiempos ajenos como 4m/240s).
+Valida SIN red que el PANEL de la tarjeta salga del SISTEMA PONDERADO (9 tiempos
+5s-15m, `calculate_timeframe_signal`), usando las velas FRESCAS del último analyze
+— sin tiempos ajenos (4m/2h/1H).
 """
 
 import time
 import pandas as pd
 from bot import otc_system
 from bot.pocket_service import PocketService
+from bot.cuantico import TIMEFRAMES_9
 
 
 class _Svc:
@@ -21,57 +22,48 @@ class _Svc:
     panel_sistema = PocketService.panel_sistema
 
 
-def _df(n=260, subiendo=True):
+def _df(n=120, subiendo=True):
     base = int(time.time()) - n * 60
     filas = []
     for i in range(n):
-        c = 100 + (i if subiendo else (n - i)) * 0.2
+        c = 100 + (i if subiendo else (n - i)) * 0.3
         filas.append({"timestamp": (base + i * 60) * 1000, "open": c,
-                      "high": c + 0.15, "low": c - 0.15, "close": c, "volume": 1})
+                      "high": c + 0.2, "low": c - 0.2, "close": c, "volume": 100})
     return pd.DataFrame(filas)
 
 
-def test_panel_usa_tiempos_del_trader_sin_ajenos():
+def test_panel_usa_los_9_tiempos_sin_ajenos():
     svc = _Svc()
-    # Velas frescas del motor: incluye tiempos AJENOS (240=4m, 7200=2h) que el
-    # motor viejo mostraba. El panel del sistema debe IGNORARLOS.
-    motor = {tf: _df() for tf in (5, 10, 15, 30, 60, 120, 180, 300, 600,
-                                  900, 1800, 3600)}
-    motor[240] = _df()        # 4m ajeno
-    motor[7200] = _df()       # 2h ajeno
+    # Velas frescas del motor: incluye tiempos AJENOS (240=4m, 1800=30m, 3600=1H,
+    # 7200=2h) que NO están en los 9 del sistema ponderado (5s-15m).
+    motor = {tf: _df() for tf in TIMEFRAMES_9}
+    for ajeno in (240, 1800, 3600, 7200):
+        motor[ajeno] = _df()
     svc._frames_recientes["EURUSD_otc"] = motor
 
     panel = svc.panel_sistema("EURUSD_otc", otc_system)
-    # Solo tiempos del sistema (12), ninguno ajeno.
-    assert 240 not in panel and 7200 not in panel, "no debe mostrar 4m/2h"
-    assert set(panel).issubset(set(otc_system.TIMEFRAMES))
-    assert len(panel) >= 11, panel          # 5s..1H con datos
-    # Los tiempos de TENDENCIA (altos, basados en EMAs) van CALL en una subida. Los
-    # cortos con osciladores (15s Stoch / 10s RSI) PUEDEN ir en contra por sobre-
-    # compra — eso es CORRECTO (el trader: "1m puede ser venta y 3m compra").
-    for tf in (300, 900, 1800, 3600):       # 5m, 15m, 30m, 1H = tendencia
-        if tf in panel:
-            assert panel[tf]["dir"] == "CALL", (tf, panel[tf])
-    # 'conf' es fracción de indicadores que confirman (0-1); hay detalle de texto.
-    assert all(0.0 <= p["conf"] <= 1.0 for p in panel.values())
-    assert all("detalle" in p for p in panel.values())
-    print(f"OK panel por tiempo ({len(panel)} tiempos): tendencia CALL, cortos "
-          f"pueden diferir, sin 4m/2h")
+    assert set(panel).issubset(set(TIMEFRAMES_9)), panel
+    for ajeno in (240, 1800, 3600, 7200):
+        assert ajeno not in panel, f"no debe mostrar {ajeno}"
+    assert len(panel) == len(TIMEFRAMES_9), panel
+    # Tendencia alcista -> dirección CALL y % > 50 en los tiempos.
+    for tf, p in panel.items():
+        assert p["dir"] == "CALL", (tf, p)
+        assert p["pct"] > 50 and 0.0 <= p["conf"] <= 1.0
+    print(f"OK panel = 9 tiempos ponderados (5s-15m), alcista -> CALL, sin ajenos")
 
 
-def test_bajista_tendencia_da_put():
+def test_bajista_da_put():
     svc = _Svc()
-    svc._frames_recientes["EURUSD_otc"] = {
-        tf: _df(subiendo=False) for tf in otc_system.TIMEFRAMES}
+    svc._frames_recientes["EURUSD_otc"] = {tf: _df(subiendo=False)
+                                           for tf in TIMEFRAMES_9}
     panel = svc.panel_sistema("EURUSD_otc", otc_system)
-    # Los tiempos de tendencia van PUT en una bajada (los cortos pueden diferir).
-    for tf in (300, 900, 1800, 3600):
-        if tf in panel:
-            assert panel[tf]["dir"] == "PUT", (tf, panel[tf])
-    print("OK tendencia bajista -> los tiempos altos van PUT")
+    for tf, p in panel.items():
+        assert p["dir"] == "PUT" and p["pct"] < 50, (tf, p)
+    print("OK tendencia bajista -> panel todo PUT")
 
 
 if __name__ == "__main__":
-    test_panel_usa_tiempos_del_trader_sin_ajenos()
-    test_bajista_tendencia_da_put()
-    print("\nTODOS OK — el panel de la tarjeta es el sistema del trader")
+    test_panel_usa_los_9_tiempos_sin_ajenos()
+    test_bajista_da_put()
+    print("\nTODOS OK — panel del sistema ponderado (9 tiempos)")

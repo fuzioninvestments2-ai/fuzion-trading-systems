@@ -972,43 +972,78 @@ class PocketService:
         SU sistema exacto (no el motor viejo, que tenía tiempos ajenos como 4m).
         Devuelve {tf: {"dir": "CALL"|"PUT"|"NEUTRAL", "conf": 0-1, "velas": n}}.
         """
-        from bot.lectura_tiempo import leer_tiempo, detalle_texto
+        from bot.cuantico import calculate_timeframe_signal, TIMEFRAMES_9
         frames = self._frames_para_sistema(asset_code, sistema)
         panel = {}
-        for tf in sistema.TIMEFRAMES:
+        for tf in TIMEFRAMES_9:                     # 9 tiempos (5s-15m)
             df = frames.get(tf)
-            if df is None or len(df) < 6:
+            if df is None or len(df) < 20:
                 continue
-            # Lectura POR TIEMPO: la dirección la marca la regla de ESE tiempo y la
-            # 'conf' es cuántos de los 10 indicadores lo confirman (el baile).
-            lec = leer_tiempo(df, tf, sistema)
-            d = lec["dir"]
-            panel[tf] = {"dir": "NEUTRAL" if d == "HOLD" else d,
-                         "conf": lec["fuerza"], "velas": len(df),
-                         "detalle": detalle_texto(lec)}
+            # Señal del tiempo (momentum+RSI+Bollinger+MACD+Estocástico): dirección
+            # y % (50 neutral; >50 alcista). Coincide con el sistema cuántico.
+            d, f, pct = calculate_timeframe_signal(df)
+            panel[tf] = {"dir": "CALL" if d > 0 else ("PUT" if d < 0 else "NEUTRAL"),
+                         "conf": f, "velas": len(df), "pct": pct}
         return panel
 
     def veredicto_sistema(self, asset_code, sistema, payout=None, hora_est=None,
                           spread=None, tf_operar=60):
         """
-        Veredicto del SISTEMA del trader con la FÓRMULA DE LA DANZA: cada tiempo con
-        su regla + fuerza, score ponderado (una tendencia corta y fuerte también
-        manda), zona S/R y gatillo en corto. Luego se aplican los FILTROS (pago,
-        sesión, noticias). Devuelve el dict compatible con la tarjeta. Sin red.
+        Veredicto con el SISTEMA PONDERADO 5s-15m (bot/cuantico): probabilidad
+        calibrada + convergencia (≥90% = ≥8/9 tiempos alineados) + no pegado a S/R +
+        win-rate + horario. Solo OPERAR en alineación fuerte. Devuelve un dict
+        compatible con la tarjeta (direccion_1h, veredicto, peso_favor, alineados,
+        total_tf, dir_por_tf, fuerza_por_tf, motivo, filtros).
         """
-        from bot.formula import calcular_danza
-        from bot.filtros import evaluar_filtros
+        from datetime import datetime, timezone
+        from bot.cuantico import (validate_signal_90, calculate_quantum_probability,
+                                  TIMEFRAMES_9, TOTAL_TF)
         frames = self._frames_para_sistema(asset_code, sistema)
-        res = calcular_danza(frames, sistema, tf_operar)
-        # FILTROS encima (solo si la danza dio OPERAR): un filtro puede bloquear.
-        filt = evaluar_filtros(sistema, payout=payout, hora_est=hora_est,
-                               spread=spread)
-        res["filtros"] = filt
-        if res["veredicto"] == "OPERAR" and not filt["pasa"]:
-            res["veredicto"] = "NO OPERAR"
-            res["motivo"] = "Señal a favor, pero un filtro bloquea: " + \
-                            "; ".join(filt["fallos"])
-        return res
+        frames9 = {tf: frames[tf] for tf in TIMEFRAMES_9 if tf in frames}
+
+        # Datos de calidad: win-rate real, umbral aprendido y proximidad a S/R.
+        datos = {}
+        try:
+            st = self.tracker.stats(asset_code)
+            datos["win_rate_hist"] = st.get("win_rate")
+            datos["senales_medidas"] = st.get("decididas", 0)
+        except Exception:
+            pass
+        cal = self._calib.get(asset_code)
+        if cal:
+            datos["umbral_aprendido"] = cal.get("min_conf")
+        df_op = frames.get(tf_operar) or frames9.get(300)
+        if df_op is not None and len(df_op) >= 20:
+            from bot.levels import detect_levels
+            pip = 0.01 if "JPY" in asset_code.upper() else 0.0001
+            precio = float(df_op["close"].iloc[-1])
+            lv = detect_levels(df_op)
+            niveles = list(lv.get("resistencias") or []) + list(lv.get("soportes") or [])
+            if niveles:
+                d_pips = min(abs(precio - float(x)) for x in niveles) / pip
+                datos["cerca_sr"] = d_pips < 15.0
+                datos["dist_sr_pips"] = d_pips
+
+        hora_utc = datetime.now(timezone.utc).hour
+        r = validate_signal_90(frames9, datos=datos, payout=payout, hora_utc=hora_utc)
+
+        # Mapea al formato de la tarjeta.
+        dir_por_tf, fuerza_por_tf = {}, {}
+        for tf, (d, f, _p) in r.get("senales", {}).items():
+            dir_por_tf[tf] = "CALL" if d > 0 else ("PUT" if d < 0 else "HOLD")
+            fuerza_por_tf[tf] = f
+        return {
+            "direccion_1h": r.get("direccion") or "HOLD",
+            "veredicto": "OPERAR" if r["operar"] else "NO OPERAR",
+            "peso_favor": r.get("probabilidad", 0),
+            "alineados": r.get("alineados", 0), "total_tf": TOTAL_TF,
+            "dir_por_tf": dir_por_tf, "fuerza_por_tf": fuerza_por_tf,
+            "probabilidad": r.get("probabilidad", 0),
+            "convergencia": r.get("convergencia", 0),
+            "motivo": r["motivo"].replace("OPERAR ", "").replace("NO OPERAR: ", ""),
+            "datos_calidad": datos,
+            "filtros": {"pasa": True, "fallos": [], "avisos": []},
+        }
 
     async def analyze_sistema(self, asset_code, tf_seconds, sistema, titulo,
                               asset_display):

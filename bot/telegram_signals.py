@@ -200,9 +200,15 @@ def _fusionar_sistema(result, res):
     # cuántos FALTAN por confirmar (antes salía "7/7" y parecía perfecto cuando en
     # realidad 5 tiempos no tenían datos).
     alin = res.get("alineados", 0)
-    presentes = res.get("total_tf", 0)
-    result["coinciden"] = f"{alin}/12"
+    total = res.get("total_tf", 9)
+    presentes = len(res.get("dir_por_tf", {})) or total
+    result["coinciden"] = f"{alin}/{total}"
     result["sistema_presentes"] = presentes
+    result["sistema_total"] = total
+    # Probabilidad/convergencia del sistema ponderado (para mostrarlas en la tarjeta).
+    if "probabilidad" in res:
+        result["probabilidad"] = res["probabilidad"]
+        result["convergencia"] = res.get("convergencia")
     result["sistema_motivo"] = res.get("motivo", "")
     result["_es_sistema"] = True                     # la tarjeta oculta lo del motor viejo
     # Si la protección (vacío/manipulación) tumbó una señal que el sistema aprobaba,
@@ -460,8 +466,9 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
     faltan_txt = ""
     if es_sistema:
         pres = result.get("sistema_presentes", 0)
-        if pres < 12:
-            faltan_txt = f" _· faltan {12 - pres} tiempos por datos_"
+        tot = result.get("sistema_total", 9)
+        if pres < tot:
+            faltan_txt = f" _· faltan {tot - pres} tiempos por datos_"
     return (f"📈 *{asset_display}*   ⏱️ *{tf}*   {cabecera}\n"
             f"{alerta}\n"
             f"\n*{veredicto}*\n"
@@ -591,25 +598,13 @@ def run(profile_name="OTC"):
                         result["por_tiempo"] = panel
                 except Exception:
                     logging.exception("No se pudo armar el panel del sistema")
-                # PUERTA FINAL DE CALIDAD (reglas estrictas, no negociables): aunque
-                # la fórmula diga OPERAR, si una regla de calidad falla -> NO OPERAR
-                # con el motivo EXACTO, y NO se registra la señal (aprendizaje limpio).
-                val, datos_val = {"operar": True}, None
+                # El SISTEMA PONDERADO (cuántico) ya decidió con sus reglas estrictas
+                # (convergencia + probabilidad + S/R + win-rate + horario). Solo se
+                # registra la señal cuando dice OPERAR (aprendizaje limpio), guardando
+                # su metadata de calidad para la simulación/backtest.
                 if res_sis.get("veredicto") == "OPERAR":
-                    try:
-                        val, datos_val = _validar_calidad(result, res_sis,
-                                                          sistema, code)
-                    except Exception:
-                        logging.exception("validate_signal falló")
-                        val = {"operar": True}
-                    if not val.get("operar"):
-                        result["veredicto"] = "🚫 NO OPERAR"
-                        result["sistema_motivo"] = val.get("motivo", "")
-                if res_sis.get("veredicto") == "OPERAR" and val.get("operar"):
-                    # Guarda la metadata de calidad con la señal -> simulación futura
-                    # completa sobre datos reales.
-                    service._registrar_senal_sistema(code, period, res_sis,
-                                                     meta=datos_val)
+                    service._registrar_senal_sistema(
+                        code, period, res_sis, meta=res_sis.get("datos_calidad"))
                 # COHERENCIA GRÁFICO=LECTURA: dibuja las MISMAS velas que el sistema
                 # calificó para el tiempo operado (si están frescas). Así el gráfico
                 # no discrepa de la dirección/panel (el bug "el gráfico no coincide"

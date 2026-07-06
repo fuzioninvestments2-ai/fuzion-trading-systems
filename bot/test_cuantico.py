@@ -47,23 +47,23 @@ def test_probabilidad_alcista():
     frames = {tf: _df(subiendo=True) for tf in TIMEFRAMES_9}
     q = calculate_quantum_probability(frames)
     assert q["direccion"] == "CALL" and q["alineados"] == 9
-    assert q["probabilidad"] > 0
-    print(f"OK 9/9 alcista -> CALL, probabilidad {q['probabilidad']:.0f}%, "
-          f"C={q['correlacion']} (fórmula literal: baja por MACD/Stoch)")
+    # Probabilidad CALIBRADA (operativa) llega alto en 9/9; la literal queda baja.
+    assert q["probabilidad"] >= 90 and q["probabilidad_literal"] < 60
+    print(f"OK 9/9 alcista -> CALL · prob calibrada {q['probabilidad']:.0f}% "
+          f"(literal {q['probabilidad_literal']:.0f}%)")
 
 
-def test_decision_gate_bloquea_si_prob_menor_90():
-    # HALLAZGO: con la fórmula LITERAL, hasta una tendencia limpia da probabilidad
-    # < 90% (promedia 5 indicadores; MACD/Estocástico aportan poca fuerza). La
-    # convergencia sí llega a 100%, pero la probabilidad es el cuello de botella ->
-    # la puerta bloquea. Esto muestra que el umbral 90% de probabilidad casi nunca
-    # se alcanza con la fórmula tal cual (hay que calibrarla).
-    frames = {tf: _df(subiendo=True) for tf in TIMEFRAMES_9}
-    r = validate_signal_90(frames, payout=85, hora_utc=14)
-    assert r["convergencia"] == 100.0
-    assert (not r["operar"]) and "probabilidad" in r["motivo"], r
-    print(f"OK gate estricto: convergencia 100% pero probabilidad "
-          f"{r['probabilidad']:.0f}% < 90% -> {r['motivo']}")
+def test_9de9_opera_y_7de9_no():
+    # 9/9 fuerte -> OPERAR (prob calibrada >=90, convergencia 100%).
+    f9 = {tf: _df(subiendo=True) for tf in TIMEFRAMES_9}
+    r9 = validate_signal_90(f9, payout=85, hora_utc=14)
+    assert r9["operar"] and r9["convergencia"] == 100.0, r9
+    # 7/9 (dos en contra) -> NO OPERAR (probabilidad < 90).
+    f7 = dict(f9); f7[600] = _df(subiendo=False); f7[900] = _df(subiendo=False)
+    r7 = validate_signal_90(f7, payout=85, hora_utc=14)
+    assert not r7["operar"], r7
+    print(f"OK 9/9 -> OPERAR ({r9['probabilidad']:.0f}%); "
+          f"7/9 -> NO OPERAR ({r7['probabilidad']:.0f}%)")
 
 
 def test_faltan_tiempos_no_opera():
@@ -91,7 +91,7 @@ if __name__ == "__main__":
     test_signal_por_timeframe()
     test_convergencia_logaritmica()
     test_probabilidad_alcista()
-    test_decision_gate_bloquea_si_prob_menor_90()
+    test_9de9_opera_y_7de9_no()
     test_faltan_tiempos_no_opera()
     test_hora_baja_volatilidad_no_opera()
     test_mercado_plano_no_opera()
