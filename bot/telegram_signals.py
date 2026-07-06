@@ -291,23 +291,29 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
         aprendido += (f"\n📈 Acierto REAL del bot aquí: {wrr:.0%} "
                       f"_({result.get('senales_reales', 0)} señales medidas)_")
 
-    # Alerta anti-manipulación (si el mercado se comportó raro).
+    # ALERTAS. Con TU sistema (la fórmula) se muestran SOLO las de protección real
+    # (manipulación, vacío de feed) y la de nivel S/R. Las alertas DIRECCIONALES del
+    # motor viejo (contra tendencia, indecisión, consenso extremo, doji) se BORRAN:
+    # contradecían a la fórmula (que ya decide dirección con tiempos + movimiento) y
+    # solo confundían.
+    _sist = result.get("_es_sistema")
     manip = result.get("manipulacion")
     alerta = (f"\n🛡️ *ALERTA:* mercado raro ({', '.join(manip)}) → mejor NO operar"
               if manip else "")
-    if result.get("inestable"):
-        alerta += "\n🔄 *INDECISIÓN:* la señal cambió de dirección → espera"
     if result.get("vacio"):
         alerta += ("\n🕳️ *VACÍO DE MERCADO:* " + ", ".join(result["vacio"])
                    + " → feed no fiable, NO operes")
-    if result.get("indecision_vela"):
-        alerta += "\n🕯️ *DOJI:* vela de indecisión → espera dirección clara"
-    if result.get("contra_tendencia"):
-        alerta += ("\n📉 *CONTRA TENDENCIA:* la señal va contra el tiempo mayor "
-                   "→ ALTO RIESGO, mejor operar a favor de la tendencia")
-    if result.get("consenso_extremo"):
-        alerta += ("\n🔬 *CONSENSO EXTREMO:* casi TODOS los tiempos coinciden "
-                   "(raro) → confírmalo antes de entrar")
+    if not _sist:
+        if result.get("inestable"):
+            alerta += "\n🔄 *INDECISIÓN:* la señal cambió de dirección → espera"
+        if result.get("indecision_vela"):
+            alerta += "\n🕯️ *DOJI:* vela de indecisión → espera dirección clara"
+        if result.get("contra_tendencia"):
+            alerta += ("\n📉 *CONTRA TENDENCIA:* la señal va contra el tiempo mayor "
+                       "→ ALTO RIESGO, mejor operar a favor de la tendencia")
+        if result.get("consenso_extremo"):
+            alerta += ("\n🔬 *CONSENSO EXTREMO:* casi TODOS los tiempos coinciden "
+                       "(raro) → confírmalo antes de entrar")
     na = result.get("nivel_alerta")
     if na:
         if na[0] == "techo":

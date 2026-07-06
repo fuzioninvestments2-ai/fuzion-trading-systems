@@ -20,6 +20,8 @@ con un PISO para que los cortos (donde entra) cuenten.
 SRP: solo calcula la entrada. Sin red. Testeable con asserts.
 """
 
+import math
+
 from bot.lectura_tiempo import leer_tiempo
 from bot.scoring_strategy import CALL, PUT, HOLD
 
@@ -63,8 +65,24 @@ def _momentum(df, k=MOM_VELAS):
     return max(-1.0, min(1.0, m))
 
 
-def _peso_eff(sistema, tf):
-    return sistema.peso_alineacion(tf) + PISO_PESO
+# Cuánto se estrecha el foco alrededor del tiempo operado (en escala log-tiempo).
+# Menor = más foco en el tiempo que se opera y sus vecinos.
+SIGMA_PROX = 1.6
+PROX_PISO = 0.30             # los tiempos lejanos (contexto) conservan este mínimo
+
+
+def _peso_eff(sistema, tf, tf_operar):
+    """
+    Peso de un tiempo en la fórmula = su peso base (ponderación del trader + piso)
+    modulado por la PROXIMIDAD al tiempo que se OPERA. La entrada se decide en el
+    tiempo operado y sus vecinos (ahí está el punto); los tiempos muy lejanos son
+    contexto (conservan PROX_PISO). Así una subida clara en M1 no la diluye un 15m
+    en rango. Proximidad = gaussiana en log-tiempo.
+    """
+    base = sistema.peso_alineacion(tf) + PISO_PESO
+    r = math.log(max(tf, 1)) - math.log(max(tf_operar, 1))
+    prox = PROX_PISO + (1 - PROX_PISO) * math.exp(-(r * r) / (2 * SIGMA_PROX ** 2))
+    return base * prox
 
 
 def _signo(d):
@@ -103,7 +121,7 @@ def calcular_danza(frames, sistema, tf_operar):
         lec = leer_tiempo(df, tf, sistema)
         dir_por_tf[tf] = lec["dir"]
         fuerza_por_tf[tf] = lec["fuerza"]
-        w = _peso_eff(sistema, tf)
+        w = _peso_eff(sistema, tf, tf_operar)
         num += _signo(lec["dir"]) * lec["fuerza"] * w
         den_part += lec["fuerza"] * w          # peso EN MOVIMIENTO (participación)
         den_all += w
@@ -127,7 +145,11 @@ def calcular_danza(frames, sistema, tf_operar):
     score_dir = num / den_part
     score_mom = mom_num / den_all if den_all else 0.0
     score = PESO_DIRECCION * score_dir + PESO_MOMENTUM * score_mom
-    score += _zona(frames.get(tf_operar))      # zona S/R del tiempo operado
+    # ZONA S/R del tiempo operado, PERO solo pesa en RANGO: en tendencia fuerte
+    # (momentum alto) estar pegado al borde es CONTINUACIÓN, no rechazo — así que la
+    # zona se apaga cuando el movimiento manda. Evita penalizar comprar/vender a
+    # favor de una tendencia clara.
+    score += _zona(frames.get(tf_operar)) * (1 - min(1.0, abs(score_mom)))
     score = max(-1.0, min(1.0, score))
 
     direccion = CALL if score > 0 else (PUT if score < 0 else HOLD)
@@ -137,7 +159,7 @@ def calcular_danza(frames, sistema, tf_operar):
     trig_num = trig_den = 0.0
     for tf in TIEMPOS_ENTRADA:
         if tf in frames:
-            w = _peso_eff(sistema, tf)
+            w = _peso_eff(sistema, tf, tf_operar)
             trig_den += w
             if dir_por_tf.get(tf) == direccion and direccion in (CALL, PUT):
                 trig_num += fuerza_por_tf.get(tf, 0.0) * w

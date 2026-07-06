@@ -73,6 +73,20 @@ def _giro_baja(n=260, caida=40):
                          "high": c + 0.1, "low": c - 0.1, "close": c})
 
 
+def test_proximidad_no_diluye_el_tiempo_operado():
+    # M1 y cortos SUBEN claro; 15m/30m planos o en contra. Operando M1, la subida
+    # del tiempo operado y vecinos debe MANDAR (no diluirla los altos en rango).
+    frames = {tf: _df(subiendo=True) for tf in (5, 10, 15, 30, 60, 120, 180)}
+    frames[300] = _plano()
+    frames[900] = _df(subiendo=False)          # 15m en contra (rango/baja)
+    frames[1800] = _plano()
+    r = calcular_danza(frames, otc_system, 60)  # operamos M1
+    assert r["direccion_1h"] == "CALL", r
+    assert r["veredicto"] == "OPERAR", r
+    print(f"OK M1 sube claro -> OPERAR CALL pese a 15m en contra "
+          f"(score {r['score']})")
+
+
 def test_giro_brusco_momentum_manda():
     frames = {tf: _giro_baja() for tf in TFS}
     r = calcular_danza(frames, otc_system, 300)
@@ -87,5 +101,6 @@ if __name__ == "__main__":
     test_tendencia_bajista_opera_put()
     test_mercado_plano_no_opera()
     test_tendencia_corta_fuerte_cuenta()
+    test_proximidad_no_diluye_el_tiempo_operado()
     test_giro_brusco_momentum_manda()
     print("\nTODOS OK — fórmula de la danza")
