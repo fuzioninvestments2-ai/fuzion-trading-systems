@@ -535,7 +535,8 @@ def run(profile_name="OTC"):
                 hora_est = (datetime.now(timezone.utc).hour - 5) % 24
             try:
                 res_sis = service.veredicto_sistema(code, sistema, payout=payout,
-                                                    hora_est=hora_est)
+                                                    hora_est=hora_est,
+                                                    tf_operar=period)
                 _fusionar_sistema(result, res_sis)
                 # PANEL = TU sistema: 12 temporalidades exactas con el consenso de
                 # los 10 indicadores (no el motor viejo, que metía tiempos ajenos

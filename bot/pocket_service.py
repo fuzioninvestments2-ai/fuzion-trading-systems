@@ -987,18 +987,26 @@ class PocketService:
         return panel
 
     def veredicto_sistema(self, asset_code, sistema, payout=None, hora_est=None,
-                          spread=None):
+                          spread=None, tf_operar=60):
         """
-        Veredicto del SISTEMA EXACTO del trader (10 indicadores votan por tiempo,
-        alineación ponderada 7/12, ley EMA200-1H, filtros). Lee las 12 temporalidades
-        FRESCAS y devuelve el dict de veredicto_final (direccion_1h, veredicto,
-        alineados, total_tf, peso_favor, dir_por_tf, filtros, motivo). Sin red.
-        Se usa para FUSIONAR: la tarjeta rica se decide con este veredicto.
+        Veredicto del SISTEMA del trader con la FÓRMULA DE LA DANZA: cada tiempo con
+        su regla + fuerza, score ponderado (una tendencia corta y fuerte también
+        manda), zona S/R y gatillo en corto. Luego se aplican los FILTROS (pago,
+        sesión, noticias). Devuelve el dict compatible con la tarjeta. Sin red.
         """
-        from bot.filtros import veredicto_final
+        from bot.formula import calcular_danza
+        from bot.filtros import evaluar_filtros
         frames = self._frames_para_sistema(asset_code, sistema)
-        return veredicto_final(frames, sistema, payout=payout,
-                               hora_est=hora_est, spread=spread)
+        res = calcular_danza(frames, sistema, tf_operar)
+        # FILTROS encima (solo si la danza dio OPERAR): un filtro puede bloquear.
+        filt = evaluar_filtros(sistema, payout=payout, hora_est=hora_est,
+                               spread=spread)
+        res["filtros"] = filt
+        if res["veredicto"] == "OPERAR" and not filt["pasa"]:
+            res["veredicto"] = "NO OPERAR"
+            res["motivo"] = "Danza a favor, pero un filtro bloquea: " + \
+                            "; ".join(filt["fallos"])
+        return res
 
     async def analyze_sistema(self, asset_code, tf_seconds, sistema, titulo,
                               asset_display):
