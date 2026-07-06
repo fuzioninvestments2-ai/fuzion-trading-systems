@@ -54,13 +54,14 @@ def evaluar_filtros(sistema, payout=None, hay_noticia=False, hora_est=None,
     """
     fallos, avisos = [], []
 
-    # PAYOUT (ambos). <75 bloquea; 85+ (peligroso) también se evita.
+    # PAYOUT (ambos). SOLO bloquea por debajo de 75% (valor esperado malo). El
+    # 85-92% es "inestable" pero el trader OPERA ahí a diario: se AVISA, no bloquea.
     if payout is not None:
         clase = sistema.clasificar_payout(payout)
         if clase == "no_operar":
             fallos.append(f"payout {payout:.0f}% por debajo de 75%")
-        elif clase == "peligroso":
-            fallos.append(f"payout {payout:.0f}% en zona peligrosa (>85%, evitar)")
+        elif clase == "aceptable":
+            avisos.append(f"payout {payout:.0f}% (zona inestable >85%, pero operable)")
 
     # Filtros SOLO del mercado real.
     if _es_real(sistema):

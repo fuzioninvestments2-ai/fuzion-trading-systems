@@ -44,9 +44,10 @@ def test_clasificar_payout():
     assert s.clasificar_payout(70) == "no_operar"
     assert s.clasificar_payout(75) == "bueno"
     assert s.clasificar_payout(85) == "bueno"
-    assert s.clasificar_payout(88) == "peligroso"
+    assert s.clasificar_payout(88) == "aceptable"     # 85+ operable con aviso (trader opera a 92%)
+    assert s.clasificar_payout(92) == "aceptable"
     assert s.clasificar_payout(None) == "no_operar"
-    print("OK payout: <75 no operar, 75-85 bueno, >85 peligroso")
+    print("OK payout: <75 no operar, 75-85 bueno, 85+ aceptable (opera a 92%)")
 
 
 def test_filtros_y_ciclo():

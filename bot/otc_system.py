@@ -74,22 +74,25 @@ ALINEACION_MINIMA = 7
 CICLO_MERCADO = ["compresión", "acumulación", "saturación", "reversión"]
 
 # --- FILTRO DE PAGO (payout, %) ---
-# 75% mínimo. 75-85% bueno. 85-92% peligroso (el broker gana más). <75% NO operar.
+# 75% mínimo (por debajo NO se opera). 75-85% zona óptima. 85%+ es "inestable"
+# (el broker gana más) PERO el trader OPERA a 92% igual: por eso NO bloquea, solo
+# AVISA. El único bloqueo por pago es < 75%.
 PAYOUT_MINIMO = 75
 PAYOUT_BUENO = (75, 85)
-PAYOUT_PELIGROSO = (85, 92)
 
 
 def clasificar_payout(payout):
     """
-    Devuelve 'no_operar' | 'bueno' | 'peligroso' según el %.
-    <75 no se opera; 75-85 es la zona buena; >85 es peligrosa (inestable).
+    Devuelve 'no_operar' | 'bueno' | 'aceptable' según el %.
+      <75  -> 'no_operar' (bloquea: valor esperado malo).
+      75-85 -> 'bueno' (zona óptima).
+      85+  -> 'aceptable' (inestable, pero el trader opera a 92%: solo se AVISA).
     """
     if payout is None or payout < PAYOUT_MINIMO:
         return "no_operar"
     if payout <= PAYOUT_BUENO[1]:            # 75-85
         return "bueno"
-    return "peligroso"                        # 85 en adelante
+    return "aceptable"                        # 85 en adelante: operable, con aviso
 
 
 # --- FILTRO DE NOTICIAS (minutos) ---

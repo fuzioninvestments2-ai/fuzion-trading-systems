@@ -30,7 +30,7 @@ from bot.otc_system import (
     TIMEFRAMES_OTC as TIMEFRAMES_REAL,
     PESOS_ALINEACION,
     CICLO_MERCADO,
-    PAYOUT_MINIMO, PAYOUT_BUENO, PAYOUT_PELIGROSO,
+    PAYOUT_MINIMO, PAYOUT_BUENO,
     REGLA_DIRECCION_ABSOLUTA,
     clasificar_payout, indicador, peso_alineacion,
 )

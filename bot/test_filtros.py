@@ -22,10 +22,13 @@ def _df(subiendo=True, n=260):
 
 
 def test_payout_bloquea_ambos():
-    assert evaluar_filtros(otc_system, payout=70)["pasa"] is False   # <75
-    assert evaluar_filtros(otc_system, payout=80)["pasa"] is True    # 75-85
-    assert evaluar_filtros(otc_system, payout=88)["pasa"] is False   # peligroso
-    print("OK payout: 70 bloquea, 80 pasa, 88 (peligroso) bloquea")
+    assert evaluar_filtros(otc_system, payout=70)["pasa"] is False   # <75 bloquea
+    assert evaluar_filtros(otc_system, payout=80)["pasa"] is True    # 75-85 óptimo
+    # 88% NO bloquea (el trader opera a 92%): pasa, pero deja un AVISO.
+    r88 = evaluar_filtros(otc_system, payout=88)
+    assert r88["pasa"] is True and r88["avisos"], r88
+    assert evaluar_filtros(otc_system, payout=92)["pasa"] is True    # opera a 92%
+    print("OK payout: <75 bloquea; 80 pasa; 88/92 pasan con aviso (opera a 92%)")
 
 
 def test_noticias_solo_real():
