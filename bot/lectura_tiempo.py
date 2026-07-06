@@ -31,6 +31,26 @@ _NOMBRE = {"ema8": "EMA8", "ema20": "EMA20", "ema50": "EMA50", "ema200": "EMA200
            "stochastic": "Stoch", "bollinger": "Bollinger", "donchian": "Donchian",
            "rsi": "RSI", "macd": "MACD", "soporte_resistencia": "S/R"}
 
+MOM_VELAS = 5                # velas recientes para medir el movimiento
+UMBRAL_MOM = 0.30           # movimiento mínimo (normalizado) para marcar dirección
+
+
+def momentum(df, k=MOM_VELAS):
+    """
+    Movimiento REAL reciente, normalizado por la volatilidad típica: cuántos
+    'movimientos normales' recorrió el precio en las últimas k velas, con signo.
+    +1 subida fuerte y limpia; −1 bajada fuerte; ~0 lateral. Capta el movimiento de
+    AHORA que las EMAs (con retraso) no ven.
+    """
+    if df is None or len(df) < k + 2:
+        return 0.0
+    close = df["close"]
+    tipico = float(close.diff().abs().tail(20).mean())
+    if tipico <= 0:
+        return 0.0
+    mov = float(close.iloc[-1]) - float(close.iloc[-1 - k])
+    return max(-1.0, min(1.0, mov / (k * tipico)))
+
 
 def leer_tiempo(df, tf, sistema):
     """
@@ -42,6 +62,13 @@ def leer_tiempo(df, tf, sistema):
     - fuerza: fracción de los 10 indicadores que acompañan esa dirección.
     """
     d = direccion_timeframe(df, tf)
+    # El MOVIMIENTO real forma parte de la lectura del tiempo (así lo ve el trader):
+    # si la regla (EMAs, con retraso) NO marca dirección pero el precio se mueve
+    # claro, manda el movimiento. Así un 5m que sube no sale "neutral" solo porque
+    # las EMAs aún no se apilaron.
+    mom = momentum(df)
+    if d == HOLD and abs(mom) >= UMBRAL_MOM:
+        d = CALL if mom > 0 else PUT
     votos = votar_sistema(df, sistema)
     total = len(votos) or 1
     if d in (CALL, PUT):

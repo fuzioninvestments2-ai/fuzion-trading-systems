@@ -686,8 +686,10 @@ class PocketService:
                 frames[tf] = cb.to_dataframe(include_forming=True)
                 continue
             # 3) Tiempos largos sin guardar: agregar desde M1 (solo sesión actual en
-            #    OTC); si tampoco, ticks.
-            agg = self._aggregate_m1(asset_code, tf, recortar_sesion=is_otc)
+            #    OTC), INCLUYENDO la vela en formación para que el gráfico y la
+            #    lectura lleguen hasta AHORA (antes iban 1 vela atrás -> "defasado").
+            agg = self._aggregate_m1(asset_code, tf, incluir_formacion=True,
+                                     recortar_sesion=is_otc)
             if agg is None or len(agg) < 6:
                 cb = CandleBuilder(tf)
                 for t, p in suaves:

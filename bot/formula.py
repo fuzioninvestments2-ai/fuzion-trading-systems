@@ -22,7 +22,7 @@ SRP: solo calcula la entrada. Sin red. Testeable con asserts.
 
 import math
 
-from bot.lectura_tiempo import leer_tiempo
+from bot.lectura_tiempo import leer_tiempo, momentum
 from bot.scoring_strategy import CALL, PUT, HOLD
 
 # Tiempos CORTOS donde el trader hace la ENTRADA (5s..1m). Uno de ellos debe
@@ -44,25 +44,8 @@ ZONA_MAX = 0.10              # nudge máximo por soporte/resistencia
 # brusco marcan la dirección vieja). Suman ~1.
 PESO_DIRECCION = 0.5
 PESO_MOMENTUM = 0.5
-MOM_VELAS = 5                # velas recientes para medir el momentum
-
-
-def _momentum(df, k=MOM_VELAS):
-    """
-    Movimiento REAL reciente, normalizado por la volatilidad típica: cuántos
-    'movimientos normales' recorrió el precio en las últimas k velas, con signo.
-    +1 = subida fuerte y limpia; −1 = bajada fuerte; ~0 = lateral/choppy. Capta el
-    giro de AHORA que las EMAs (con retraso) no ven.
-    """
-    if df is None or len(df) < k + 2:
-        return 0.0
-    close = df["close"]
-    tipico = float(close.diff().abs().tail(20).mean())
-    if tipico <= 0:
-        return 0.0
-    mov = float(close.iloc[-1]) - float(close.iloc[-1 - k])
-    m = mov / (k * tipico)
-    return max(-1.0, min(1.0, m))
+# `momentum` se comparte con bot/lectura_tiempo (una sola definición del movimiento
+# real reciente): ahí se usa para la dirección de cada tiempo y aquí para el score.
 
 
 # Cuánto se estrecha el foco alrededor del tiempo operado (en escala log-tiempo).
@@ -125,7 +108,7 @@ def calcular_danza(frames, sistema, tf_operar):
         num += _signo(lec["dir"]) * lec["fuerza"] * w
         den_part += lec["fuerza"] * w          # peso EN MOVIMIENTO (participación)
         den_all += w
-        mom_num += _momentum(df) * w           # movimiento real reciente, pesado
+        mom_num += momentum(df) * w            # movimiento real reciente, pesado
     total_tf = len(frames)
     # PARTICIPACIÓN: cuánto del peso posible está de verdad moviéndose. Si casi nada
     # se mueve (mercado plano/indeciso) no hay danza -> no se opera.
