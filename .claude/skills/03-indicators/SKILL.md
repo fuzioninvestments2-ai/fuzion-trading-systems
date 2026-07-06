@@ -1,32 +1,30 @@
 ---
 name: 03-indicators
-description: Los 10 indicadores del sistema del trader (EMA 8/20/50/200, Estocástico 5,3,3, Bollinger 14/1.02, Donchian 20, RSI 5, MACD 12,26,9, Soportes/Resistencias) y su voto. Úsalo cuando el usuario diga "los indicadores", "RSI/MACD/EMA", "cómo vota cada indicador", "pesos de indicadores", o al tocar scoring_strategy / indicators / system_wiring.
+description: Quantum Trading Core · Indicadores (RSI, MACD, Bollinger, Estocástico, momentum, volumen) con dirección (+1/-1) y fuerza (0-1) por cada uno de los 9 timeframes. Úsalo cuando el usuario diga "los indicadores", "RSI/MACD/EMA", "fuerza de indicadores", "cómo vota cada indicador".
 ---
 
-# 03 · Indicadores (los 10 del sistema)
+# 03 · Indicadores (dirección + fuerza por timeframe)
 
-Los indicadores exactos del trader y cómo cada uno "vota" CALL/PUT/HOLD. Comentar el
-PORQUÉ (la razón/matemática), no el qué.
+Cada indicador da DIRECCIÓN (+1/-1) y FUERZA (0-1) según su distancia a la zona
+neutral. Es la materia prima del motor cuántico (Skill 04).
 
-## Los 10 (parámetros del trader — NO cambiar sin pedir)
-EMA 8/20/50/200 · Estocástico 5,3,3 · Bollinger 14, 1.02 · Donchian 20 · RSI 5 ·
-MACD 12,26,9 · Soportes/Resistencias. Definidos en `bot/otc_system.INDICADORES_OTC`.
+## `calculate_indicators(df)` → `bot/cuantico.calculate_timeframe_signal(df)`
+Combina, por timeframe, y devuelve `(direccion ±1, fuerza 0-1, porcentaje 0-100)`:
+- **Momentum** = (cierre − apertura) / (máx − mín).
+- **RSI**: dir por 50; fuerza = |RSI−50|/50.
+- **Bollinger**: posición = (precio − media)/(sup − inf).
+- **MACD**: dir por línea vs señal; fuerza = |macd − señal|/|macd|.
+- **Estocástico**: dir por K vs D; fuerza = |K − D|/100.
+- **Volumen relativo**: vol/promedio(20) → atenúa la fuerza si es bajo.
 
-## Archivos
-- `bot/otc_system.py` / `bot/real_system.py` — config del trader (indicadores,
-  pesos por tiempo, alineación mínima, ciclo de mercado, payout).
-- `bot/system_wiring.py` — `votar_sistema(df, sistema)`: cada indicador vota con
-  sus params exactos (`_ema_vote`, `_rsi_vote`, `_stochastic_vote`, `_macd_vote`,
-  `_bollinger_vote`, `_donchian_vote`, `_soporte_resistencia_vote`).
-- `bot/scoring_strategy.py` — 8 indicadores que votan con pesos por régimen; carga
-  `core/indicators.py` (dependencia REAL, no borrar esa carpeta).
+`porcentaje` = 50 neutral; >50 alcista; <50 bajista.
 
-## Régimen (ajusta pesos)
-ADX decide: en tendencia mandan MACD/medias; en rango mandan rebotes techo/piso
-(RSI/Bollinger). `weights_for()`, `regime()`.
+## Config del trader (paramétrica)
+`bot/otc_system.py` (EMA 8/20/50/200, RSI 5, Estocástico 5,3,3, Bollinger, Donchian,
+MACD 12,26,9, S/R), `bot/system_wiring.py` (voto por indicador), `bot/scoring_strategy.py`.
 
 ## Probar
 ```bash
-python -m bot.test_system_wiring
-python -m bot.test_scoring_strategy
+python bot/test_cuantico.py
+python bot/test_system_wiring.py
 ```

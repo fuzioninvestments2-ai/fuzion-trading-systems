@@ -1,13 +1,14 @@
 ---
 name: 06-order-execution
-description: El LÍMITE de ejecución de órdenes — Fuzion es de SEÑALES y NO coloca órdenes; cómo la señal pasa a tu ejecución MANUAL. Úsalo cuando el usuario diga "que el bot opere solo", "ejecutar la orden", "colocar la operación", "auto-trading", "que entre por mí", o al pensar en conectar la señal a una orden real.
+description: Quantum Trading Core · LÍMITE de ejecución — el bot es de SEÑALES y NO coloca órdenes; cuando el Motor Cuántico (Skill 04) da OPERAR, la ejecución la hace el HUMANO. Úsalo cuando el usuario diga "que opere solo", "ejecutar la orden", "auto-trading", "que entre por mí".
 ---
 
-# 06 · Ejecución de órdenes (LÍMITE del proyecto)
+# 06 · Ejecución de órdenes (LÍMITE del sistema)
 
-Fuzion es un bot de **SEÑALES educativas, en demo, solo lectura**. Por regla
-**no negociable** del proyecto (`CLAUDE.md`), **NO coloca órdenes** — ni en demo
-ni en real. Este skill documenta ese límite y el traspaso a ejecución MANUAL.
+Quantum Trading Core es un sistema de **SEÑALES, en demo, solo lectura**. Por regla
+**no negociable** del proyecto (`CLAUDE.md`), **NO coloca órdenes**. Este skill
+documenta el límite: cuando el Motor Cuántico (Skill 04) retorna `operate: True`, la
+orden la coloca el HUMANO a mano (`execute_quantum_order` NO se implementa en vivo).
 
 ## Por qué el bot NO ejecuta (aunque se pueda)
 - El propósito es **disciplina y protección**, no automatizar dinero. Ningún

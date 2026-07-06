@@ -1,13 +1,14 @@
 ---
 name: 17-dca-strategy
-description: DCA / promediar — Fuzion NO lo hace (implica colocar órdenes reales, prohibido); por qué es peligroso en binarias y qué usa el bot en su lugar. Úsalo cuando el usuario diga "DCA", "promediar", "doblar tras perder", "martingala", "recuperar la pérdida", o al pensar en estrategias de promedio de costo.
+description: Quantum Trading Core · LÍMITE — sin DCA/martingala (implica colocar órdenes reales, prohibido). Cada lectura pasa por el filtro 90% del Motor (Skill 04), no se promedia a ciegas. Úsalo cuando el usuario diga "DCA", "promediar", "martingala", "doblar tras perder".
 ---
 
-# 17 · DCA / promediar (LÍMITE del proyecto)
+# 17 · DCA / promediar (LÍMITE del sistema)
 
-DCA (dollar-cost averaging) y su primo la **martingala** = añadir órdenes tras una
-pérdida para "promediar/recuperar". Fuzion **no lo hace**: implica colocar órdenes
-reales (ver `06`), prohibido por regla no negociable.
+DCA y su primo la **martingala** = añadir órdenes tras una pérdida. Quantum Trading
+Core **no lo hace**: implica colocar órdenes reales (ver `06`), prohibido por regla
+no negociable. Si algún día se explorara, CADA entrada tendría que pasar el filtro
+del 90% del Motor Cuántico (Skill 04) — nunca promediar a ciegas.
 
 ## Por qué NO — y por qué es peligroso en binarias
 - Cada binaria es todo-o-nada y expira sola: no hay "precio promedio" que mejore;

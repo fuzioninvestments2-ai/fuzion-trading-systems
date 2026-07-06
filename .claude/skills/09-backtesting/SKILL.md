@@ -1,30 +1,28 @@
 ---
 name: 09-backtesting
-description: Backtest y aprendizaje sobre historial (medir aciertos, calibrar pesos de indicadores) SIN colocar órdenes reales. Úsalo cuando el usuario diga "backtest", "medir aciertos", "calibrar", "aprender de las señales", "win-rate real", o al tocar backtester / calibration / weight_learning / signal_log.
+description: Quantum Trading Core · Simula las últimas 100 señales aplicando el filtro cuántico 90%: cuántas pasan y el win-rate estimado. Úsalo cuando el usuario diga "backtest", "medir aciertos", "win-rate real", "cuántas se filtran".
 ---
 
-# 09 · Backtesting y aprendizaje
+# 09 · Backtesting cuántico
 
-Mide qué tan bien acierta el sistema sobre historial y ajusta pesos. Honesto: el
-90–95% es la experiencia MANUAL del trader, NO una promesa del bot; el bot mide su
-acierto REAL con su registro. Ningún sistema gana siempre.
+Mide cuántas señales pasarían el filtro del 90% y el win-rate resultante. Honesto:
+el bot MIDE su acierto real con su registro; ningún sistema gana siempre.
 
-## Archivos
-- `bot/backtester.py` — recorre velas y evalúa si la señal habría acertado
-  (CALL gana si la vela de expiración cierra por encima; PUT al revés).
-- `bot/calibration.py` — recalcula parámetros con ~30 velas nuevas (continuo).
-- `bot/weight_learning.py` — aprende multiplicadores por indicador según resultados.
-- `bot/signal_log.py` — registra CADA señal del sistema (dirección, tiempo, activo)
-  para medir su win-rate real y calibrar. Anti-duplicado por horizonte.
+## `backtest_quantum_system()` → `bot/cuantico.backtest_quantum_system(db, 100)`
+Toma las últimas 100 señales RESUELTAS (win/loss), aplica el gate de convergencia
+≥90% (reconstruida de la metadata o de los votos) y reporta:
+- win-rate ANTES, cuántas FILTRADAS, cuántas PASAN, win-rate ESTIMADO, motivos.
+- Demo: 100 señales 39% → filtra 58 → las 42 que pasan quedan en 67%.
 
-## Regla
-El aprendizaje mide el SISTEMA correcto: `analyze_sistema` guarda SU señal
-(registrar=False en el motor viejo), así no se mezcla con el motor clásico.
+También `bot/simular_reglas.py <history.db> 100` (reporte por consola con motivos).
+
+## Aprendizaje sobre historial
+- `bot/backtester.py` (evalúa aciertos), `bot/calibration.py` (umbral por ~30 velas),
+  `bot/weight_learning.py` (multiplicadores por indicador), `bot/signal_log.py`
+  (registra cada señal con su probabilidad/convergencia en la columna `meta`).
 
 ## Probar
 ```bash
-python -m bot.test_backtester
-python -m bot.test_signal_log
+python bot/test_backtester.py
+python bot/simular_reglas.py fuzion-otc/history.db 100
 ```
-Resultado esperado: el backtest devuelve aciertos/fallos sobre datos sembrados; el
-log guarda y no duplica.

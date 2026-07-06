@@ -1,57 +1,54 @@
-# Skills de Fuzion — clasificados por proyecto
+# Quantum Trading Core — Skills
 
-Son **DOS proyectos separados** que comparten el mismo motor (código en `bot/`):
-**(OTC)** y **(Mercado Real / FX)**. Los skills se organizan así:
+Sistema unificado de SEÑALES (solo lectura, no coloca órdenes) para Pocket Option.
+Núcleo: **9 timeframes (5s-15m)** → indicadores (dir+fuerza) → **Probabilidad
+Cuántica** + **Convergencia Logarítmica** → OPERAR solo con **90%+**. Código en
+`bot/` (motor: `bot/cuantico.py`).
 
-## 1) Skills POR PROYECTO (lo específico de cada bot)
-Aquí vas cuando algo es de UN proyecto (carpeta, cuenta, token, arranque, datos):
+Son **DOS proyectos** que comparten el mismo motor: **(OTC)** y **(Mercado Real/FX)**.
 
+## Flujo del sistema (cómo conectan los skills)
+```
+02 Datos (9 TF) ─┐
+03 Indicadores ──┼─► 05 Riesgo (filtros) ─► 04 MOTOR CUÁNTICO ─► 08 Alerta/Tarjeta
+13 Salud TF ─────┘        (bloquea malas)     (prob + convergencia)   10 Panel
+01 S/R (no pegado) ───────────────────────────────┘                   11 DB · 09 Backtest
+06/07/17/18 = LÍMITE: la EJECUCIÓN la hace el humano (no coloca órdenes)
+```
+
+## Skills POR PROYECTO
 | Skill | Proyecto | Carpeta | Bot Telegram |
 |-------|----------|---------|--------------|
-| `proyecto-otc` | **OTC** | `fuzion-otc` | @fuzion_ale_bot (Fuzion POption OTC) |
-| `proyecto-real` | **Mercado Real** | `fuzion-real` | @FuZionFzbot (Fuzion POption FX) |
+| `proyecto-otc` | **OTC** | `fuzion-otc` | @fuzion_ale_bot |
+| `proyecto-real` | **Mercado Real** | `fuzion-real` | @FuZionFzbot |
 
-Cada uno lista SU cuenta (SSID), token, base de datos, datasets, lanzador y reglas.
-No se cruzan.
+## Los 20 skills (Quantum Trading Core)
+| # | Skill | Rol en el sistema |
+|---|-------|-------------------|
+| 01 | api-connection | Conexión + Soportes/Resistencias (no operar a <15 pips) |
+| 02 | market-data | Datos OHLC de los 9 timeframes (5s-15m) |
+| 03 | indicators | Dirección (+1/-1) y fuerza (0-1) por indicador y tiempo |
+| 04 | strategy-logic | **MOTOR CENTRAL**: probabilidad cuántica + convergencia |
+| 05 | risk-management | Filtros estrictos antes del motor (win-rate/alineación/S-R) |
+| 06 | order-execution | **LÍMITE**: la ejecución la hace el humano |
+| 07 | position-manager | **LÍMITE**: no administra posiciones (registro) |
+| 08 | notifications | Telegram + tarjeta (prob, convergencia, hora de entrada) |
+| 09 | backtesting | Backtest cuántico de las últimas 100 señales |
+| 10 | monitoring-logging | Panel ASCII de los 9 tiempos + logs |
+| 11 | database-persistence | sqlite: velas + señales con prob/convergencia |
+| 12 | multi-pair-manager | Escaneo de pares con filtro cuántico |
+| 13 | multi-timeframe | Los 9 tiempos: pesos 15/50/35% + salud de datos |
+| 14 | parameter-optimization | Ajuste de pesos/umbrales por rendimiento |
+| 15 | sentiment-analysis | Noticias/sentimiento (filtro, solo Real) |
+| 16 | security-encryption | Secretos (.env, SSID, keys) — nunca en git |
+| 17 | dca-strategy | **LÍMITE**: sin DCA/martingala |
+| 18 | grid-trading | **LÍMITE**: sin grid |
+| 19 | web-dashboard | Dashboard web de solo lectura (diseño/pendiente) |
+| 20 | deployment | .bat, robot 24/7, health check, Docker/VPS (diseño) |
 
-## 2) Skills COMPARTIDOS (el motor, sirve a los dos)
-El código es el mismo para ambos; estos skills describen cada módulo. Aquí vas
-cuando el problema es técnico (no de un proyecto en concreto):
-
-| # | Skill | Qué cubre |
-|---|-------|-----------|
-| 01 | `01-api-connection` | Conexión a Pocket Option (websocket, reconexión, SSID) |
-| 02 | `02-market-data` | Velas, historial, descarga, datasets, nube, auditoría |
-| 03 | `03-indicators` | Los 10 indicadores del trader y su voto |
-| 04 | `04-strategy-logic` | Alineación 12 tiempos, ley EMA200-1H, veredicto |
-| 05 | `05-protection` | Filtros y barreras (payout, noticias, sesiones, anti-basura) |
-| 08 | `08-notifications` | Telegram + tarjeta (chart, panel, hora de entrada) |
-| 09 | `09-backtesting` | Backtest y aprendizaje (medir aciertos, calibrar) |
-| 10 | `10-monitoring-logging` | Progreso, auditoría, logs, robot 24/7 |
-| 11 | `11-database-persistence` | Sqlite: velas, señales, aprendizaje (por bot) |
-| 12 | `12-multi-pair-manager` | Muchos pares: watchlist, foco, menú alfabético |
-| 13 | `13-multi-timeframe` | Sinfonía de dirección: 12 tiempos, pesos, 7/12 |
-| 06 | `06-order-execution` | LÍMITE: el bot NO coloca órdenes; traspaso a ejecución MANUAL |
-| 07 | `07-position-manager` | LÍMITE: no abre/administra posiciones; se administra el registro |
-| 14 | `14-parameter-optimization` | Calibrar/optimizar pesos por resultado real |
-| 15 | `15-sentiment-analysis` | Sentimiento/noticias — SOLO Real (en OTC no aplica) |
-| 16 | `16-security-encryption` | Secretos (SSID, tokens) — nunca en git |
-| 17 | `17-dca-strategy` | LÍMITE: sin DCA/martingala (peligroso en binarias) |
-| 18 | `18-grid-trading` | LÍMITE: sin grid (no aplica a binarias) |
-| 19 | `19-web-dashboard` | Panel web de SOLO LECTURA, uno por proyecto |
-| 20 | `20-deployment` | Lanzadores .bat, robot 24/7, subida a la nube |
-
-Los 20 skills de la lista están creados. Los numerados existen todos (01-20).
-
-## Cómo usarlo (centralizado)
-- ¿Ajuste/corrección del **OTC**? → `proyecto-otc` (y de ahí al módulo compartido).
-- ¿Ajuste/corrección del **Real**? → `proyecto-real`.
-- ¿Cambio técnico de un módulo (indicadores, conexión, tarjeta)? → el skill `0X`.
-
-## Skills de LÍMITE (Fuzion es de SEÑALES, no coloca órdenes)
-`06`, `07`, `17`, `18` existen con su nombre exacto, pero **documentan el límite**:
-el proyecto es de solo lectura (regla `no negociable` en `CLAUDE.md`), así que esos
-skills explican dónde para el bot, por qué, y cómo la señal pasa a **ejecución
-MANUAL** del humano. No contienen lógica que coloque órdenes reales. Si se quiere
-ejecución automática, es un cambio de propósito que exige confirmación explícita y,
-aun así, solo demo + confirmación manual por operación (nunca fuego automático).
+## Skills de LÍMITE (no negociable)
+`06`, `07`, `17`, `18` conservan su nombre pero **documentan el límite**: el sistema
+es de SEÑALES (regla `no negociable` de `CLAUDE.md`). Cuando el Motor (04) da
+`operate: True`, la orden la coloca el HUMANO. No contienen lógica que ejecute
+órdenes, DCA ni grid. Cambiar eso exigiría confirmación explícita y, aun así, solo
+demo + confirmación manual por operación.

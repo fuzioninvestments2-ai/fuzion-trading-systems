@@ -1,18 +1,19 @@
 ---
 name: 07-position-manager
-description: Gestión de posiciones — Fuzion NO abre ni administra posiciones (no coloca órdenes); la "gestión" sana es disciplina + registro de la señal. Úsalo cuando el usuario diga "gestionar la posición", "cerrar la operación", "trailing/stop", "cuántas abiertas", "administrar trades", o al pensar en manejar operaciones abiertas.
+description: Quantum Trading Core · LÍMITE — el bot NO abre ni administra posiciones (no coloca órdenes); lo que "administra" es el registro de señales. Úsalo cuando el usuario diga "gestionar la posición", "cerrar la operación", "trailing/stop", "administrar trades".
 ---
 
-# 07 · Gestión de posiciones (LÍMITE del proyecto)
+# 07 · Gestión de posiciones (LÍMITE del sistema)
 
-Fuzion **no abre ni administra posiciones**: no coloca órdenes (ver `06`). En
-opciones binarias, además, la "posición" es una expiración fija (no hay stop ni
-trailing). Este skill documenta qué SÍ hace el bot en lugar de gestionar trades.
+Quantum Trading Core **no abre ni administra posiciones**: no coloca órdenes (ver
+`06`). En binarias, además, la "posición" es una expiración fija (no hay stop ni
+trailing). Este skill documenta qué SÍ hace el sistema en lugar de gestionar trades.
 
 ## Qué reemplaza a la "gestión de posiciones"
-- **Disciplina de entrada** (`04-strategy-logic`): la señal solo sale con
-  alineación mínima (7/12 OTC, 8/12 real) y a favor de la EMA200-1H. Filtra las
-  malas ANTES, que es donde se gana en binarias.
+- **Disciplina de entrada** (Motor Cuántico, Skill 04): la señal solo sale con
+  convergencia y probabilidad ≥90%. Filtra las malas ANTES (donde se gana en binarias).
+  Si el motor cambia de dirección antes de la expiración, es una NUEVA lectura — el
+  humano decide.
 - **Protección** (`05-protection`): bloquea payout malo, noticias, sesión mala,
   manipulación, vacío, datos basura.
 - **Registro** (`11-database-persistence`, `signal_log`): cada señal se guarda y

@@ -1,14 +1,14 @@
 ---
 name: 19-web-dashboard
-description: Panel web de SOLO LECTURA para ver señales, progreso de datos y aciertos — uno por proyecto (OTC y Real por separado). Úsalo cuando el usuario diga "panel web", "dashboard", "ver en el navegador", "tablero de señales", "monitor visual", o al pensar en una interfaz aparte de Telegram.
+description: Quantum Trading Core · Dashboard web de SOLO LECTURA (Streamlit/Flask) con el Panel Cuántico en vivo, equity curve y estado — uno por proyecto. PENDIENTE (diseño). Úsalo cuando el usuario diga "panel web", "dashboard", "Streamlit", "ver en el navegador".
 ---
 
-# 19 · Panel web (dashboard de SOLO LECTURA)
+# 19 · Panel web (dashboard de SOLO LECTURA) — DISEÑO
 
-Interfaz visual en el navegador para VER lo que el bot ya produce: última señal,
-progreso de descarga, historial de aciertos. **Solo lectura**: muestra, no opera
-(no coloca órdenes, coherente con `06`). Hoy la interfaz viva es Telegram; el
-panel sería un extra que lee las mismas fuentes.
+Interfaz visual en el navegador para VER lo que el sistema produce: el Panel
+Cuántico (Skill 10), equity curve (señales resueltas del Skill 11), estado del bot
+y botones Pausa/Stop. **Solo lectura del análisis**: no coloca órdenes (Skill 06).
+Estado: PENDIENTE — hoy la interfaz viva es Telegram (Skill 08); esto es el diseño.
 
 ## De dónde saca los datos (sin red, sin tocar la cuenta)
 - **Progreso** (`bot/progreso.py`): cuántas velas por tiempo/activo van acumuladas.

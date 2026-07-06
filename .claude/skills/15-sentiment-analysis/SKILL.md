@@ -1,13 +1,15 @@
 ---
 name: 15-sentiment-analysis
-description: Sentimiento / contexto de noticias — SOLO para el Mercado Real (FX); en OTC no aplica (precio sintético, sin noticias reales). Úsalo cuando el usuario diga "sentimiento", "noticias del mercado", "calendario económico", "riesgo de noticia", "por qué no operar con noticia", o al tocar news_filter.
+description: Quantum Trading Core · Sentimiento/noticias como FILTRO defensivo — SOLO Mercado Real (en OTC no aplica: precio sintético). Úsalo cuando el usuario diga "sentimiento", "noticias", "calendario económico", "Fear & Greed", "riesgo de noticia".
 ---
 
 # 15 · Análisis de sentimiento / noticias
 
-Sentimiento = leer el CONTEXTO del mercado (noticias, calendario económico) para
-NO operar contra un evento fuerte. En Fuzion es **defensivo** (protege), no una
-señal de entrada.
+Sentimiento = leer el CONTEXTO (noticias, calendario, Fear & Greed) para NO operar
+contra un evento fuerte. En Quantum Trading Core es **defensivo** (filtro), no una
+señal de entrada. Nota: "reducir el tamaño de la posición" NO aplica aquí — el
+sistema es de SEÑALES (no coloca ni dimensiona órdenes; ver Skill 06). Si el
+sentimiento es extremo y contra la señal, el motor simplemente NO opera.
 
 ## Regla honesta: OTC vs Real (dos proyectos distintos)
 - **Mercado Real (FX)** → SÍ aplica. Los precios reales reaccionan a noticias

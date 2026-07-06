@@ -1,13 +1,14 @@
 ---
 name: 18-grid-trading
-description: Grid / rejilla de órdenes — Fuzion NO lo hace (son órdenes automáticas, prohibido); por qué no encaja en binarias y la alternativa sana. Úsalo cuando el usuario diga "grid", "rejilla", "órdenes escalonadas", "poner niveles de compra/venta automáticos", o al pensar en trading de rejilla.
+description: Quantum Trading Core · LÍMITE — sin grid/rejilla de órdenes (son órdenes automáticas, prohibido) y no encaja en binarias. Úsalo cuando el usuario diga "grid", "rejilla", "órdenes escalonadas", "niveles automáticos".
 ---
 
-# 18 · Grid trading (LÍMITE del proyecto)
+# 18 · Grid trading (LÍMITE del sistema)
 
-Grid = sembrar muchas órdenes automáticas a distintos precios (una rejilla).
-Fuzion **no lo hace**: son órdenes reales automáticas (ver `06`), prohibido por
-regla no negociable.
+Grid = sembrar muchas órdenes automáticas a distintos precios. Quantum Trading Core
+**no lo hace**: son órdenes reales automáticas (ver `06`), prohibido por regla no
+negociable. Los Soportes/Resistencias (Skill 01) se usan para NO operar pegado a
+ellos, no para sembrar una rejilla.
 
 ## Por qué NO — y por qué no encaja en binarias
 - El grid es de mercados con posición continua y precio que oscila (spot/futuros).

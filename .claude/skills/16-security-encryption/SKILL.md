@@ -1,6 +1,6 @@
 ---
 name: 16-security-encryption
-description: Seguridad de secretos (SSID, tokens de Telegram) — nunca en git, manejo del .env y ssid. Úsalo cuando el usuario diga "seguridad", "el token quedó expuesto", "proteger el SSID", "revocar token", "secretos", o al tocar .env / ssid / .gitignore.
+description: Quantum Trading Core · Seguridad de secretos (SSID, tokens, API keys) con .env y dotenv — nunca en git. Úsalo cuando el usuario diga "seguridad", "token expuesto", "proteger SSID", "revocar token", "API keys", "secretos".
 ---
 
 # 16 · Seguridad de secretos

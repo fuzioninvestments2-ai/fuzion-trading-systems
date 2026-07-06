@@ -1,12 +1,18 @@
 ---
 name: 08-notifications
-description: El bot de Telegram y la TARJETA de señal (menús, botones, chart, hora de entrada, lectura completa). Úsalo cuando el usuario diga "la tarjeta", "hora de entrada", "no sale el gráfico", "el menú de Telegram", "arrancar el bot", "cambiar el token", o al tocar telegram_signals / signal_menu.
+description: Quantum Trading Core · Telegram + TARJETA de señal (panel de tiempos, probabilidad, convergencia, hora de entrada) y aviso cuando se detecta 90%+ o se rechaza. Úsalo cuando el usuario diga "la tarjeta", "hora de entrada", "no sale el gráfico", "el menú", "el token".
 ---
 
-# 08 · Notificaciones (Telegram + tarjeta de señal)
+# 08 · Notificaciones (Telegram + tarjeta cuántica)
 
-La interfaz: menús con botones y la tarjeta que ve el trader. Punto de entrada:
+Interfaz: menús con botones y la tarjeta que ve el trader. Entrada:
 `bot.telegram_signals.run(perfil)`.
+
+## `send_quantum_alert(signal_data)` → la tarjeta
+`bot/telegram_signals._format_deep` arma la tarjeta con: panel de tiempos (dir/%),
+**probabilidad** y **convergencia** del Motor Cuántico, **⏱️ hora de entrada**,
+pago, y el MOTIVO si fue rechazada (ej. "convergencia 84% < 90%", "pegado a S/R").
+Panel resumido en consola: `bot/cuantico.display_timeframe_panel(frames)`.
 
 ## Arquitectura de DOS bots (no se cruzan)
 | Pieza | OTC | REAL |
@@ -16,24 +22,11 @@ La interfaz: menús con botones y la tarjeta que ve el trader. Punto de entrada:
 | Cuenta/SSID | `ssid_otc.txt` | `ssid_real.txt` |
 | Lanzador | `INICIAR_OTC.bat` | `INICIAR_REAL.bat` |
 
-Cada `.bat` usa `%~dp0` (su propia carpeta) y hace `git pull` al arrancar. El token
-va en el `.env` de CADA carpeta. Ojo: el token distingue mayúsculas (una letra mal
-= "Invalid token"); copiarlo EXACTO, no re-escribir.
-
-## Archivos
-- `bot/telegram_signals.py` — `run()`, `_do_analysis` (rutea la tarjeta según
-  `profile.usa_sistema`), `_format_deep` (tarjeta completa), envío de foto+pie.
-- `bot/signal_menu.py` — menús mercado → activo → tiempo.
-- `bot/chart.py` — dibuja el gráfico de velas (matplotlib).
-
-## Tarjeta COMPLETA (lo que quiere el trader)
-Chart + ALERTA (manipulación) + Modo/ADX + alineación fractal + Lectura + panel de
-tiempos con % + **⏱️ Entra a las HH:MM:SS** (hora de entrada) + Pago + Mejores
-indicadores + Historial. La produce el motor clásico (`analyze` + `_format_deep`);
-para OTC se activa con `OTC_PROFILE.usa_sistema=False` en `bot/profiles.py`.
+Cada `.bat` usa `%~dp0` y hace `git pull` al arrancar. Token EXACTO (distingue
+mayúsculas). `bot/signal_menu.py` (menús), `bot/chart.py` (gráfico).
 
 ## Probar / arrancar
 ```bash
-python -m bot.test_signal_menu
-.\INICIAR_OTC.bat        # Windows (doble clic también)
+python bot/test_signal_menu.py
+.\INICIAR_OTC.bat
 ```

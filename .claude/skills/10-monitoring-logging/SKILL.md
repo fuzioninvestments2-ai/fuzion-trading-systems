@@ -1,11 +1,16 @@
 ---
 name: 10-monitoring-logging
-description: Monitoreo, progreso de datos, registro y auditoría del bot. Úsalo cuando el usuario diga "cuánto falta de descarga", "ver el progreso", "revisar los logs", "auditar los datos", "está trabajando el robot", o al tocar progreso / signal_log / auditoria / logs.
+description: Quantum Trading Core · PANEL visual ASCII de los 9 tiempos (probabilidad + convergencia en vivo), logs y auditoría. Úsalo cuando el usuario diga "el panel", "ver el progreso", "revisar los logs", "auditar los datos", "está trabajando el robot".
 ---
 
-# 10 · Monitoreo y registro
+# 10 · Monitoreo y panel visual
 
-Ver qué está haciendo el bot y si los datos están sanos, sin apagar nada.
+Ver el análisis cuántico y si los datos están sanos, sin apagar nada.
+
+## `display_timeframe_panel(qr, conv)` → `bot/cuantico.display_timeframe_panel(frames)`
+Tabla ASCII con los 9 timeframes (5s-15m), su dirección/%, la **probabilidad
+cuántica** y la **convergencia logarítmica**, y el veredicto (OPERAR/NO OPERAR con
+motivo). Mismo panel que va resumido en la tarjeta de Telegram (Skill 08).
 
 ## Archivos y usos
 - `bot/progreso.py` — cuánto historial hay acumulado por activo/tiempo:

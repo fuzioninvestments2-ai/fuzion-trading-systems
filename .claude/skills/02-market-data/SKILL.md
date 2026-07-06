@@ -1,37 +1,29 @@
 ---
 name: 02-market-data
-description: Velas OHLC, historial y datasets del bot (descarga, acumulación 24/7, export/import a la nube). Úsalo cuando el usuario diga "descargar historial", "no hay datos / pocos datos", "acumular velas", "subir a la nube", "faltan velas", o al tocar candles / history / collector / download_history / datasets.
+description: Quantum Trading Core · Datos OHLC de los 9 timeframes del sistema (5s,10s,15s,1m,2m,3m,5m,10m,15m) + historial/datasets. Úsalo cuando el usuario diga "faltan datos", "pocos datos", "descargar historial", "acumular velas", "subir a la nube".
 ---
 
-# 02 · Datos de mercado (velas, historial, datasets)
+# 02 · Datos de mercado (9 timeframes cuánticos)
 
-De dónde salen las velas que lee el bot. Solo datos reales (de Pocket Option o
-fuentes legítimas); nada inventado ni emulado.
+Provee las velas OHLC de los **9 tiempos** del motor cuántico (5s → 15m). Solo datos
+reales (de Pocket Option o fuentes legítimas); nada inventado.
+
+## `fetch_quantum_data(symbol)` — en el código real
+- `bot/pocket_service._frames_para_sistema(asset, sistema)` arma los frames FRESCOS
+  de todos los tiempos y el motor los filtra a los 9 (`bot/cuantico.TIMEFRAMES_9`):
+  ticks para sub-minuto, M1 y agregación (con vela en formación) para los mayores.
+- **`data_complete`**: si un tiempo no tiene ≥20 velas, no entra → el motor lo trata
+  como "faltan tiempos" (Skill 13) y NO OPERA.
 
 ## Archivos
-- `bot/candles.py` — `CandleBuilder`: arma velas OHLC desde ticks.
-- `bot/history.py` — `HistoryRepository` (sqlite). Clave: `M1` para 60s, `tf<seg>`
-  el resto (tf5, tf300...). BD PROPIA por bot (history.db / history_real.db).
-- `bot/collector.py` — colector integrado: acumula historial en los ratos libres.
-- `bot/download_history.py` — descarga profunda 5s→1d hacia atrás (por lotes,
-  reanudable). `bot/accumulator.py` — acumula hacia adelante 24/7 + sube.
-- `bot/dataset_export.py` — export/import datasets (`.csv.gz`). DETERMINISTA
-  (gzip mtime=0): dato igual → bytes iguales → git no re-sube todo.
-- `bot/cloud_push.py` — sube con REINTENTO pull+push (no se pierde la ronda).
-- `bot/auditoria.py` — auditor de completitud (5 pasadas): existe, no basura, sin
-  huecos, sin duplicados, completo. Lista lo PENDIENTE de re-escanear.
-
-## Uso (bot de Telegram APAGADO — una conexión por SSID)
-```bash
-python -m bot.download_history --all --batch 5   # descarga profunda todos los OTC
-python -m bot.dataset_export export OTC          # BD -> datasets/otc
-python -m bot.auditoria                          # ¿qué falta?
-```
-Al arrancar en otra máquina/carpeta: `python -m bot.dataset_export import OTC`
-(carga datasets → history.db, para que la tarjeta tenga datos al instante).
+- `bot/candles.py` (CandleBuilder), `bot/history.py` (sqlite: `M1`/`tf<seg>`),
+  `bot/collector.py` (acumulación 24/7), `bot/download_history.py` (descarga profunda),
+  `bot/dataset_export.py` (datasets .csv.gz deterministas), `bot/cloud_push.py`.
+- Frescura OTC: `_recortar_sesion_otc` corta en el reset de PO (por precio o hueco de
+  tiempo) → solo la sesión de AHORA (no se mezcla con velas viejas).
 
 ## Probar
 ```bash
-python -m bot.test_dataset_export
-python -m bot.test_auditoria
+python bot/test_candles.py
+python bot/test_sesion_otc.py
 ```
