@@ -14,6 +14,26 @@ alineación, calla (disciplina y protección, no promesas).
 - **Ley EMA200-1H**: solo se opera en la dirección del EMA200 de 1H (dirección absoluta).
 - Ciclo: Compresión → Acumulación → Saturación → Reversión.
 
+## Motor de decisión (fórmula) + PUERTA DE CALIDAD
+- `bot/lectura_tiempo.py` — `leer_tiempo(df, tf, sistema)`: dirección de cada tiempo
+  con SU regla + el MOVIMIENTO real reciente (`momentum`), y fuerza = indicadores
+  que confirman.
+- `bot/formula.py` — `calcular_danza(frames, sistema, tf_operar)`: score continuo
+  (dirección×fuerza×peso por PROXIMIDAD al tiempo operado + momentum + zona S/R).
+  **La ENTRADA la manda el tiempo operado**; el conjunto solo confirma. Si el
+  conjunto va en contra del tiempo operado → NO OPERAR.
+- `bot/validacion_senal.py` — **`validate_signal(datos)`**: PUERTA FINAL estricta.
+  Aunque la fórmula diga OPERAR, si CUALQUIER regla falla → NO OPERAR con el motivo
+  EXACTO. Reglas (no negociables):
+  1. Timeframes completos (no operar si faltan tiempos).
+  2. Alineación ≥ **80%**.
+  3. Win-rate histórico ≥ **60%** (una vez hay ≥10 señales medidas).
+  4. Umbral aprendido ≥ **25%**.
+  5. Indicadores (RSI/Estocástico/MACD/Bandas) ≥ **60%**; nada en 45-55% (ruido).
+  6. Precio a ≥ **15 pips** de soporte/resistencia.
+  7. Confirmación por tiempo: cortos/medios ≥ 60%, largos (1h+) ≥ 70%.
+  Umbrales calibrables al inicio de `validacion_senal.py`.
+
 ## Archivos
 - `bot/alignment.py` — `direccion_timeframe(df, tf)` (regla por tiempo) y
   `evaluar_alineacion(frames, sistema)` (aplica la ley 1H + mínimo).
@@ -26,8 +46,16 @@ alineación, calla (disciplina y protección, no promesas).
 
 ## Probar
 ```bash
-python -m bot.test_alignment
-python -m bot.test_filtros
-python -m bot.test_sistema_signal
+python bot/test_alignment.py
+python bot/test_formula.py
+python bot/test_validacion_senal.py
 ```
-Resultado esperado: en tendencia clara → OPERAR; sin 7/12 o con filtro malo → NO OPERAR.
+Resultado esperado: tendencia clara + reglas de calidad OK → OPERAR; conflicto con
+el tiempo operado, alineación <80%, indicador en ruido, pegado a S/R → NO OPERAR
+con el motivo exacto.
+
+## Simular las reglas sobre señales reales
+```bash
+python bot/simular_reglas.py fuzion-otc/history.db 100
+```
+Reporta: win-rate antes, cuántas se filtran y el win-rate estimado de las que pasan.

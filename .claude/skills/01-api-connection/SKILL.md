@@ -28,6 +28,13 @@ python -m bot.test_scan_backwards
 Resultado esperado: "TODOS OK" — el reinicio interno cierra/invalida el socket y el
 escaneo sobrevive a caídas (1005) sin abortar.
 
+## Acción del precio y S/R (desde el feed en vivo)
+El feed da los precios con los que se detectan **soportes/resistencias recientes**
+(últimos ~50 highs/lows, `bot/levels.detect_levels`). Con eso, la puerta de calidad
+(`validate_signal`, skills 04/05) aplica la **REGLA DE ORO**: si el precio está a
+**< 15 pips** de un soporte/resistencia ("pegado al techo/piso") → **NO OPERAR**,
+esperar a que se aleje o rompa la zona. Pip = 0.0001 (0.01 en pares JPY).
+
 ## Reglas
 - NUNCA evasión de IP/VPN ni anti-detección (riesgo de baneo de cuenta).
 - Ante caída: esperar reconexión y reintentar; jamás abortar la descarga larga.

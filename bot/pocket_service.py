@@ -1049,8 +1049,8 @@ class PocketService:
             self._registrar_senal_sistema(asset_code, tf_seconds, res)
         return texto, res, seg, n
 
-    def _registrar_senal_sistema(self, asset_code, tf_seconds, res):
-        """Guarda la señal del sistema (dirección de la EMA200 de 1H) en el tracker."""
+    def _registrar_senal_sistema(self, asset_code, tf_seconds, res, meta=None):
+        """Guarda la señal del sistema en el tracker (con su metadata de calidad)."""
         from datetime import datetime, timezone
         lado = res.get("direccion_1h")
         if lado not in (_SIG_CALL, _SIG_PUT):
@@ -1068,7 +1068,7 @@ class PocketService:
             return
         try:
             self.tracker.record(asset_code, self._tf_label(tf_seconds), lado,
-                                entry_price, now_ms, tf_seconds)
+                                entry_price, now_ms, tf_seconds, meta=meta)
             self._last_signal[asset_code] = now_ms
         except Exception:
             self.log.exception("No se pudo registrar la señal del sistema")

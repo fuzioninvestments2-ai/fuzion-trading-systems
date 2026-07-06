@@ -49,19 +49,22 @@ class SignalTracker:
                     expiry_ts  INTEGER,     -- ms (cuándo se decide el resultado)
                     result     TEXT,        -- win / loss / tie / NULL (pendiente)
                     resolved   INTEGER DEFAULT 0,
-                    votes      TEXT          -- JSON {indicador: CALL/PUT/HOLD}
+                    votes      TEXT,         -- JSON {indicador: CALL/PUT/HOLD}
+                    meta       TEXT          -- JSON con los datos de validate_signal
                 )""")
             self.conn.execute("""CREATE INDEX IF NOT EXISTS idx_signals_pend
                                  ON signals (resolved, expiry_ts)""")
-            # Migración: si la tabla es antigua y no tiene 'votes', la añadimos.
+            # Migración: añade columnas nuevas si la tabla es antigua.
             cols = [r[1] for r in self.conn.execute(
                 "PRAGMA table_info(signals)").fetchall()]
             if "votes" not in cols:
                 self.conn.execute("ALTER TABLE signals ADD COLUMN votes TEXT")
+            if "meta" not in cols:
+                self.conn.execute("ALTER TABLE signals ADD COLUMN meta TEXT")
             self.conn.commit()
 
     def record(self, asset, timeframe, direction, entry_price, entry_ts_ms,
-               expiry_seconds, votes=None):
+               expiry_seconds, votes=None, meta=None):
         """
         Guarda una señal PENDIENTE. `direction` debe ser CALL o PUT (las señales
         HOLD/NO OPERAR no se registran: no hay predicción que medir).
@@ -74,14 +77,15 @@ class SignalTracker:
             return None
         expiry_ts = int(entry_ts_ms) + int(expiry_seconds) * 1000
         votes_json = json.dumps(votes) if votes else None
+        meta_json = json.dumps(meta) if meta else None
         with self._lock:
             cur = self.conn.execute(
                 """INSERT INTO signals
                    (asset, timeframe, direction, entry_price, entry_ts, expiry_ts,
-                    votes)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    votes, meta)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (asset, timeframe, direction, float(entry_price),
-                 int(entry_ts_ms), expiry_ts, votes_json))
+                 int(entry_ts_ms), expiry_ts, votes_json, meta_json))
             self.conn.commit()
             return cur.lastrowid
 

@@ -27,6 +27,17 @@ lo que aporta disciplina.
 ## Regla de oro
 Un "fallo" BLOQUEA la señal; un "aviso" solo informa. Ante duda de datos → callar.
 
+## PUERTA DE CALIDAD estricta (`bot/validacion_senal.py`)
+Además de los filtros de arriba, `validate_signal()` rechaza señales mediocres
+(el foco es NO PERDER):
+- **Indicadores en RUIDO**: si RSI/Estocástico/MACD/Bandas caen en **45-55%** →
+  NO OPERAR (indecisión). Y cada uno debe estar ≥ **60%**.
+- **Pegado a S/R**: si el precio está a **< 15 pips** de un soporte/resistencia
+  reciente (últimos 50 highs/lows) → NO OPERAR (puede rebotar/rechazar).
+- **Win-rate < 60%**, **alineación < 80%**, **umbral < 25%**, o **faltan tiempos**
+  → NO OPERAR, con el motivo exacto.
+Simular sobre señales reales: `python bot/simular_reglas.py fuzion-otc/history.db`.
+
 ## Probar
 ```bash
 python -m bot.test_filtros

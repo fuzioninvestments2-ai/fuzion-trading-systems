@@ -33,9 +33,21 @@ Los micro-tiempos (5s-30s) dan la ENTRADA fina; los medios (1m-5m) la dirección
 los macro (15m-1H) el SESGO/tendencia mayor. La entrada perfecta = mayoría alineada
 con 1H + payout≥75 + sin noticias + sesión activa.
 
+## GESTIÓN ESTRICTA DE TIMEFRAMES (`validate_signal`)
+- **Prohibido operar si faltan tiempos por datos**: los 12 configurados deben tener
+  velas. Si falta alguno → NO OPERAR (no se decide a ciegas).
+- **Confirmación mínima por grupo** (fuerza = indicadores que confirman ese tiempo):
+  - Cortos (1m-5m) ≥ **60%**.
+  - Medios (10m-30m) ≥ **60%**.
+  - Largos (1h+) ≥ **70%**.
+  Si un tiempo no llega a su mínimo → NO OPERAR (ese tiempo no confirma).
+- La **entrada la manda el tiempo operado** y sus vecinos (peso por proximidad en
+  `bot/formula.py`); los tiempos lejanos son contexto.
+
 ## Archivos
-`bot/alignment.py` (regla por tf + `evaluar_alineacion`), `bot/deep_analysis.py`
-(análisis profundo/fractal), `bot/otc_system.py` (pesos, tiempos, ciclo).
+`bot/alignment.py` (regla por tf + `evaluar_alineacion`), `bot/lectura_tiempo.py`
+(lectura por tiempo + movimiento), `bot/formula.py` (fórmula de entrada),
+`bot/validacion_senal.py` (reglas estrictas), `bot/otc_system.py` (pesos/tiempos/ciclo).
 
 ## Probar
 ```bash

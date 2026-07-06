@@ -137,6 +137,45 @@ def _tf_label(seconds):
     return "1D"
 
 
+def _validar_calidad(result, res_sis, sistema, code):
+    """
+    Reúne TODO lo necesario y aplica validate_signal (puerta final de calidad).
+    Devuelve (veredicto_dict, datos). El motivo del veredicto es EXACTO.
+    """
+    from bot.validacion_senal import validate_signal
+    total_cfg = len(getattr(sistema, "TIMEFRAMES", []) or []) or 12
+    alineados = res_sis.get("alineados", 0)
+    ali_pct = (alineados / total_cfg * 100) if total_cfg else 0.0
+    # Fuerza (hit-rate aprendido) de los indicadores clave -> RSI/Estocástico/MACD/Bandas.
+    _MAP = {"rsi": "RSI", "stochastic": "Estocástico", "macd": "MACD",
+            "bollinger": "Bandas"}
+    inds = {_MAP[n]: hr for n, hr in (result.get("pesos_top") or []) if n in _MAP}
+    # Proximidad a soporte/resistencia (en pips del activo).
+    pip = 0.01 if "JPY" in code.upper() else 0.0001
+    cerca, dist_pips, precio = False, 999.0, None
+    ch = result.get("chart")
+    if ch is not None and len(ch):
+        precio = float(ch["close"].iloc[-1])
+    lv = result.get("levels") or {}
+    niveles = list(lv.get("resistencias") or []) + list(lv.get("soportes") or [])
+    if precio is not None and niveles:
+        dist_pips = min(abs(precio - float(x)) for x in niveles) / pip
+        cerca = dist_pips < 15.0
+    datos = {
+        "direccion": res_sis.get("direccion_1h"),
+        "alineacion_pct": ali_pct,
+        "tiempos_presentes": res_sis.get("total_tf", 0),
+        "tiempos_config": total_cfg,
+        "win_rate_hist": result.get("win_rate_real"),
+        "senales_medidas": result.get("senales_reales", 0),
+        "umbral_aprendido": result.get("umbral"),
+        "indicadores": inds,
+        "cerca_sr": cerca, "dist_sr_pips": dist_pips,
+        "conf_por_tiempo": res_sis.get("fuerza_por_tf", {}),
+    }
+    return validate_signal(datos), datos
+
+
 def _fusionar_sistema(result, res):
     """
     FUSIÓN: mete el veredicto del SISTEMA del trader (10 indicadores, 7/12,
@@ -544,18 +583,33 @@ def run(profile_name="OTC"):
                                                     hora_est=hora_est,
                                                     tf_operar=period)
                 _fusionar_sistema(result, res_sis)
-                # PANEL = TU sistema: 12 temporalidades exactas con el consenso de
-                # los 10 indicadores (no el motor viejo, que metía tiempos ajenos
-                # como 4m y direcciones sueltas -> "desorden"). Cada tiempo muestra
-                # su dirección de consenso y su fuerza (indicadores que coinciden).
+                # PANEL = TU sistema: 12 temporalidades exactas, cada una con su
+                # dirección (regla + movimiento) y su fuerza.
                 try:
                     panel = service.panel_sistema(code, sistema)
                     if panel:
                         result["por_tiempo"] = panel
                 except Exception:
                     logging.exception("No se pudo armar el panel del sistema")
+                # PUERTA FINAL DE CALIDAD (reglas estrictas, no negociables): aunque
+                # la fórmula diga OPERAR, si una regla de calidad falla -> NO OPERAR
+                # con el motivo EXACTO, y NO se registra la señal (aprendizaje limpio).
+                val, datos_val = {"operar": True}, None
                 if res_sis.get("veredicto") == "OPERAR":
-                    service._registrar_senal_sistema(code, period, res_sis)
+                    try:
+                        val, datos_val = _validar_calidad(result, res_sis,
+                                                          sistema, code)
+                    except Exception:
+                        logging.exception("validate_signal falló")
+                        val = {"operar": True}
+                    if not val.get("operar"):
+                        result["veredicto"] = "🚫 NO OPERAR"
+                        result["sistema_motivo"] = val.get("motivo", "")
+                if res_sis.get("veredicto") == "OPERAR" and val.get("operar"):
+                    # Guarda la metadata de calidad con la señal -> simulación futura
+                    # completa sobre datos reales.
+                    service._registrar_senal_sistema(code, period, res_sis,
+                                                     meta=datos_val)
                 # COHERENCIA GRÁFICO=LECTURA: dibuja las MISMAS velas que el sistema
                 # calificó para el tiempo operado (si están frescas). Así el gráfico
                 # no discrepa de la dirección/panel (el bug "el gráfico no coincide"
