@@ -124,11 +124,17 @@ def evaluar_alineacion(frames, sistema):
     # solo indicador). Cada temporalidad lee los 10 (EMA 8/20/50/200, Stoch, Boll,
     # Donchian, RSI, MACD, S/R) y gana la mayoría. Así el panel es estable y alinea
     # cuando el mercado tiene tendencia (antes, un indicador suelto daba ruido).
-    from bot.system_wiring import votar_sistema, direccion as _consenso
+    # Cada tiempo se lee con SU regla (tabla del trader): la dirección la marca el
+    # indicador principal de ese tiempo y los 10 indicadores confirman (fuerza).
+    # Así "los indicadores se alinean con los tiempos" (no un consenso plano igual
+    # para todos). leer_tiempo vive en bot/lectura_tiempo (módulo del baile).
+    from bot.lectura_tiempo import leer_tiempo
     dir_por_tf = {}
+    fuerza_por_tf = {}
     for tf, df in frames.items():
-        d, _nc, _np = _consenso(votar_sistema(df, sistema))
-        dir_por_tf[tf] = d
+        lec = leer_tiempo(df, tf, sistema)
+        dir_por_tf[tf] = lec["dir"]
+        fuerza_por_tf[tf] = lec["fuerza"]
 
     # Dirección MAYOR (ancla de tendencia): idealmente 1H (EMA200). Pero en OTC el
     # precio es SINTÉTICO y Pocket Option lo REINICIA, así que un 1h VIEJO no aplica
@@ -149,6 +155,7 @@ def evaluar_alineacion(frames, sistema):
 
     if dir_1h == HOLD:
         return {"direccion_1h": HOLD, "dir_por_tf": dir_por_tf,
+                "fuerza_por_tf": fuerza_por_tf,
                 "alineados": 0, "total_tf": total_tf, "peso_favor": 0.0,
                 "veredicto": "NO OPERAR",
                 "motivo": "El tiempo mayor disponible no marca dirección clara."}
@@ -171,5 +178,6 @@ def evaluar_alineacion(frames, sistema):
                   f"(hacen falta {minimo}).")
 
     return {"direccion_1h": dir_1h, "dir_por_tf": dir_por_tf,
+            "fuerza_por_tf": fuerza_por_tf,
             "alineados": alineados, "total_tf": total_tf,
             "peso_favor": peso_favor, "veredicto": veredicto, "motivo": motivo}

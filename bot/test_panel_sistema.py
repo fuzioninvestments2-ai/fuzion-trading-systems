@@ -46,25 +46,32 @@ def test_panel_usa_tiempos_del_trader_sin_ajenos():
     assert 240 not in panel and 7200 not in panel, "no debe mostrar 4m/2h"
     assert set(panel).issubset(set(otc_system.TIMEFRAMES))
     assert len(panel) >= 11, panel          # 5s..1H con datos
-    # Tendencia alcista -> todos CALL (consenso limpio, no desorden).
-    dirs = {p["dir"] for p in panel.values()}
-    assert dirs == {"CALL"}, f"panel no alineado: {panel}"
-    # 'conf' es fracción de indicadores que coinciden (0-1).
+    # Los tiempos de TENDENCIA (altos, basados en EMAs) van CALL en una subida. Los
+    # cortos con osciladores (15s Stoch / 10s RSI) PUEDEN ir en contra por sobre-
+    # compra — eso es CORRECTO (el trader: "1m puede ser venta y 3m compra").
+    for tf in (300, 900, 1800, 3600):       # 5m, 15m, 30m, 1H = tendencia
+        if tf in panel:
+            assert panel[tf]["dir"] == "CALL", (tf, panel[tf])
+    # 'conf' es fracción de indicadores que confirman (0-1); hay detalle de texto.
     assert all(0.0 <= p["conf"] <= 1.0 for p in panel.values())
-    print(f"OK panel = sistema del trader ({len(panel)} tiempos, todos CALL, "
-          f"sin 4m/2h)")
+    assert all("detalle" in p for p in panel.values())
+    print(f"OK panel por tiempo ({len(panel)} tiempos): tendencia CALL, cortos "
+          f"pueden diferir, sin 4m/2h")
 
 
-def test_bajista_da_put_en_todo_el_panel():
+def test_bajista_tendencia_da_put():
     svc = _Svc()
     svc._frames_recientes["EURUSD_otc"] = {
         tf: _df(subiendo=False) for tf in otc_system.TIMEFRAMES}
     panel = svc.panel_sistema("EURUSD_otc", otc_system)
-    assert {p["dir"] for p in panel.values()} == {"PUT"}, panel
-    print("OK tendencia bajista -> panel todo PUT (consenso coherente)")
+    # Los tiempos de tendencia van PUT en una bajada (los cortos pueden diferir).
+    for tf in (300, 900, 1800, 3600):
+        if tf in panel:
+            assert panel[tf]["dir"] == "PUT", (tf, panel[tf])
+    print("OK tendencia bajista -> los tiempos altos van PUT")
 
 
 if __name__ == "__main__":
     test_panel_usa_tiempos_del_trader_sin_ajenos()
-    test_bajista_da_put_en_todo_el_panel()
+    test_bajista_tendencia_da_put()
     print("\nTODOS OK — el panel de la tarjeta es el sistema del trader")

@@ -970,17 +970,20 @@ class PocketService:
         SU sistema exacto (no el motor viejo, que tenía tiempos ajenos como 4m).
         Devuelve {tf: {"dir": "CALL"|"PUT"|"NEUTRAL", "conf": 0-1, "velas": n}}.
         """
-        from bot.system_wiring import votar_sistema, direccion
+        from bot.lectura_tiempo import leer_tiempo, detalle_texto
         frames = self._frames_para_sistema(asset_code, sistema)
         panel = {}
         for tf in sistema.TIMEFRAMES:
             df = frames.get(tf)
             if df is None or len(df) < 6:
                 continue
-            votos = votar_sistema(df, sistema)
-            d, n_call, n_put = direccion(votos)
+            # Lectura POR TIEMPO: la dirección la marca la regla de ESE tiempo y la
+            # 'conf' es cuántos de los 10 indicadores lo confirman (el baile).
+            lec = leer_tiempo(df, tf, sistema)
+            d = lec["dir"]
             panel[tf] = {"dir": "NEUTRAL" if d == "HOLD" else d,
-                         "conf": max(n_call, n_put) / 10.0, "velas": len(df)}
+                         "conf": lec["fuerza"], "velas": len(df),
+                         "detalle": detalle_texto(lec)}
         return panel
 
     def veredicto_sistema(self, asset_code, sistema, payout=None, hora_est=None,
