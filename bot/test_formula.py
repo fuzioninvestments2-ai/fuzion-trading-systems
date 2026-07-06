@@ -87,6 +87,18 @@ def test_proximidad_no_diluye_el_tiempo_operado():
           f"(score {r['score']})")
 
 
+def test_conflicto_tiempo_operado_vs_conjunto_no_opera():
+    # BUG REAL: operando M1 con el 1m BAJANDO, pero los tiempos de arriba subiendo.
+    # El veredicto NO debe decir CALL (contra el tiempo donde entras): es conflicto
+    # -> NO OPERAR (esperar a que coincidan). Antes daba OPERAR CALL con 1m en DOWN.
+    frames = {tf: _df(subiendo=True) for tf in (120, 180, 300, 600, 900)}
+    frames.update({tf: _df(subiendo=False) for tf in (5, 10, 15, 30, 60)})  # cortos bajando
+    r = calcular_danza(frames, otc_system, 60)   # operamos M1 (bajando)
+    assert r["direccion_1h"] == "PUT", r          # la entrada la manda el M1 (DOWN)
+    assert r["veredicto"] == "NO OPERAR", r        # conjunto no confirma -> espera
+    print(f"OK conflicto M1(DOWN) vs conjunto(UP) -> NO OPERAR (score {r['score']})")
+
+
 def test_giro_brusco_momentum_manda():
     frames = {tf: _giro_baja() for tf in TFS}
     r = calcular_danza(frames, otc_system, 300)
@@ -102,5 +114,6 @@ if __name__ == "__main__":
     test_mercado_plano_no_opera()
     test_tendencia_corta_fuerte_cuenta()
     test_proximidad_no_diluye_el_tiempo_operado()
+    test_conflicto_tiempo_operado_vs_conjunto_no_opera()
     test_giro_brusco_momentum_manda()
     print("\nTODOS OK — fórmula de la danza")

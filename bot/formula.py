@@ -72,6 +72,26 @@ def _signo(d):
     return 1 if d == CALL else (-1 if d == PUT else 0)
 
 
+def _consenso_cortos(dir_por_tf, fuerza_por_tf, sistema, tf_operar):
+    """
+    Dirección de ENTRADA por consenso de los tiempos cortos (5s-1m), pesados por
+    proximidad y fuerza. Se usa cuando el tiempo operado no marca dirección propia.
+    """
+    c = p = 0.0
+    for tf in TIEMPOS_ENTRADA:
+        d = dir_por_tf.get(tf)
+        w = _peso_eff(sistema, tf, tf_operar) * fuerza_por_tf.get(tf, 0.0)
+        if d == CALL:
+            c += w
+        elif d == PUT:
+            p += w
+    if c > p and c > 0:
+        return CALL
+    if p > c and p > 0:
+        return PUT
+    return HOLD
+
+
 def _zona(df, periodo=20):
     """
     Posición del precio en el canal (0 = piso/soporte, 1 = techo/resistencia).
@@ -135,10 +155,19 @@ def calcular_danza(frames, sistema, tf_operar):
     score += _zona(frames.get(tf_operar)) * (1 - min(1.0, abs(score_mom)))
     score = max(-1.0, min(1.0, score))
 
-    direccion = CALL if score > 0 else (PUT if score < 0 else HOLD)
+    dir_conjunto = CALL if score > 0 else (PUT if score < 0 else HOLD)
     fuerza = abs(score)
 
-    # GATILLO: al menos un tiempo CORTO (5s-1m) confirma la dirección con fuerza.
+    # LA ENTRADA LA MANDA EL TIEMPO OPERADO (ahí entra el trader), no los altos. Si
+    # el tiempo operado no marca, se usa el consenso de los CORTOS (5s-1m). El
+    # conjunto (score) solo CONFIRMA: si contradice al tiempo operado -> NO OPERAR
+    # (esperar, como el trader: "cambio de tendencia no opero hasta confirmación").
+    dir_entrada = dir_por_tf.get(tf_operar, HOLD)
+    if dir_entrada == HOLD:
+        dir_entrada = _consenso_cortos(dir_por_tf, fuerza_por_tf, sistema, tf_operar)
+    direccion = dir_entrada
+
+    # GATILLO: los tiempos CORTOS (5s-1m) confirman la dirección de ENTRADA.
     trig_num = trig_den = 0.0
     for tf in TIEMPOS_ENTRADA:
         if tf in frames:
@@ -155,18 +184,26 @@ def calcular_danza(frames, sistema, tf_operar):
     etq = ("1H" if tf_operar >= 3600 else
            f"{tf_operar}s" if tf_operar < 60 else f"{tf_operar // 60}m")
     lado = "CALL" if direccion == CALL else "PUT"
-    if direccion == HOLD or fuerza < UMBRAL_DANZA:
+    if direccion == HOLD:
         veredicto, motivo = "NO OPERAR", (
-            f"Fuerza insuficiente ({peso_favor}%): los tiempos y el movimiento no "
-            f"marcan una dirección clara todavía.")
+            f"El tiempo de entrada ({etq}) no marca dirección clara: espera.")
+    elif dir_conjunto != direccion:
+        # El conjunto de tiempos va en contra del tiempo operado -> conflicto.
+        veredicto, motivo = "NO OPERAR", (
+            f"El {etq} apunta {lado} pero el conjunto de tiempos no lo confirma "
+            f"(va en contra): espera a que coincidan.")
+    elif fuerza < UMBRAL_DANZA:
+        veredicto, motivo = "NO OPERAR", (
+            f"{lado} en {etq}, pero con poca fuerza ({peso_favor}%): el mercado no "
+            f"está decidido (rango). Espera un movimiento claro.")
     elif not gatillo:
         veredicto, motivo = "NO OPERAR", (
-            f"Dirección {lado} con fuerza {peso_favor}%, pero falta confirmación en "
-            f"el tiempo corto (5s-1m): espera el punto de entrada.")
+            f"{lado} con fuerza {peso_favor}%, pero falta confirmación en el tiempo "
+            f"corto (5s-1m): espera el punto de entrada.")
     else:
         veredicto, motivo = "OPERAR", (
-            f"{lado} con {peso_favor}% de fuerza (tiempos + movimiento) y "
-            f"confirmación en corto. Entrada en {etq}.")
+            f"{lado} en {etq}: el tiempo de entrada y el conjunto coinciden "
+            f"({peso_favor}% de fuerza) con confirmación en corto.")
 
     return {"direccion_1h": direccion, "veredicto": veredicto,
             "peso_favor": peso_favor, "alineados": alineados, "total_tf": total_tf,
