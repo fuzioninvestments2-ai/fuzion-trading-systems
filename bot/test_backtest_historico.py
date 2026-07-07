@@ -9,7 +9,17 @@ Valida la MECÁNICA del backtest (sin red, con datos sintéticos):
 No mide win-rate (eso depende de los datos reales); mide que la construcción de
 frames no filtre el futuro, que es lo que invalidaría cualquier backtest.
 """
+import os
+import sys
+
 import pandas as pd
+
+# Permite correr el test de las dos formas: `python bot/test_backtest_historico.py`
+# y `python -m bot.test_backtest_historico` (la suite). Sin esto, la primera falla
+# porque el paquete `bot` no está en el path.
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 
 from bot.backtest_historico import _busca, _resample_ohlc
 

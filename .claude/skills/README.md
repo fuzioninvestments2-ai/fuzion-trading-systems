@@ -33,7 +33,7 @@ Son **DOS proyectos** que comparten el mismo motor: **(OTC)** y **(Mercado Real/
 | 06 | order-execution | **LÍMITE**: la ejecución la hace el humano |
 | 07 | position-manager | **LÍMITE**: no administra posiciones (registro) |
 | 08 | notifications | Telegram + tarjeta (prob, convergencia, hora de entrada) |
-| 09 | backtesting | Backtest cuántico de las últimas 100 señales |
+| 09 | backtesting | Simulación sobre historial real (9 TF) + win-rate medido |
 | 10 | monitoring-logging | Panel ASCII de los 9 tiempos + logs |
 | 11 | database-persistence | sqlite: velas + señales con prob/convergencia |
 | 12 | multi-pair-manager | Escaneo de pares con filtro cuántico |
