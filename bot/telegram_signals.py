@@ -239,6 +239,16 @@ def _format_deep(asset_display, tf, result, seg, balance, n_ticks, compact=False
                 f"_Este activo real no opera ahora. Prueba un activo *OTC* "
                 f"(disponible 24/7)._")
 
+    # NO OPERAR (sistema): tarjeta CORTA y CLARA. Sin dirección, sin hora de entrada,
+    # sin pago — para no confundir (el usuario pedía esto: si no se opera, no se
+    # muestran datos de entrada). Solo el activo, el tiempo y el MOTIVO.
+    if result.get("_es_sistema") and "NO OPERAR" in result.get("veredicto", ""):
+        motivo = result.get("sistema_motivo") or "condiciones insuficientes"
+        return (f"📈 *{asset_display}*  ·  ⏱️ *{tf}*\n\n"
+                f"🚫 *NO OPERAR* — {motivo}\n\n"
+                f"_Esperando un setup de alta probabilidad (≥90%). "
+                f"Sin dirección ni hora hasta que alinee._")
+
     veredicto = result.get("veredicto", "")
     direccion = result.get("direccion", "")
     fuerza = result.get("fuerza", 0.0)

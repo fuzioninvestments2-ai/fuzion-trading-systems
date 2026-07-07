@@ -213,10 +213,15 @@ def validate_signal_90(frames, datos=None, payout=None, hora_utc=None):
         um = datos.get("umbral_aprendido")
         if um is not None and um < 0.25:
             return no(f"umbral aprendido {um * 100:.0f}% < 25%")
+    # Contradictorios: si menos del 70% de los 9 tiempos van en la misma dirección.
+    align_pct = q["alineados"] / TOTAL_TF * 100
+    if align_pct < 70:
+        return no(f"tiempos contradictorios: solo {q['alineados']}/{TOTAL_TF} "
+                  f"({align_pct:.0f}%) en la misma dirección (mínimo 80%)")
     # Convergencia (gate operativo) y probabilidad (más alta si el payout es bajo).
     if conv < CONV_MIN:
-        return no(f"convergencia {conv:.0f}% < {CONV_MIN:.0f}% "
-                  f"({q['alineados']}/{TOTAL_TF} tiempos, faltan alinear)")
+        return no(f"alineación {align_pct:.0f}% (mínimo 80%) · convergencia "
+                  f"{conv:.0f}% < {CONV_MIN:.0f}%")
     prob_min = PROB_MIN_PAYOUT_BAJO if (payout is not None and payout < 80) else PROB_MIN
     if prob < prob_min:
         return no(f"probabilidad {prob:.0f}% < {prob_min:.0f}%")
