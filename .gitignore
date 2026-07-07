@@ -54,3 +54,6 @@ charts_tmp*.png
 
 # Datasets exportados (historial para la nube) SI se versionan
 !datasets/
+
+# Análisis diagnóstico desechable (el backtest permanente vive en bot/)
+scratchpad/
