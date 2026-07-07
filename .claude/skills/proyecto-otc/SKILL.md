@@ -5,6 +5,15 @@ description: TODO lo específico del bot Fuzion OTC (carpeta, cuenta, token, dat
 
 # Proyecto OTC · Fuzion POption OTC
 
+> ## ⛔ PROYECTO CERRADO — Veredicto: NO_OPERABLE
+> El análisis sobre datos reales (101 activos, 517.270 velas) y la validación
+> out-of-sample (12.045 señales) demostraron que el OTC de opciones binarias tiene
+> **esperanza negativa** (−4%/operación a win-rate 50%) y **ningún** subconjunto de
+> estrategia supera el break-even (52.08% con payout 92%). El precio OTC es sintético
+> y sin memoria (autocorrelación ~0): no hay borde que capturar.
+> **Evidencia y reproducibilidad en `archive/otc/`.** El foco activo es `proyecto-real` (FX).
+> El bot OTC queda como herramienta de DISCIPLINA (filtra ruido), no de ganancia.
+
 Bot de SEÑALES para Pocket Option OTC (velas sintéticas de PO, 24/7). Demo, solo
 lectura, NO coloca órdenes. Este skill centraliza lo PROPIO del proyecto OTC; los
 módulos técnicos compartidos están en los skills `01`..`10`.
