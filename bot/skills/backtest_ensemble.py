@@ -45,8 +45,9 @@ def backtest_df(df, expiry=1, conf_min=CONF_MIN):
     res = {"is": [0, 0], "oos": [0, 0], "senales": 0}    # [wins, total] por mitad
 
     close = df["close"].to_numpy()
-    for i in range(WARMUP, n - expiry):
-        sub = df.iloc[:i + 1]
+    VENTANA = 60          # los skills solo miran ~60 velas atrás (Bollinger/autocorr);
+    for i in range(WARMUP, n - expiry):     # pasar la ventana acotada evita O(n²) y
+        sub = df.iloc[max(0, i - VENTANA):i + 1]     # mantiene el backtest usable
         md = {"df": sub, "pair": "?", "timeframe": None}
         cons = manager.get_consensus(md)
         if cons["direction"] == NEUTRAL or cons["confidence"] < conf_min:
