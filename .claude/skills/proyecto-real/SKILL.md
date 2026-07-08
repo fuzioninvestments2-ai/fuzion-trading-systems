@@ -45,15 +45,27 @@ plazo. PERO el motor cae out-of-sample (5m 60%→46%), así que aún NO es un bo
 probado — es sobreajuste hasta tener más datos. Conclusión disciplinada: hay
 estructura que investigar, falta MÁS DATO REAL para decidir.
 
-## Conseguir datos reales (este contenedor NO puede bajarlos)
-La red del entorno cloud **bloquea** Yahoo/TradingView/PO (403). Los datos se
-consiguen en TU PC y se suben al repo (`datasets/`), o se corren local:
-1. **TradingView (más rápido, lo que tienes):** en el gráfico → "Exportar datos…"
-   (cuenta de pago) → CSV. Importar: `python -m bot.tradingview_import EURUSD tf3600 ruta.csv`.
-2. **yfinance (respaldo, en tu PC):** `python -m bot.historical_loader` (funciona
-   fuera del cloud; aquí da 403 por política de red).
-3. Subir `datasets/*.csv.gz` al repo → el estudio corre sobre todos los pares/TF.
+## Flujo de datos (TradingView → estudio → backtest)
+El entorno cloud **bloquea** las descargas (403). Exporta en TU PC y usa el ingestor:
+1. En TradingView exporta cada par → guarda como `datos/raw/PAR_TIMEFRAME.csv`
+   (ej. `EURUSD_1m.csv`, `EURUSD_5m.csv`). Timeframes: 1m,2m,3m,5m,15m,30m,1h,4h.
+2. Ingerir (convierte al formato interno `datasets/PAR__CLAVE.csv.gz`):
+   ```bash
+   python -m bot.ingest_tradingview
+   ```
+3. Estudiar y backtestear (los tiempos que OPERAS: 1m,2m,3m,5m):
+   ```bash
+   python -m bot.estudio_fx --pairs all --timeframes 1m,2m,3m,5m,15m,30m,1h
+   python -m bot.skills.backtest_ensemble --pairs all --timeframes 1m,2m,3m,5m
+   ```
+Buscar: pares con winOOS > 52% (borde real). Detalle en `datos/raw/README.md`.
 > Regla: NO se inventan datos. Sin fuente real, un timeframe se marca "sin datos".
+
+## Sistema de skills inteligentes (`bot/skills/`)
+Ensemble que VOTA dirección y APRENDE de resultados reales (no de sí mismo). Solo
+señales; el humano ejecuta. Skills: reversión (autocorrelación), momentum. El
+`SkillManager` sube/baja el peso de cada skill según acierte en vivo. Backtest
+honesto out-of-sample en `bot/skills/backtest_ensemble.py`. Test: `bot/skills/test_skills.py`.
 
 ## Arrancar (mercado abierto)
 ```

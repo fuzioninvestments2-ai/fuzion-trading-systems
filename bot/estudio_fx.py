@@ -83,8 +83,26 @@ def estudiar_oos(df, expiry=1):
     return is_, oos
 
 
-def estudiar_activo(activo, patron="datasets"):
-    """Estudia todos los timeframes disponibles de un activo real (no OTC)."""
+# Etiqueta de tiempo (1m,5m,...) → segundos, para el filtro --timeframes de la CLI.
+LABEL_SEG = {"5s": 5, "10s": 10, "15s": 15, "30s": 30, "1m": 60, "2m": 120,
+             "3m": 180, "5m": 300, "10m": 600, "15m": 900, "30m": 1800,
+             "1h": 3600, "4h": 14400}
+
+
+def _segundos_de_labels(labels):
+    """Convierte 'all' o '1m,5m,15m' en un set de segundos (None = todos)."""
+    if not labels or labels.strip().lower() == "all":
+        return None
+    segs = set()
+    for l in labels.split(","):
+        s = LABEL_SEG.get(l.strip().lower())
+        if s:
+            segs.add(s)
+    return segs or None
+
+
+def estudiar_activo(activo, patron="datasets", solo_seg=None):
+    """Estudia los timeframes de un activo real (no OTC). `solo_seg`: filtro opcional."""
     rutas = sorted(glob.glob(f"{patron}/{activo}__*.csv.gz"))
     print(f"\n{'='*72}\nACTIVO REAL: {activo}   ({len(rutas)} timeframes con datos)\n{'='*72}")
     print(f"{'TF':>5} | {'velas':>6} | {'autocorr':>9} | {'%up':>5} | "
@@ -93,6 +111,8 @@ def estudiar_activo(activo, patron="datasets"):
         clave = os.path.basename(r).split("__")[1].replace(".csv.gz", "")
         seg = TF_SEG.get(clave)
         if seg is None:
+            continue
+        if solo_seg is not None and seg not in solo_seg:
             continue
         df = pd.read_csv(r).sort_values("timestamp").reset_index(drop=True)
         full = estudiar_frame(df)
@@ -120,7 +140,19 @@ def activos_reales(patron="datasets"):
 
 
 if __name__ == "__main__":
+    import argparse
+    p = argparse.ArgumentParser(description="Estudio FX por timeframe (autocorr, OOS).")
+    p.add_argument("--pairs", default="all", help="'all' o lista: EURUSD,GBPUSD")
+    p.add_argument("--timeframes", default="all", help="'all' o lista: 1m,5m,15m,30m,1h")
+    a = p.parse_args()
     print("ESTUDIO FX (Mercado Real) — comparación honesta contra el azar OTC (~50%).")
     print("Referencia: autocorrelación 0 y predictor 50% = azar (como el OTC sintético).")
-    for a in activos_reales():
-        estudiar_activo(a)
+    solo_seg = _segundos_de_labels(a.timeframes)
+    quiere = None if a.pairs.strip().lower() == "all" else \
+        {x.strip().upper() for x in a.pairs.split(",")}
+    disponibles = activos_reales()
+    elegidos = [x for x in disponibles if quiere is None or x.upper() in quiere]
+    if not elegidos:
+        print(f"Sin datos para {a.pairs}. Disponibles: {', '.join(disponibles) or '(ninguno)'}")
+    for ac in elegidos:
+        estudiar_activo(ac, solo_seg=solo_seg)

@@ -61,3 +61,7 @@ scratchpad/
 # Runtime del sistema de skills (se generan al operar)
 memoria/*.db
 memoria/*.json
+
+# CSV crudos de TradingView (se ingieren a datasets/, no van en git)
+datos/raw/*.csv
+datos/raw/*.csv.gz

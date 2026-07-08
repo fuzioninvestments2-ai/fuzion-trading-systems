@@ -80,7 +80,19 @@ def _etq(seg):
     return f"{seg // 3600}h"
 
 
-def correr_activo(activo, patron="datasets", conf_min=CONF_MIN):
+LABEL_SEG = {"1m": 60, "2m": 120, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
+             "1h": 3600, "4h": 14400}
+
+
+def _segundos_de_labels(labels):
+    if not labels or labels.strip().lower() == "all":
+        return None
+    segs = {LABEL_SEG[l.strip().lower()] for l in labels.split(",")
+            if l.strip().lower() in LABEL_SEG}
+    return segs or None
+
+
+def correr_activo(activo, patron="datasets", conf_min=CONF_MIN, solo_seg=None):
     rutas = sorted(glob.glob(f"{patron}/{activo}__*.csv.gz"))
     print(f"\n{'='*70}\nENSEMBLE · {activo}   (conf_min={conf_min})\n{'='*70}")
     print(f"{'TF':>4} | {'señales':>7} | {'winIS':>6} | {'winOOS':>6} | pesos aprendidos")
@@ -88,6 +100,8 @@ def correr_activo(activo, patron="datasets", conf_min=CONF_MIN):
         clave = os.path.basename(r).split("__")[1].replace(".csv.gz", "")
         seg = TF_SEG.get(clave)
         if seg is None or seg > 3600:
+            continue
+        if solo_seg is not None and seg not in solo_seg:
             continue
         df = pd.read_csv(r)
         if len(df) < 200:
@@ -99,7 +113,19 @@ def correr_activo(activo, patron="datasets", conf_min=CONF_MIN):
 
 
 if __name__ == "__main__":
+    import argparse
     from bot.estudio_fx import activos_reales
+    p = argparse.ArgumentParser(description="Backtest del ensemble sobre datos reales.")
+    p.add_argument("--pairs", default="all", help="'all' o lista: EURUSD,GBPUSD")
+    p.add_argument("--timeframes", default="all", help="'all' o lista: 1m,5m")
+    a = p.parse_args()
     print("Backtest del ensemble sobre datos reales. 50% = azar; 52.08% = break-even 92%.")
-    for a in activos_reales():
-        correr_activo(a)
+    solo_seg = _segundos_de_labels(a.timeframes)
+    quiere = None if a.pairs.strip().lower() == "all" else \
+        {x.strip().upper() for x in a.pairs.split(",")}
+    disponibles = activos_reales()
+    elegidos = [x for x in disponibles if quiere is None or x.upper() in quiere]
+    if not elegidos:
+        print(f"Sin datos para {a.pairs}. Disponibles: {', '.join(disponibles) or '(ninguno)'}")
+    for ac in elegidos:
+        correr_activo(ac, solo_seg=solo_seg)
