@@ -57,3 +57,7 @@ charts_tmp*.png
 
 # Análisis diagnóstico desechable (el backtest permanente vive en bot/)
 scratchpad/
+
+# Runtime del sistema de skills (se generan al operar)
+memoria/*.db
+memoria/*.json
