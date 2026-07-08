@@ -61,6 +61,16 @@ El entorno cloud **bloquea** las descargas (403). Exporta en TU PC y usa el inge
 Buscar: pares con winOOS > 52% (borde real). Detalle en `datos/raw/README.md`.
 > Regla: NO se inventan datos. Sin fuente real, un timeframe se marca "sin datos".
 
+### Sub-minuto (5s,10s,15s,30s) → Dukascopy (Yahoo no lo da)
+Yahoo no entrega nada < 1m. Para los segundos se usa dato por segundo de Dukascopy:
+```bash
+pip install dukascopy-python
+python -m bot.dukascopy_loader EURUSD GBPUSD    # esos pares, 3 días (pesado)
+python -m bot.dukascopy_loader                  # los 22 (más lento)
+```
+Baja velas de 1s y arma 5s/10s/15s/30s en `datasets/real/`. Luego el estudio ya los
+lee. En vivo, esos segundos los arma el bot desde el feed real de PO.
+
 ## Sistema de skills inteligentes (`bot/skills/`)
 Ensemble que VOTA dirección y APRENDE de resultados reales (no de sí mismo). Solo
 señales; el humano ejecuta. Skills: reversión (autocorrelación), momentum. El
