@@ -93,7 +93,8 @@ def _segundos_de_labels(labels):
 
 
 def correr_activo(activo, patron="datasets", conf_min=CONF_MIN, solo_seg=None):
-    rutas = sorted(glob.glob(f"{patron}/{activo}__*.csv.gz"))
+    from bot.estudio_fx import _rutas_reales
+    rutas = _rutas_reales(patron, activo)
     print(f"\n{'='*70}\nENSEMBLE · {activo}   (conf_min={conf_min})\n{'='*70}")
     print(f"{'TF':>4} | {'señales':>7} | {'winIS':>6} | {'winOOS':>6} | pesos aprendidos")
     for r in rutas:

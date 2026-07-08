@@ -101,9 +101,21 @@ def _segundos_de_labels(labels):
     return segs or None
 
 
+def _es_otc(ruta):
+    """True si la ruta es OTC (por nombre o por carpeta datasets/otc/)."""
+    p = ruta.replace(os.sep, "/").lower()
+    return "_otc" in os.path.basename(p) or "/otc/" in p
+
+
+def _rutas_reales(patron, activo="*"):
+    """Rutas .csv.gz reales (no OTC), buscando recursivamente (datasets/ y datasets/real/)."""
+    todas = glob.glob(f"{patron}/**/{activo}__*.csv.gz", recursive=True)
+    return sorted(r for r in todas if not _es_otc(r))
+
+
 def estudiar_activo(activo, patron="datasets", solo_seg=None):
     """Estudia los timeframes de un activo real (no OTC). `solo_seg`: filtro opcional."""
-    rutas = sorted(glob.glob(f"{patron}/{activo}__*.csv.gz"))
+    rutas = _rutas_reales(patron, activo)
     print(f"\n{'='*72}\nACTIVO REAL: {activo}   ({len(rutas)} timeframes con datos)\n{'='*72}")
     print(f"{'TF':>5} | {'velas':>6} | {'autocorr':>9} | {'%up':>5} | "
           f"{'mejorPred':>9} | {'motorWR':>8} | OOS(IS→OOS motorWR)")
@@ -129,13 +141,10 @@ def estudiar_activo(activo, patron="datasets", solo_seg=None):
 
 
 def activos_reales(patron="datasets"):
-    """Lista de activos NO-OTC con datos."""
+    """Lista de activos NO-OTC con datos (busca recursivo: datasets/ y datasets/real/)."""
     ac = set()
-    for f in glob.glob(f"{patron}/*.csv.gz"):
-        b = os.path.basename(f)
-        if "_otc" in b:
-            continue
-        ac.add(b.split("__")[0])
+    for f in _rutas_reales(patron):
+        ac.add(os.path.basename(f).split("__")[0])
     return sorted(ac)
 
 
