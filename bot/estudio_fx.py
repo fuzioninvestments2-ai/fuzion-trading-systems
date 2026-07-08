@@ -22,6 +22,7 @@ con peras contra el OTC (~50%). Sin red. Reproducible.
 import glob
 import os
 
+import numpy as np
 import pandas as pd
 
 from bot.cuantico import calculate_timeframe_signal
@@ -48,18 +49,25 @@ def estudiar_frame(df, expiry=1):
     if len(df) < 100:
         return None
     o = df["open"].to_numpy(); c = df["close"].to_numpy()
-    ret = pd.Series((c - o) / o)
-    autocorr = float(ret.autocorr(lag=1)) if len(ret) > 2 else 0.0
-    pct_up = float((c > o).mean() * 100)
+    # Retorno CIERRE-A-CIERRE: es la medida correcta de memoria del precio y sigue
+    # siendo válida aunque el cuerpo de la vela sea plano (open==close), como pasa
+    # con el 1m de FX en Yahoo (da un solo precio por minuto).
+    ret = pd.Series(c).pct_change().dropna()
+    autocorr = float(ret.autocorr(lag=1)) if (len(ret) > 2 and ret.std() > 0) else 0.0
+    pct_up = float((ret > 0).mean() * 100) if len(ret) else 0.0
+    # ¿Velas "planas"? open==close en casi todas → la fuente da 1 precio por vela
+    # (Yahoo 1m FX). Se avisa: los indicadores de cuerpo pierden información.
+    plano = bool((o == c).mean() > 0.9)
 
-    # Predictor direccional simple: ¿la vela t predice la t+expiry?
-    sube = (c > o)
+    # Predictor direccional: ¿la dirección de la vela (cierre vs cierre previo)
+    # predice el movimiento a `expiry` velas?
     n = len(df) - expiry
     if n <= 10:
         return None
+    sube = np.concatenate(([False], c[1:] > c[:-1]))         # sube[i]: ¿c[i] > c[i-1]?
     fut_sube = c[expiry:] > c[:-expiry]                      # precio subió tras expiry
-    mom = float((sube[:n] == fut_sube[:n]).mean() * 100)     # momentum: seguir la vela
-    rev = 100.0 - mom                                         # reversión: contra la vela
+    mom = float((sube[:n] == fut_sube[:n]).mean() * 100)     # momentum: seguir el movimiento
+    rev = 100.0 - mom                                         # reversión: contra el movimiento
     mejor = max(mom, rev)
 
     # Motor combinado: en cada punto (con ≥20 velas) predice y se compara con el futuro.
@@ -72,7 +80,8 @@ def estudiar_frame(df, expiry=1):
         aciertos += int(gano); tot += 1
     wr_motor = (aciertos / tot * 100) if tot else None
     return {"autocorr": autocorr, "pct_up": pct_up, "mom": mom, "rev": rev,
-            "mejor_pred": mejor, "wr_motor": wr_motor, "n_motor": tot, "velas": len(df)}
+            "mejor_pred": mejor, "wr_motor": wr_motor, "n_motor": tot,
+            "velas": len(df), "plano": plano}
 
 
 def estudiar_oos(df, expiry=1):
@@ -136,8 +145,10 @@ def estudiar_activo(activo, patron="datasets", solo_seg=None):
         if is_ and oos and is_["wr_motor"] is not None and oos["wr_motor"] is not None:
             oos_txt = f"{is_['wr_motor']:.1f}%→{oos['wr_motor']:.1f}%"
         wm = f"{full['wr_motor']:.1f}%" if full["wr_motor"] is not None else "s/señal"
+        flag = "  ⚠ plano (1 precio/vela)" if full.get("plano") else ""
         print(f"{_etq(seg):>5} | {full['velas']:>6} | {full['autocorr']:>9.4f} | "
-              f"{full['pct_up']:>4.1f}% | {full['mejor_pred']:>8.1f}% | {wm:>8} | {oos_txt}")
+              f"{full['pct_up']:>4.1f}% | {full['mejor_pred']:>8.1f}% | {wm:>8} | "
+              f"{oos_txt}{flag}")
 
 
 def activos_reales(patron="datasets"):
