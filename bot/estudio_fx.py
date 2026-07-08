@@ -70,10 +70,16 @@ def estudiar_frame(df, expiry=1):
     rev = 100.0 - mom                                         # reversión: contra el movimiento
     mejor = max(mom, rev)
 
-    # Motor combinado: en cada punto (con ≥20 velas) predice y se compara con el futuro.
-    aciertos = tot = 0
-    for i in range(20, n):
-        d, _f, _p = calculate_timeframe_signal(df.iloc[:i + 1])
+    # Motor combinado: predice en varios puntos y compara con el futuro. Se LIMITA a
+    # MAX_EVAL evaluaciones (paso adaptativo) porque recalcular indicadores vela a vela
+    # es O(n) por tiempo; con 16k velas × 22 pares sería lentísimo. ~800 muestras dan
+    # un win-rate estadísticamente estable sin colgar el estudio.
+    MAX_EVAL = 250
+    VENTANA = 60           # los indicadores más largos (MACD 26+9, Bollinger 20) miran
+    paso = max(1, (n - 20) // MAX_EVAL)     # <60 velas: pasar solo las últimas evita
+    aciertos = tot = 0                       # recalcular sobre la ventana creciente (O(n)→O(1))
+    for i in range(20, n, paso):
+        d, _f, _p = calculate_timeframe_signal(df.iloc[max(0, i - VENTANA):i + 1])
         if d == 0:
             continue
         gano = (d > 0) == bool(fut_sube[i])
