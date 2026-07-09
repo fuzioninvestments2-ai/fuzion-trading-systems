@@ -42,18 +42,21 @@ def _guardar(df, ruta):
         df.to_csv(gz, index=False)
 
 
-def derivar_par(ruta_m1, sobrescribir=False):
+def derivar_par(ruta_m1, sobrescribir=False, claves=None):
     """
     Desde el archivo M1 de un par, genera los derivados que falten en la misma
-    carpeta. Devuelve lista de (clave, nº velas) generados.
+    carpeta. `claves`: subconjunto a derivar (None = todos los DERIVADOS). Se usa
+    para NO sobreescribir tiempos que ya vienen DIRECTOS de la fuente (10m/4h de
+    Dukascopy son más profundos que derivarlos del 1m). Devuelve (clave, nº velas).
     """
     carpeta = os.path.dirname(ruta_m1)
     base = os.path.basename(ruta_m1).split("__")[0]     # 'EURUSD'
     df1m = pd.read_csv(ruta_m1).sort_values("timestamp").reset_index(drop=True)
     if len(df1m) < 40:
         return []
+    objetivo = {k: DERIVADOS[k] for k in (claves or DERIVADOS) if k in DERIVADOS}
     hechos = []
-    for clave, seg in DERIVADOS.items():
+    for clave, seg in objetivo.items():
         salida = os.path.join(carpeta, f"{base}__{clave}.csv.gz")
         if os.path.exists(salida) and not sobrescribir:
             continue                                     # ya existe (p.ej. de Yahoo)

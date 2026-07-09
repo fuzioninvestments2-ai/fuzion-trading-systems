@@ -149,10 +149,11 @@ def descargar_par(par, desde=DESDE_DEFECTO, desde_segundos=None,
         _guardar_status(destino, status)
         print(f"    {clave:8} {n:>9} velas")
 
-    # 2m/3m derivados del 1m.
+    # 2m/3m derivados del 1m. OJO: solo 2m/3m — 10m y 4h vienen DIRECTOS (más
+    # profundos que derivarlos del 1m), no se tocan.
     m1 = os.path.join(destino, f"{par}__M1.csv.gz")
     if os.path.exists(m1):
-        d = derivar_par(m1, sobrescribir=True)
+        d = derivar_par(m1, sobrescribir=True, claves=("tf120", "tf180"))
         print(f"    derivados: {', '.join(f'{c}({x})' for c, x in d) or 'nada'}")
 
     # Segundos (5s-30s) desde `desde_segundos` por resampleo de 1s.
