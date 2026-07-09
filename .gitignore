@@ -68,3 +68,6 @@ datos/raw/*.csv.gz
 
 # Estado runtime del dashboard (lo escribe el bot)
 dashboards/estado.json
+
+# Estado de descarga (runtime)
+datasets/real/download_status.json

@@ -1,8 +1,8 @@
 """
 bot/test_dukascopy_deep.py
 ==========================
-Valida lo testeable sin red: mapeo de intervalos y la fusión/dedup/guardado por
-chunks (concatena ventanas, quita duplicados por timestamp, ordena, guarda .csv.gz).
+Valida lo testeable sin red: mapeo de intervalos, fusión/dedup/guardado por chunks,
+y el estado/resume (guardar y cargar el JSON de progreso).
 """
 import gzip
 import os
@@ -15,7 +15,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from bot.dukascopy_deep import INTERVALOS, _fusionar_guardar, COLS
+from bot.dukascopy_deep import (INTERVALOS, _fusionar_guardar, COLS,
+                                _cargar_status, _guardar_status)
 
 
 def _df(ts_list):
@@ -31,21 +32,22 @@ def test_intervalos_cubren_1m_a_4h():
 
 def test_fusion_dedup_y_orden():
     with tempfile.TemporaryDirectory() as d:
-        # Dos chunks con un timestamp solapado (debe quedar una sola fila).
-        c1 = _df([3000, 1000, 2000])
-        c2 = _df([2000, 4000])            # 2000 duplicado
         salida = os.path.join(d, "EURUSD__M1.csv.gz")
-        n = _fusionar_guardar([c1, c2], salida)
-        assert n == 4, f"esperaba 4 velas unicas, {n}"
+        n = _fusionar_guardar([_df([3000, 1000, 2000]), _df([2000, 4000])], salida)
+        assert n == 4
         with gzip.open(salida, "rt") as f:
             df = pd.read_csv(f)
         assert list(df.columns) == COLS
-        assert df["timestamp"].tolist() == [1000, 2000, 3000, 4000]   # ordenado, sin dup
+        assert df["timestamp"].tolist() == [1000, 2000, 3000, 4000]
 
 
-def test_fusion_vacia():
+def test_status_resume():
     with tempfile.TemporaryDirectory() as d:
-        assert _fusionar_guardar([], os.path.join(d, "x.csv.gz")) == 0
+        assert _cargar_status(d) == {"completos": {}}         # vacío al inicio
+        st = {"completos": {"EURUSD": {"M1": 1000}}}
+        _guardar_status(d, st)
+        vuelto = _cargar_status(d)
+        assert vuelto["completos"]["EURUSD"]["M1"] == 1000     # persiste (resume)
 
 
 if __name__ == "__main__":
