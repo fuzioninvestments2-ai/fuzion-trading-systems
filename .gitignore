@@ -65,3 +65,6 @@ memoria/*.json
 # CSV crudos de TradingView (se ingieren a datasets/, no van en git)
 datos/raw/*.csv
 datos/raw/*.csv.gz
+
+# Estado runtime del dashboard (lo escribe el bot)
+dashboards/estado.json

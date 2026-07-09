@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fuzion FX · Panel en vivo</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; background:#0b0e14; color:#e6e6e6; font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif; }
+  header { padding:16px 20px; background:#11161f; border-bottom:1px solid #1e2633; display:flex; justify-content:space-between; align-items:center; }
+  h1 { font-size:18px; margin:0; }
+  .muted { color:#8a94a6; font-size:13px; }
+  main { padding:20px; max-width:900px; margin:0 auto; }
+  .card { background:#11161f; border:1px solid #1e2633; border-radius:12px; padding:18px 20px; margin-bottom:16px; }
+  .sig { display:flex; align-items:center; gap:16px; }
+  .badge { font-size:34px; font-weight:700; padding:8px 20px; border-radius:10px; letter-spacing:1px; }
+  .CALL { background:#0d3320; color:#43d17f; } .PUT { background:#3a1620; color:#ff6b81; } .NEUTRAL { background:#1e2633; color:#8a94a6; }
+  .conf { font-size:28px; font-weight:600; }
+  table { width:100%; border-collapse:collapse; margin-top:6px; }
+  th,td { text-align:left; padding:8px 6px; border-bottom:1px solid #1a2130; font-variant-numeric:tabular-nums; }
+  th { color:#8a94a6; font-weight:500; font-size:13px; }
+  .bar { height:8px; background:#1e2633; border-radius:4px; overflow:hidden; }
+  .bar > i { display:block; height:100%; background:#3a7afe; }
+  .kpi { display:flex; gap:24px; flex-wrap:wrap; }
+  .kpi div b { font-size:22px; }
+  .no { opacity:.5; }
+  footer { text-align:center; color:#5a6577; font-size:12px; padding:16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Fuzion FX · Panel en vivo <span class="muted" id="pair"></span></h1>
+  <span class="muted" id="reloj"></span>
+</header>
+<main>
+  <div class="card">
+    <div class="sig">
+      <span id="badge" class="badge NEUTRAL">—</span>
+      <div>
+        <div class="conf" id="conf">—</div>
+        <div class="muted">confianza del consenso · <span id="emitir"></span></div>
+      </div>
+      <div style="margin-left:auto; text-align:right;">
+        <div class="muted">precio</div><div class="conf" id="precio">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="muted" style="margin-bottom:8px;">Voto de cada skill</div>
+    <table id="skills"><thead><tr><th>Skill</th><th>voto</th><th>confianza</th><th>peso aprendido</th></tr></thead><tbody></tbody></table>
+  </div>
+
+  <div class="card kpi">
+    <div><div class="muted">win-rate del bot</div><b id="wr">—</b></div>
+    <div><div class="muted">operaciones</div><b id="ops">—</b></div>
+    <div><div class="muted">mejores skills</div><b id="best" style="font-size:15px;">—</b></div>
+  </div>
+
+  <div class="card muted">
+    Señal educativa. El bot NO coloca órdenes: tú decides y operas manualmente en Pocket Option.
+    No garantiza aciertos.
+  </div>
+</main>
+<footer>Actualiza cada 3 s desde <code>estado.json</code></footer>
+
+<script>
+const $ = id => document.getElementById(id);
+function fmtDir(d){ return d==="CALL"?"CALL ▲":d==="PUT"?"PUT ▼":"NEUTRAL"; }
+async function tick(){
+  try{
+    const r = await fetch("estado.json?_="+Date.now());
+    const e = await r.json();
+    const s = e["señal"] || {};
+    $("pair").textContent = e.pair ? "· "+e.pair : "";
+    const dir = s.direccion || "NEUTRAL";
+    const b = $("badge"); b.className = "badge "+dir; b.textContent = fmtDir(dir);
+    $("conf").textContent = s.confianza!=null ? Math.round(s.confianza*100)+"%" : "—";
+    $("emitir").textContent = s.emitir ? "SEÑAL EMITIDA" : "sin señal (confianza baja)";
+    $("precio").textContent = s.precio!=null ? s.precio : "—";
+    const pesos = (e.stats && e.stats.weights) || {};
+    const tb = $("skills").querySelector("tbody"); tb.innerHTML = "";
+    Object.entries(s.detalle||{}).forEach(([sid,v])=>{
+      const tr = document.createElement("tr");
+      const w = pesos[sid]!=null ? pesos[sid] : "—";
+      const conf = Math.round((v.confidence||0)*100);
+      tr.innerHTML = `<td>${sid}</td><td class="${v.vote}">${fmtDir(v.vote)}</td>`+
+        `<td>${conf}%</td><td><div class="bar"><i style="width:${Math.min(100,(w/2)*100)}%"></i></div> ${(+w).toFixed?(+w).toFixed(2):w}</td>`;
+      if(v.vote==="NEUTRAL") tr.classList.add("no");
+      tb.appendChild(tr);
+    });
+    $("wr").textContent = (e.win_rate_bot!=null?e.win_rate_bot:"—")+"%";
+    $("ops").textContent = e.operaciones!=null?e.operaciones:"—";
+    $("best").textContent = (e.stats && e.stats.best || []).join(", ") || "—";
+    $("reloj").textContent = new Date().toLocaleTimeString();
+  }catch(err){ $("reloj").textContent = "esperando estado.json…"; }
+}
+tick(); setInterval(tick, 3000);
+</script>
+</body>
+</html>
