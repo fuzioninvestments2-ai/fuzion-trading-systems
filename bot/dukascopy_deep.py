@@ -19,6 +19,7 @@ import datetime as dt
 import gzip
 import json
 import os
+import zlib
 
 # 1m→4h: Dukascopy directo.
 INTERVALOS = [
@@ -186,8 +187,30 @@ def descargar_todos(pares=None, desde=DESDE_DEFECTO, desde_segundos=None,
     print("\nListo. Verifica con:  python -m bot.dukascopy_deep --verificar")
 
 
+def _contar_velas(ruta):
+    """Cuenta velas de un .csv.gz. Devuelve int, o None si el archivo está corrupto.
+
+    Un .gz truncado (p.ej. por dos procesos escribiendo el mismo archivo, o un
+    corte a media escritura) lanza zlib.error/EOFError al descomprimir; lo tratamos
+    como 'corrupto' en vez de reventar toda la verificación.
+    """
+    try:
+        with gzip.open(ruta, "rt", encoding="utf-8") as gz:
+            n = sum(1 for _ in gz) - 1
+        return max(0, n)
+    except (OSError, EOFError, zlib.error):
+        return None
+
+
+def _corruptos(destino="datasets/real"):
+    """Rutas de .csv.gz que no se pueden leer (corruptos/truncados)."""
+    import glob
+    return [f for f in sorted(glob.glob(f"{destino}/*__*.csv.gz"))
+            if _contar_velas(f) is None]
+
+
 def verificar(destino="datasets/real"):
-    """Reporta velas por par/timeframe y tamaño total."""
+    """Reporta velas por par/timeframe y tamaño total. Marca archivos corruptos."""
     import glob
     claves = ["tf5", "tf10", "tf15", "tf30", "M1", "tf120", "tf180", "tf300",
               "tf600", "tf900", "tf1800", "tf3600", "tf14400"]
@@ -195,16 +218,52 @@ def verificar(destino="datasets/real"):
     pares = sorted({os.path.basename(f).split("__")[0]
                     for f in glob.glob(f"{destino}/*__*.csv.gz")})
     total_bytes = tot = 0
+    malos = []
     for par in pares:
         pres = []
         for cl in claves:
             f = os.path.join(destino, f"{par}__{cl}.csv.gz")
-            if os.path.exists(f):
-                n = sum(1 for _ in gzip.open(f, "rt")) - 1
-                total_bytes += os.path.getsize(f); tot += max(0, n)
-                pres.append(cl)
-        print(f"  {par:8} {len(pres):>2}/13  ({', '.join(pres)})")
+            if not os.path.exists(f):
+                continue
+            n = _contar_velas(f)
+            if n is None:                      # corrupto: no cuenta como presente
+                malos.append(f)
+                pres.append(f"{cl}=CORRUPTO")
+                continue
+            total_bytes += os.path.getsize(f); tot += n
+            pres.append(cl)
+        completos = sum(1 for p in pres if not p.endswith("CORRUPTO"))
+        print(f"  {par:8} {completos:>2}/13  ({', '.join(pres)})")
     print(f"\nTotal: {len(pares)} pares · {tot:,} velas · {total_bytes/1024**3:.2f} GB")
+    if malos:
+        print(f"\n¡{len(malos)} archivo(s) CORRUPTO(S)! Bórralos y re-baja con:")
+        print("  python -m bot.dukascopy_deep --limpiar")
+        for f in malos:
+            print(f"    {f}")
+
+
+def limpiar_corruptos(destino="datasets/real"):
+    """Borra los .csv.gz corruptos y los desmarca del estado para que se re-bajen."""
+    malos = _corruptos(destino)
+    if not malos:
+        print("No hay archivos corruptos. Nada que limpiar.")
+        return
+    status = _cargar_status(destino)
+    for f in malos:
+        base = os.path.basename(f)                       # 'EURUSD__tf5.csv.gz'
+        par, resto = base.split("__", 1)
+        clave = resto.replace(".csv.gz", "")
+        try:
+            os.remove(f)
+        except OSError as e:
+            print(f"  no se pudo borrar {base}: {e}")
+            continue
+        # desmarcar del estado: así el próximo run lo vuelve a bajar (no lo salta).
+        status["completos"].get(par, {}).pop(clave, None)
+        print(f"  borrado {base}")
+    _guardar_status(destino, status)
+    print(f"\n{len(malos)} corrupto(s) eliminados y desmarcados. "
+          "Re-lanza DESCARGAR_HISTORIAL_FX.bat para bajarlos de nuevo.")
 
 
 if __name__ == "__main__":
@@ -216,8 +275,12 @@ if __name__ == "__main__":
                     help="inicio para 5s-30s (def = --desde). Acórtalo si quieres menos.")
     ap.add_argument("--rehacer", action="store_true", help="ignora estado y re-descarga")
     ap.add_argument("--verificar", action="store_true", help="solo verificar")
+    ap.add_argument("--limpiar", action="store_true",
+                    help="borra .csv.gz corruptos y los desmarca (para re-bajarlos)")
     a = ap.parse_args()
     if a.verificar:
         verificar()
+    elif a.limpiar:
+        limpiar_corruptos()
     else:
         descargar_todos(a.pares or None, a.desde, a.desde_segundos, rehacer=a.rehacer)

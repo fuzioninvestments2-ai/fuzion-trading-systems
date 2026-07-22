@@ -16,7 +16,8 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from bot.dukascopy_deep import (INTERVALOS, _fusionar_guardar, COLS,
-                                _cargar_status, _guardar_status)
+                                _cargar_status, _guardar_status,
+                                _contar_velas, _corruptos, limpiar_corruptos)
 
 
 def _df(ts_list):
@@ -48,6 +49,36 @@ def test_status_resume():
         _guardar_status(d, st)
         vuelto = _cargar_status(d)
         assert vuelto["completos"]["EURUSD"]["M1"] == 1000     # persiste (resume)
+
+
+def test_contar_velas_bueno_y_corrupto():
+    with tempfile.TemporaryDirectory() as d:
+        bueno = os.path.join(d, "EURUSD__M1.csv.gz")
+        _fusionar_guardar([_df([1000, 2000, 3000])], bueno)
+        assert _contar_velas(bueno) == 3                       # gz válido → cuenta
+
+        malo = os.path.join(d, "EURUSD__tf5.csv.gz")
+        with open(malo, "wb") as fh:
+            fh.write(b"\x1f\x8b\x08\x00basura no-gzip truncada")  # cabecera gz falsa
+        assert _contar_velas(malo) is None                     # corrupto → None, no revienta
+
+
+def test_limpiar_corruptos_borra_y_desmarca():
+    with tempfile.TemporaryDirectory() as d:
+        bueno = os.path.join(d, "EURUSD__M1.csv.gz")
+        _fusionar_guardar([_df([1000, 2000])], bueno)
+        malo = os.path.join(d, "EURUSD__tf5.csv.gz")
+        with open(malo, "wb") as fh:
+            fh.write(b"\x1f\x8b\x08\x00truncado")
+        _guardar_status(d, {"completos": {"EURUSD": {"M1": 2, "tf5": 999}}})
+
+        assert _corruptos(d) == [malo]                         # detecta solo el malo
+        limpiar_corruptos(d)
+        assert not os.path.exists(malo)                        # borró el corrupto
+        assert os.path.exists(bueno)                           # el bueno queda
+        st = _cargar_status(d)
+        assert "tf5" not in st["completos"]["EURUSD"]          # desmarcado → se re-baja
+        assert st["completos"]["EURUSD"]["M1"] == 2            # el bueno sigue marcado
 
 
 if __name__ == "__main__":

@@ -13,17 +13,21 @@ la PC (usa red). El resto de los tiempos no se tocan.
 """
 import gzip
 import os
+import zlib
 
 from bot.dukascopy_deep import (descargar_intervalo, _cargar_status,
                                 _guardar_status)
 
 
 def _velas(ruta):
-    """Cuenta velas de un .csv.gz (filas menos la cabecera). 0 si no existe."""
+    """Cuenta velas de un .csv.gz (filas menos la cabecera). 0 si no existe o está corrupto."""
     if not os.path.exists(ruta):
         return 0
-    with gzip.open(ruta, "rt") as f:
-        return max(0, sum(1 for _ in f) - 1)
+    try:
+        with gzip.open(ruta, "rt", encoding="utf-8") as f:
+            return max(0, sum(1 for _ in f) - 1)
+    except (OSError, EOFError, zlib.error):
+        return 0                       # corrupto: cuenta como 0, se re-baja igual
 
 
 def reparar(pares=None, desde="2003-01-01", destino="datasets/real"):
