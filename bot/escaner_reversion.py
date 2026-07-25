@@ -14,14 +14,15 @@ Test: bot/test_escaner_reversion.py.
 from bot.senal_reversion import senal, BREAKEVEN
 
 
-def escanear(velas_por_par, expiry_min=3):
+def escanear(velas_por_par, expiry_min=3, tabla=None):
     """
     velas_por_par: dict {par: lista_de_cierres_M1_cronologicos}.
+    tabla        : tabla de reversión por par (opcional); ver senal_reversion.
     Devuelve la lista de señales OPERABLES, de mayor a menor probabilidad histórica.
     """
     operables = []
     for par, closes in velas_por_par.items():
-        s = senal(closes, par, expiry_min)
+        s = senal(closes, par, expiry_min, tabla)
         if s.get("operar"):
             operables.append(s)
     operables.sort(key=lambda s: s.get("probabilidad", 0.0), reverse=True)

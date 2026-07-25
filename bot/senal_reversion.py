@@ -33,10 +33,21 @@ def _pip(par):
     return 0.01 if par.upper().endswith("JPY") else 0.0001
 
 
-def _prob_por_pico(pips):
-    """Win-rate OOS del tramo correspondiente al tamaño del pico. None si < piso."""
+def cargar_tabla(ruta):
+    """Carga la tabla de reversión por par (reversion_tabla.json). {} si no existe."""
+    import json
+    try:
+        with open(ruta, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def _prob_por_pico(pips, buckets=TABLA_OOS):
+    """Win-rate OOS del tramo (umbral, wr) más alto cuyo umbral no supera el pico.
+    None si el pico no alcanza ningún tramo. `buckets` puede ser el global o el del par."""
     prob = None
-    for umbral, wr in TABLA_OOS:
+    for umbral, wr in sorted(buckets):
         if pips >= umbral:
             prob = wr
     return prob
@@ -48,13 +59,15 @@ def _pnl_op(win_rate):
     return (p * PAYOUT - (1 - p)) * 100.0
 
 
-def senal(closes, par, expiry_min=3):
+def senal(closes, par, expiry_min=3, tabla=None):
     """
     Decide la señal de reversión a partir de los cierres de 1m recientes.
 
     closes    : lista/array de cierres M1 en orden cronológico (usa los 2 últimos).
     par       : p.ej. 'EURUSD' (define el tamaño del pip).
     expiry_min: minutos de la opción (el borde es estable de 1 a 10m).
+    tabla     : dict {par: [[umbral, wr], ...]} por par (reversion_tabla.json). Si el
+                par está, se usa SU borde; si no, la tabla global. None -> global.
 
     Devuelve dict con: operar (bool), direccion (CALL/PUT), pips, probabilidad,
     pnl_esperado, expiry_min, motivo.
@@ -75,7 +88,11 @@ def senal(closes, par, expiry_min=3):
         return {**base, "motivo": f"pico anómalo ({magnitud:.1f} pips > {MAX_PIPS}): "
                                   f"posible error de dato, no se opera"}
 
-    prob = _prob_por_pico(magnitud)
+    buckets = tabla[par] if (tabla and par in tabla and tabla[par]) else TABLA_OOS
+    prob = _prob_por_pico(magnitud, buckets)
+    if prob is None:                                        # el par no gana a ese pico
+        return {**base, "motivo": f"pico de {magnitud:.1f} pips sin borde medido en "
+                                  f"{par}, no se opera"}
     # Reversión: si la vela SUBIÓ (mov>0) apostamos a que BAJA (PUT), y viceversa.
     direccion = PUT if mov > 0 else CALL
     hacia = "subió" if mov > 0 else "bajó"
