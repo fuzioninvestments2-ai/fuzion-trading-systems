@@ -175,6 +175,12 @@ class RobotReversion:
 def main(argv):
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s %(levelname)s %(message)s")
+    # Cargar el .env (token de Telegram, etc.) igual que hace telegram_signals.
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except Exception:
+        pass
     nombre = (argv[0] if argv else "REAL").upper()
     profile = get_profile(nombre)
     demo = os.getenv("POCKET_DEMO_REAL", "1") not in ("0", "false", "False")
