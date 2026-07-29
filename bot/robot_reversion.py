@@ -183,10 +183,21 @@ def main(argv):
         pass
     nombre = (argv[0] if argv else "REAL").upper()
     profile = get_profile(nombre)
+    # Pares: argumentos extra = lista propia; 'TODOS'/'ALL' = los 22 del perfil;
+    # sin argumentos = los 7 fuertes por defecto.
+    extra = [a.upper() for a in argv[1:]]
+    if extra and extra[0] in ("TODOS", "ALL"):
+        pares = list(profile.activos)
+    elif extra:
+        pares = extra
+    else:
+        pares = None
     demo = os.getenv("POCKET_DEMO_REAL", "1") not in ("0", "false", "False")
-    robot = RobotReversion(profile, demo=demo)
+    robot = RobotReversion(profile, pares=pares, demo=demo)
+    ciclo = robot.dwell_seg * len(robot.pares)
     print(f"Robot de reversión · perfil {profile.nombre} · "
-          f"{len(robot.pares)} pares · demo={demo}")
+          f"{len(robot.pares)} pares · demo={demo} · "
+          f"vuelta completa ~{ciclo//60} min")
     try:
         asyncio.run(robot.arrancar())
     except KeyboardInterrupt:
