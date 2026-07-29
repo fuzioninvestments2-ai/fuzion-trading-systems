@@ -43,10 +43,18 @@ def tarjeta(s):
         color, accion = "🟢", "SUBE  (poner ARRIBA / CALL)"
     pago = s.get("payout")
     linea_pago = f"💰 Pago del activo: {pago:.0f}%\n" if pago else ""
+    # Si el robot puso la hora, se muestra la hora EXACTA de entrada y de vencimiento.
+    if s.get("hora_entrada"):
+        tiempo = (f"⏰ ENTRA en la vela de las {s['hora_entrada']}  "
+                  f"(ya, tienes ~{VENTANA_ENTRADA_SEG} seg)\n"
+                  f"🏁 Vence a las {s['hora_vence']}  "
+                  f"({s['expiry_min']} min · M{s['expiry_min']})\n")
+    else:
+        tiempo = (f"⏳ PON LA OPERACIÓN YA — tienes ~{VENTANA_ENTRADA_SEG} seg\n"
+                  f"🕒 Vencimiento: {s['expiry_min']} min  (elige M{s['expiry_min']})\n")
     return (
         f"{color} {s['par']}  ·  {accion}\n"
-        f"⏳ PON LA OPERACIÓN YA — tienes ~{VENTANA_ENTRADA_SEG} seg\n"
-        f"🕒 Vencimiento: {s['expiry_min']} min  (elige M{s['expiry_min']})\n"
+        f"{tiempo}"
         f"{linea_pago}"
         f"🎯 Acierto histórico: {s['probabilidad']:.0f}%   (23 años reales)\n"
         f"📊 Pico {s['pips']:+.1f} pips · ventaja +{s['pnl_esperado']:.1f}%\n"

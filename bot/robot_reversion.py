@@ -26,6 +26,7 @@ No correr a la vez que INICIAR_REAL.bat si comparten el mismo SSID (PO rechaza d
 conexión). Las partes puras se prueban en bot/test_robot_reversion.py.
 """
 import asyncio
+import datetime
 import logging
 import os
 import sys
@@ -121,8 +122,17 @@ class RobotReversion:
         if pago is not None and pago < self.payout_min:
             return
         s["payout"] = pago
+        # HORA DE ENTRADA: la vela del pico [ts, ts+60s) acaba de cerrar; la entrada es
+        # la vela nueva que empieza en ts+60s. Se muestra en la hora LOCAL del equipo
+        # (fromtimestamp usa la zona horaria de la PC del trader).
+        ts = closed.get("timestamp")
+        if ts:
+            entra = datetime.datetime.fromtimestamp((ts + 60_000) / 1000.0)
+            vence = entra + datetime.timedelta(minutes=self.expiry_min)
+            s["hora_entrada"] = entra.strftime("%H:%M")
+            s["hora_vence"] = vence.strftime("%H:%M")
         from bot.escaner_reversion import tarjeta
-        s["tarjeta"] = tarjeta(s)                 # re-arma la tarjeta ya con el pago
+        s["tarjeta"] = tarjeta(s)                 # re-arma la tarjeta con pago y horas
         self._cola.put_nowait(s)
 
     def _on_assets(self, assets):

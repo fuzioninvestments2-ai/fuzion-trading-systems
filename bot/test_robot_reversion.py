@@ -59,6 +59,9 @@ def test_tick_a_senal_encola():
         assert r._cola.qsize() >= 1                         # se generó al menos un aviso
         s = r._cola.get_nowait()
         assert s["par"] == "EURCHF" and s["direccion"] == "PUT"
+        assert s.get("hora_entrada") and s.get("hora_vence")   # trae hora de entrada
+        assert "ENTRA en la vela de las" in s["tarjeta"]
+        assert "Vence a las" in s["tarjeta"]
 
 
 def test_mercado_cerrado_no_encola():
