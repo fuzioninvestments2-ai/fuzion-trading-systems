@@ -220,7 +220,10 @@ class RobotReversion:
             if df is None or len(df) < 10:
                 return None
             ruta = os.path.join(tempfile.gettempdir(), f"fuzion_{par}.png")
-            return draw_candles(df, par, "M1", ruta, direccion=direccion)
+            # Etiqueta del gráfico = velas de 1m pero operación al vencimiento elegido,
+            # para que coincida con la tarjeta (antes decía 'M1' y confundía con el 3m).
+            etiqueta = f"1m→opera {self.expiry_min}m"
+            return draw_candles(df, par, etiqueta, ruta, direccion=direccion)
         except Exception:
             self.log.exception("No se pudo generar el gráfico de %s", par)
             return None
