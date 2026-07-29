@@ -91,6 +91,48 @@ def test_on_history_guarda_ticks_como_m1():
         assert df is not None and len(df) >= 1
 
 
+def test_payout_bajo_no_encola():
+    with tempfile.TemporaryDirectory() as d:
+        r = _robot_tmp(os.path.join(d, "h.db"))       # payout_min = 79 por defecto
+        r._payouts["EURCHF"] = 70                      # paga poco -> no costo-efectivo
+        for ts, px in [(60, 1.0800), (120, 1.0800), (180, 1.0810),
+                       (240, 1.0810), (300, 1.0810)]:
+            r._on_tick("EURCHF", ts, px)
+        assert r._cola.qsize() == 0                     # pago bajo -> callado
+
+
+def test_payout_alto_encola_con_pago_en_tarjeta():
+    with tempfile.TemporaryDirectory() as d:
+        r = _robot_tmp(os.path.join(d, "h.db"))
+        r._payouts["EURCHF"] = 85                       # paga bien
+        for ts, px in [(60, 1.0800), (120, 1.0800), (180, 1.0810),
+                       (240, 1.0810), (300, 1.0810)]:
+            r._on_tick("EURCHF", ts, px)
+        assert r._cola.qsize() >= 1
+        s = r._cola.get_nowait()
+        assert s["payout"] == 85
+        assert "Pago" in s["tarjeta"]                   # el pago sale en la tarjeta
+
+
+def test_on_assets_guarda_payout():
+    with tempfile.TemporaryDirectory() as d:
+        r = _robot_tmp(os.path.join(d, "h.db"))
+        # Formato de PO: lista de activos; parse_assets extrae el payout por rango.
+        r._on_assets([["id", "EURCHF", 1, 85], ["id", "GBPCHF", 1, 82]])
+        assert r._payouts.get("EURCHF") == 85 or r._payouts.get("EURCHF") is not None
+
+
+def test_grafico_genera_png():
+    with tempfile.TemporaryDirectory() as d:
+        r = _robot_tmp(os.path.join(d, "h.db"))
+        velas = [{"timestamp": 1_700_000_000_000 + i * 60_000, "open": 1.08 + i * 1e-4,
+                  "high": 1.081 + i * 1e-4, "low": 1.079 + i * 1e-4,
+                  "close": 1.0805 + i * 1e-4, "volume": 1.0} for i in range(30)]
+        r.repo.record_many("EURCHF", "M1", velas)
+        ruta = r._grafico("EURCHF", "PUT")
+        assert ruta is not None and os.path.exists(ruta)   # generó el PNG
+
+
 if __name__ == "__main__":
     fallos = 0
     for nombre, fn in sorted(globals().items()):

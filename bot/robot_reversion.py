@@ -63,12 +63,15 @@ def _chat_de_updates(updates):
 class RobotReversion:
     def __init__(self, profile, pares=None, expiry_min=3, dwell_seg=DWELL_SEG,
                  ssid=None, token=None, chat_id=None, tabla=None, repo=None,
-                 is_open_fn=None, demo=True):
+                 is_open_fn=None, demo=True, payout_min=79.0, con_grafico=True):
         self.profile = profile
         self.pares = list(pares) if pares else list(PARES_FUERTES)
         self.expiry_min = int(expiry_min)
         self.dwell_seg = int(dwell_seg)
         self.demo = demo
+        self.payout_min = float(payout_min)      # solo avisa si el activo paga >= esto
+        self.con_grafico = bool(con_grafico)     # adjuntar gráfico de velas al aviso
+        self._payouts = {}                       # asset -> % de pago en vivo (de PO)
         self.ssid = ssid if ssid is not None else _load_ssid(profile.nombre)
         self.token = token if token is not None else os.getenv("TELEGRAM_BOT_TOKEN_REAL", "")
         self.chat_id = chat_id if chat_id is not None else os.getenv("TELEGRAM_CHAT_ID_REAL", "")
@@ -102,8 +105,25 @@ class RobotReversion:
         except Exception:
             self.log.exception("No se pudo guardar la vela de %s", asset)
         s = self.vig.nueva_vela(asset, closed["close"], ts=closed.get("timestamp"))
-        if s:
-            self._cola.put_nowait(s)
+        if not s:
+            return
+        # FILTRO DE PAGO: solo vale la pena si el activo paga >= payout_min (costo-
+        # efectivo). Si el pago es conocido y bajo, se calla; si no se conoce aún, pasa.
+        pago = self._payouts.get(asset)
+        if pago is not None and pago < self.payout_min:
+            return
+        s["payout"] = pago
+        from bot.escaner_reversion import tarjeta
+        s["tarjeta"] = tarjeta(s)                 # re-arma la tarjeta ya con el pago
+        self._cola.put_nowait(s)
+
+    def _on_assets(self, assets):
+        """Guarda el % de pago (payout) en vivo de cada activo, para el filtro."""
+        try:
+            from bot.payout import parse_assets
+            self._payouts.update(parse_assets(assets))
+        except Exception:
+            self.log.exception("No se pudo leer el payout")
 
     def _on_history(self, payload):
         """Guarda el historial que Pocket Option manda al saltar a un par (velas OHLC
@@ -181,15 +201,41 @@ class RobotReversion:
             self.log.exception("No se pudo leer get_updates")
         return bool(self.chat_id)
 
+    def _grafico(self, par, direccion):
+        """Genera el PNG del gráfico de velas del par (últimas M1). None si no puede."""
+        if not self.con_grafico:
+            return None
+        try:
+            import tempfile
+            from bot.chart import draw_candles
+            df = self.repo.get_recent(par, "M1", 40)
+            if df is None or len(df) < 10:
+                return None
+            ruta = os.path.join(tempfile.gettempdir(), f"fuzion_{par}.png")
+            return draw_candles(df, par, "M1", ruta, direccion=direccion)
+        except Exception:
+            self.log.exception("No se pudo generar el gráfico de %s", par)
+            return None
+
     async def _enviar_loop(self):
         while True:
             s = await self._cola.get()
+            foto = self._grafico(s["par"], s.get("direccion", ""))
             try:
-                await self.bot.send_message(chat_id=self.chat_id, text=s["tarjeta"])
+                if foto:
+                    with open(foto, "rb") as fh:
+                        await self.bot.send_photo(chat_id=self.chat_id, photo=fh,
+                                                  caption=s["tarjeta"])
+                else:
+                    await self.bot.send_message(chat_id=self.chat_id, text=s["tarjeta"])
                 self.log.info("Señal enviada: %s %s %.1f%%",
                               s["par"], s["direccion"], s.get("probabilidad", 0))
             except Exception:
                 self.log.exception("No se pudo enviar a Telegram")
+                try:                              # respaldo: al menos el texto
+                    await self.bot.send_message(chat_id=self.chat_id, text=s["tarjeta"])
+                except Exception:
+                    self.log.exception("Tampoco se pudo enviar el texto")
 
     async def _rotar(self):
         i = 0
@@ -220,6 +266,7 @@ class RobotReversion:
         self._precargar()
         self.client = PocketOptionClient(self.ssid, on_tick=self._on_tick,
                                          on_history=self._on_history,
+                                         on_assets=self._on_assets,
                                          demo=self.demo, logger=self.log)
         await self.bot.send_message(
             chat_id=self.chat_id,
@@ -244,21 +291,27 @@ def main(argv):
         pass
     nombre = (argv[0] if argv else "REAL").upper()
     profile = get_profile(nombre)
-    # Pares: argumentos extra = lista propia; 'TODOS'/'ALL' = los 22 del perfil;
-    # sin argumentos = los 7 fuertes por defecto.
-    extra = [a.upper() for a in argv[1:]]
-    if extra and extra[0] in ("TODOS", "ALL"):
+    # Argumentos tras el perfil: pares (o TODOS), y opciones --exp N (vencimiento en
+    # minutos: 1/2/3/5) y --pago N (payout mínimo, p.ej. 79).
+    resto = argv[1:]
+    expiry, payout_min, pares = 3, 79.0, []
+    i = 0
+    while i < len(resto):
+        a = resto[i]
+        if a in ("--exp", "-e") and i + 1 < len(resto):
+            expiry = int(resto[i + 1]); i += 2; continue
+        if a in ("--pago", "--payout") and i + 1 < len(resto):
+            payout_min = float(resto[i + 1]); i += 2; continue
+        pares.append(a.upper()); i += 1
+    if pares and pares[0] in ("TODOS", "ALL"):
         pares = list(profile.activos)
-    elif extra:
-        pares = extra
-    else:
-        pares = None
     demo = os.getenv("POCKET_DEMO_REAL", "1") not in ("0", "false", "False")
-    robot = RobotReversion(profile, pares=pares, demo=demo)
+    robot = RobotReversion(profile, pares=pares or None, expiry_min=expiry,
+                           payout_min=payout_min, demo=demo)
     ciclo = robot.dwell_seg * len(robot.pares)
-    print(f"Robot de reversión · perfil {profile.nombre} · "
-          f"{len(robot.pares)} pares · demo={demo} · "
-          f"vuelta completa ~{ciclo//60} min")
+    print(f"Robot de reversión · perfil {profile.nombre} · {len(robot.pares)} pares · "
+          f"vencimiento {expiry}m · pago min {payout_min:.0f}% · demo={demo} · "
+          f"vuelta ~{ciclo//60} min")
     try:
         asyncio.run(robot.arrancar())
     except KeyboardInterrupt:

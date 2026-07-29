@@ -41,10 +41,13 @@ def tarjeta(s):
         color, accion = "🔴", "BAJA  (poner ABAJO / PUT)"
     else:
         color, accion = "🟢", "SUBE  (poner ARRIBA / CALL)"
+    pago = s.get("payout")
+    linea_pago = f"💰 Pago del activo: {pago:.0f}%\n" if pago else ""
     return (
         f"{color} {s['par']}  ·  {accion}\n"
         f"⏳ PON LA OPERACIÓN YA — tienes ~{VENTANA_ENTRADA_SEG} seg\n"
         f"🕒 Vencimiento: {s['expiry_min']} min  (elige M{s['expiry_min']})\n"
+        f"{linea_pago}"
         f"🎯 Acierto histórico: {s['probabilidad']:.0f}%   (23 años reales)\n"
         f"📊 Pico {s['pips']:+.1f} pips · ventaja +{s['pnl_esperado']:.1f}%\n"
         f"⚠ Demo · el acierto no está garantizado"
