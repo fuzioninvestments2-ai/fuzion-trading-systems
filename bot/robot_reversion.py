@@ -271,6 +271,12 @@ class RobotReversion:
                 # Pide el historial de los tiempos largos para guardarlo completo;
                 # request_history vuelve a 60s al final para seguir con los ticks M1.
                 await self.client.request_history(par, PERIODOS_HISTORIAL)
+                # Latido: muestra qué escucha y cuánto paga (para ver que está vivo y
+                # si el filtro de pago lo está callando).
+                pago = self._payouts.get(par)
+                pago_txt = f"{pago:.0f}%" if pago is not None else "?"
+                self.log.info("Escuchando %s (pago %s)  [%d/%d]",
+                              par, pago_txt, (i % len(self.pares)) + 1, len(self.pares))
             except Exception:
                 self.log.exception("No se pudo cambiar a %s", par)
             i += 1
