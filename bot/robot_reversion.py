@@ -328,8 +328,8 @@ def main(argv):
         if a in ("--pago", "--payout") and i + 1 < len(resto):
             payout_min = float(resto[i + 1]); i += 2; continue
         pares.append(a.upper()); i += 1
-    if pares and pares[0] in ("TODOS", "ALL"):
-        pares = list(ACTIVOS_PO)
+    if not pares or (pares and pares[0] in ("TODOS", "ALL")):
+        pares = list(ACTIVOS_PO)         # sin lista o 'TODOS' = los 18 de Pocket Option
     elif pares:
         # Descarta lo que Pocket Option no ofrece / no tenemos, y avisa.
         fuera = [p for p in pares if p not in ACTIVOS_PO]
