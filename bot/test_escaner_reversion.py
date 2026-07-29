@@ -34,9 +34,8 @@ def test_escanear_vacio_si_nada_opera():
 def test_tarjeta_operable_tiene_datos():
     ops = escanear({"USDJPY": [150.00, 149.94]})       # -6 pips -> CALL
     t = tarjeta(ops[0])
-    assert "SEÑAL DE REVERSIÓN" in t
-    assert "USDJPY" in t and "CALL" in t
-    assert "%" in t and "Vencimiento" in t
+    assert "USDJPY" in t and "CALL" in t and "SUBE" in t
+    assert "%" in t and "vence" in t
 
 
 def test_tarjeta_sin_senal():

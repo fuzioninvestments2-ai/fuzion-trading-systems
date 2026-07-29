@@ -29,29 +29,21 @@ def escanear(velas_por_par, expiry_min=3, tabla=None):
     return operables
 
 
-def _flecha(direccion):
-    return "baje" if direccion == "PUT" else "suba"
-
-
 def tarjeta(s):
-    """Arma el texto de la tarjeta de señal para Telegram (educativa, sin promesas)."""
+    """Tarjeta de señal para Telegram: corta y de un vistazo (par, dirección, tiempo)."""
     if not s.get("operar"):
-        return (f"FUZION FX · {s.get('par','')}\n"
-                f"Sin señal: {s.get('motivo','')}")
-    lineas = [
-        "FUZION FX · SEÑAL DE REVERSIÓN",
-        f"Par: {s['par']}",
-        f"Dirección: {s['direccion']}  (se espera que {_flecha(s['direccion'])})",
-        f"Pico detectado: {s['pips']:+.1f} pips",
-        f"Probabilidad histórica: {s['probabilidad']:.1f}%  "
-        f"(fuera de muestra, 23 años)",
-        f"Vencimiento sugerido: {s['expiry_min']} min",
-        f"Ventaja esperada: {s['pnl_esperado']:+.2f}% por operación (payout 92%)",
-        f"Break-even: {BREAKEVEN:.1f}%  ·  la probabilidad la supera",
-        "Nota: señal educativa. El acierto es estadístico, no garantizado; "
-        "opera en demo y con gestión de riesgo.",
-    ]
-    return "\n".join(lineas)
+        return f"FUZION FX · {s.get('par','')}\nSin señal: {s.get('motivo','')}"
+    if s["direccion"] == "PUT":
+        color, accion = "🔴", "BAJA  (poner ABAJO / PUT)"
+    else:
+        color, accion = "🟢", "SUBE  (poner ARRIBA / CALL)"
+    return (
+        f"{color} {s['par']}  ·  {accion}\n"
+        f"⏱ Entra en la próxima vela · vence en {s['expiry_min']} min\n"
+        f"🎯 Acierto histórico: {s['probabilidad']:.0f}%   (23 años reales)\n"
+        f"📊 Pico {s['pips']:+.1f} pips · ventaja +{s['pnl_esperado']:.1f}%\n"
+        f"⚠ Demo · el acierto no está garantizado"
+    )
 
 
 def resumen(operables):
