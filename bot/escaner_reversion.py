@@ -13,6 +13,10 @@ Test: bot/test_escaner_reversion.py.
 """
 from bot.senal_reversion import senal, BREAKEVEN
 
+# Segundos que tiene el trader para poner la operación (la vela nueva dura 60s; se
+# recomienda entrar en los primeros ~45 para no llegar tarde a la reversión).
+VENTANA_ENTRADA_SEG = 45
+
 
 def escanear(velas_por_par, expiry_min=3, tabla=None):
     """
@@ -39,7 +43,8 @@ def tarjeta(s):
         color, accion = "🟢", "SUBE  (poner ARRIBA / CALL)"
     return (
         f"{color} {s['par']}  ·  {accion}\n"
-        f"⏱ Entra en la próxima vela · vence en {s['expiry_min']} min\n"
+        f"⏳ PON LA OPERACIÓN YA — tienes ~{VENTANA_ENTRADA_SEG} seg\n"
+        f"🕒 Vencimiento: {s['expiry_min']} min  (elige M{s['expiry_min']})\n"
         f"🎯 Acierto histórico: {s['probabilidad']:.0f}%   (23 años reales)\n"
         f"📊 Pico {s['pips']:+.1f} pips · ventaja +{s['pnl_esperado']:.1f}%\n"
         f"⚠ Demo · el acierto no está garantizado"

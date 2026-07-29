@@ -35,7 +35,7 @@ def test_tarjeta_operable_tiene_datos():
     ops = escanear({"USDJPY": [150.00, 149.94]})       # -6 pips -> CALL
     t = tarjeta(ops[0])
     assert "USDJPY" in t and "CALL" in t and "SUBE" in t
-    assert "%" in t and "vence" in t
+    assert "%" in t and "min" in t and "seg" in t
 
 
 def test_tarjeta_sin_senal():
