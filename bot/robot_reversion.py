@@ -236,9 +236,13 @@ class RobotReversion:
                 if foto:
                     with open(foto, "rb") as fh:
                         await self.bot.send_photo(chat_id=self.chat_id, photo=fh,
-                                                  caption=s["tarjeta"])
+                                                  caption=s["tarjeta"],
+                                                  read_timeout=30, write_timeout=30,
+                                                  connect_timeout=15)
                 else:
-                    await self.bot.send_message(chat_id=self.chat_id, text=s["tarjeta"])
+                    await self.bot.send_message(chat_id=self.chat_id, text=s["tarjeta"],
+                                                read_timeout=30, write_timeout=30,
+                                                connect_timeout=15)
                 self.log.info("Señal enviada: %s %s %.1f%%",
                               s["par"], s["direccion"], s.get("probabilidad", 0))
             except Exception:
