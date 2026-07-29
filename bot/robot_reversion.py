@@ -42,6 +42,8 @@ from bot.vigilante_reversion import VigilanteReversion
 # Pares con el borde de reversión más fuerte (según reversion_tabla.json / backtest).
 PARES_FUERTES = ("EURCHF", "AUDNZD", "AUDCAD", "EURGBP", "NZDUSD", "USDCHF", "GBPCHF")
 DWELL_SEG = 75                 # segundos escuchando cada par (>=1 vela M1)
+# Tiempos cuyo historial se pide al saltar a cada par (para guardar historial completo).
+PERIODOS_HISTORIAL = (120, 180, 300, 600, 900, 1800, 3600)
 
 
 def _chat_de_updates(updates):
@@ -103,6 +105,61 @@ class RobotReversion:
         if s:
             self._cola.put_nowait(s)
 
+    def _on_history(self, payload):
+        """Guarda el historial que Pocket Option manda al saltar a un par (velas OHLC
+        ya hechas o ticks que agregamos), en su tiempo (60->M1, otros->tf<seg>). Así
+        `history_real.db` crece completo mientras el robot corre."""
+        if not isinstance(payload, dict):
+            return
+        asset = payload.get("asset")
+        if not asset:
+            return
+        try:
+            period = int(payload.get("period", 60) or 60)
+        except (TypeError, ValueError):
+            period = 60
+        key = "M1" if period == 60 else f"tf{period}"
+        filas = []
+        candles = payload.get("candles") or payload.get("data")
+        if candles:
+            for c in candles:
+                try:
+                    if isinstance(c, dict):
+                        t = float(c.get("time") or c.get("t") or c.get("timestamp"))
+                        o = float(c.get("open", c.get("o")))
+                        h = float(c.get("high", c.get("h", o)))
+                        lo = float(c.get("low", c.get("l", o)))
+                        cl = float(c.get("close", c.get("c", o)))
+                        vol = float(c.get("volume", c.get("v", 0)) or 0)
+                    elif isinstance(c, (list, tuple)) and len(c) >= 5:
+                        t, o, cl, h, lo = (float(c[0]), float(c[1]), float(c[2]),
+                                           float(c[3]), float(c[4]))
+                        vol = float(c[5]) if len(c) > 5 else 0.0
+                    else:
+                        continue
+                except (TypeError, ValueError):
+                    continue
+                ts_ms = int(t * 1000) if t < 1e12 else int(t)   # seg o ms -> ms
+                filas.append({"timestamp": ts_ms, "open": o, "high": h,
+                              "low": lo, "close": cl, "volume": vol})
+        else:
+            hist = payload.get("history", [])
+            if not hist:
+                return
+            cb = CandleBuilder(period)
+            for row in hist:
+                try:
+                    t, p = float(row[0]), float(row[1])
+                except (IndexError, TypeError, ValueError):
+                    continue
+                cb.add_tick(p, t * 1000.0)
+            filas = cb.closed_candles()
+        if filas:
+            try:
+                self.repo.record_many(asset, key, filas)
+            except Exception:
+                self.log.exception("No se pudo guardar historial de %s", asset)
+
     # --- precarga de contexto desde el historial guardado ---
     def _precargar(self):
         for p in self.pares:
@@ -139,7 +196,10 @@ class RobotReversion:
         while True:
             par = self.pares[i % len(self.pares)]
             try:
-                await self.client.set_asset(par, 60)
+                await self.client.set_asset(par, 60)                 # M1 en vivo
+                # Pide el historial de los tiempos largos para guardarlo completo;
+                # request_history vuelve a 60s al final para seguir con los ticks M1.
+                await self.client.request_history(par, PERIODOS_HISTORIAL)
             except Exception:
                 self.log.exception("No se pudo cambiar a %s", par)
             i += 1
@@ -159,6 +219,7 @@ class RobotReversion:
                                "Telegram y reintenta, o define TELEGRAM_CHAT_ID_REAL.")
         self._precargar()
         self.client = PocketOptionClient(self.ssid, on_tick=self._on_tick,
+                                         on_history=self._on_history,
                                          demo=self.demo, logger=self.log)
         await self.bot.send_message(
             chat_id=self.chat_id,

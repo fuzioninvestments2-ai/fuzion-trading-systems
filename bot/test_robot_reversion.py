@@ -68,6 +68,29 @@ def test_mercado_cerrado_no_encola():
         assert r._cola.qsize() == 0                         # cerrado -> nada
 
 
+def test_on_history_guarda_velas_ohlc():
+    with tempfile.TemporaryDirectory() as d:
+        r = _robot_tmp(os.path.join(d, "h.db"))
+        payload = {"asset": "EURCHF", "period": 300, "candles": [
+            {"time": 1700000000, "open": 1.08, "high": 1.081, "low": 1.079, "close": 1.0805},
+            {"time": 1700000300, "open": 1.0805, "high": 1.0812, "low": 1.0801, "close": 1.081},
+        ]}
+        r._on_history(payload)
+        df = r.repo.get_recent("EURCHF", "tf300", 10)
+        assert df is not None and len(df) == 2          # guardó las 2 velas de 5m
+
+
+def test_on_history_guarda_ticks_como_m1():
+    with tempfile.TemporaryDirectory() as d:
+        r = _robot_tmp(os.path.join(d, "h.db"))
+        # Ticks en dos minutos distintos -> al menos una vela M1 cerrada.
+        hist = [[1700000000, 1.0800], [1700000030, 1.0802],
+                [1700000060, 1.0805], [1700000120, 1.0808]]
+        r._on_history({"asset": "EURCHF", "period": 60, "history": hist})
+        df = r.repo.get_recent("EURCHF", "M1", 10)
+        assert df is not None and len(df) >= 1
+
+
 if __name__ == "__main__":
     fallos = 0
     for nombre, fn in sorted(globals().items()):
