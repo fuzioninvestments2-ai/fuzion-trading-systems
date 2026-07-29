@@ -46,10 +46,11 @@ from bot.vigilante_reversion import VigilanteReversion
 ACTIVOS_PO = ("AUDCAD", "AUDUSD", "AUDJPY", "EURCAD", "EURUSD", "EURJPY", "EURCHF",
               "EURGBP", "EURAUD", "USDCAD", "USDCHF", "CHFJPY", "GBPAUD", "GBPJPY",
               "GBPUSD", "GBPCHF", "GBPCAD", "CADJPY")
-# Pares con el borde de reversión más fuerte (de reversion_tabla.json), ya SOLO los
-# que Pocket Option ofrece en real (sin NZD).
-PARES_FUERTES = ("EURCHF", "AUDCAD", "EURGBP", "USDCHF", "GBPCHF", "AUDUSD",
-                 "CHFJPY", "EURCAD")
+# Pares con el borde de reversión más fuerte a 3m (de reversion_tabla.json), ya SOLO
+# los que Pocket Option ofrece en real (sin NZD). Son los de entradas más seguras; al
+# ser ~10 la vuelta es más rápida (~12 min) = más señales que vigilando los 18.
+PARES_FUERTES = ("EURCHF", "AUDCAD", "EURGBP", "USDCHF", "GBPCHF", "CHFJPY",
+                 "AUDUSD", "EURCAD", "GBPCAD", "AUDJPY")
 DWELL_SEG = 75                 # segundos escuchando cada par (>=1 vela M1)
 # Tiempos cuyo historial se pide al saltar a cada par (para guardar historial completo).
 PERIODOS_HISTORIAL = (120, 180, 300, 600, 900, 1800, 3600)
@@ -325,7 +326,7 @@ def main(argv):
     # Argumentos tras el perfil: pares (o TODOS), y opciones --exp N (vencimiento en
     # minutos: 1/2/3/5) y --pago N (payout mínimo, p.ej. 79).
     resto = argv[1:]
-    expiry, payout_min, pares = 3, 79.0, []
+    expiry, payout_min, pares = 3, 72.0, []      # pago mínimo 72% por defecto
     i = 0
     while i < len(resto):
         a = resto[i]
@@ -334,9 +335,11 @@ def main(argv):
         if a in ("--pago", "--payout") and i + 1 < len(resto):
             payout_min = float(resto[i + 1]); i += 2; continue
         pares.append(a.upper()); i += 1
-    if not pares or (pares and pares[0] in ("TODOS", "ALL")):
-        pares = list(ACTIVOS_PO)         # sin lista o 'TODOS' = los 18 de Pocket Option
-    elif pares:
+    if pares and pares[0] in ("TODOS", "ALL"):
+        pares = list(ACTIVOS_PO)         # 'TODOS' = los 18 de Pocket Option
+    elif not pares:
+        pares = list(PARES_FUERTES)      # sin lista = los ~10 de mejor borde (seguros)
+    else:
         # Descarta lo que Pocket Option no ofrece / no tenemos, y avisa.
         fuera = [p for p in pares if p not in ACTIVOS_PO]
         if fuera:
