@@ -41,6 +41,7 @@ from bot.senal_reversion import cargar_tabla
 from bot.vigilante_reversion import VigilanteReversion
 from bot.signal_log import SignalTracker
 from bot.autocorrector import debe_enviar
+from bot.news_filter import NewsFilter
 
 # Activos que Pocket Option ofrece en el mercado REAL (según su menú) y que además
 # TENEMOS con historial/borde. PO real NO ofrece pares con NZD ni USDJPY; de la lista
@@ -76,7 +77,7 @@ class RobotReversion:
     def __init__(self, profile, pares=None, expiry_min=3, dwell_seg=DWELL_SEG,
                  ssid=None, token=None, chat_id=None, tabla=None, repo=None,
                  is_open_fn=None, demo=True, payout_min=79.0, con_grafico=True,
-                 nombre=None, expiries=None):
+                 nombre=None, expiries=None, con_noticias=True):
         self.profile = profile
         self.pares = list(pares) if pares else list(PARES_FUERTES)
         self.expiry_min = int(expiry_min)
@@ -104,6 +105,10 @@ class RobotReversion:
         self.tracker = SignalTracker(self.repo)
         self.corrector_min_muestra = 20   # antes de esta muestra se confía en el histórico
         self.corrector_margen = 0.0       # exigencia extra sobre el equilibrio (0.03=+3pts)
+        # NOTICIAS: en mercado real, callar el par si una de sus monedas tiene noticia
+        # de alto impacto en la ventana (±15 min). El OTC nunca se bloquea (sintético).
+        self.con_noticias = bool(con_noticias)
+        self.news = NewsFilter()
         self._builders = {}
         self._cola = asyncio.Queue()
         self.client = None
@@ -139,6 +144,11 @@ class RobotReversion:
         # efectivo). Si el pago es conocido y bajo, se calla; si no se conoce aún, pasa.
         pago = self._payouts.get(asset)
         if pago is not None and pago < self.payout_min:
+            return
+        # FILTRO DE NOTICIAS: con noticia de alto impacto en la ventana, la técnica no
+        # vale (velas descontroladas). Se calla ese par (protección, no predicción).
+        if self.con_noticias and not self.news.can_trade(asset):
+            self.log.info("Noticia de alto impacto: %s en silencio.", asset)
             return
         cts = closed.get("timestamp")
         # Resuelve señales ya vencidas con los precios acumulados: así el acierto REAL
@@ -327,6 +337,18 @@ class RobotReversion:
                 except Exception:
                     self.log.exception("Tampoco se pudo enviar el texto")
 
+    async def _refrescar_noticias(self):
+        """Descarga el calendario económico al arrancar y lo refresca cada 30 min. La
+        descarga corre en un hilo para no frenar el async; es defensiva (si falla la
+        red conserva la caché y no bloquea de más)."""
+        while True:
+            try:
+                n = await asyncio.to_thread(self.news.actualizar)
+                self.log.info("Calendario de noticias: %d eventos cargados.", n)
+            except Exception:
+                self.log.exception("No se pudo refrescar el calendario de noticias")
+            await asyncio.sleep(1800)             # media hora
+
     async def _rotar(self):
         i = 0
         while True:
@@ -381,8 +403,11 @@ class RobotReversion:
             except Exception:
                 self.log.exception("No se pudo avisar arranque del bot %sm", exp)
         tarea_cli = asyncio.create_task(self.client.run(asset=self.pares[0], period=60))
+        tareas = [self._rotar(), self._enviar_loop(), tarea_cli]
+        if self.con_noticias:
+            tareas.append(self._refrescar_noticias())
         try:
-            await asyncio.gather(self._rotar(), self._enviar_loop(), tarea_cli)
+            await asyncio.gather(*tareas)
         finally:
             self.client.stop()
             for b in self.bots.values():

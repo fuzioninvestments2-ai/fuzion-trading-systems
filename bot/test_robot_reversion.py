@@ -170,6 +170,22 @@ def test_corrector_silencia_par_que_falla():
         assert r._cola.qsize() == antes                 # silenciado: no encoló nada
 
 
+def test_noticia_alto_impacto_calla_el_par():
+    import json as _json
+    from datetime import datetime, timezone
+    with tempfile.TemporaryDirectory() as d:
+        r = _robot_tmp(os.path.join(d, "h.db"))
+        r._payouts["EURCHF"] = 85
+        # Evento USD/EUR/CHF de alto impacto AHORA -> ventana activa -> par callado.
+        ahora = datetime.now(timezone.utc).isoformat()
+        r.news.cargar(_json.dumps([
+            {"country": "EUR", "impact": "High", "date": ahora, "title": "IPC"}]))
+        for ts, px in [(60, 1.0800), (120, 1.0800), (180, 1.0810),
+                       (240, 1.0810), (300, 1.0810)]:
+            r._on_tick("EURCHF", ts, px)
+        assert r._cola.qsize() == 0                     # noticia -> silencio
+
+
 def test_grafico_genera_png():
     with tempfile.TemporaryDirectory() as d:
         r = _robot_tmp(os.path.join(d, "h.db"))
