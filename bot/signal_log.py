@@ -173,6 +173,27 @@ class SignalTracker:
         out["señales"] = len(rows)
         return out
 
+    def win_rate_reciente(self, asset, timeframe, ultimas=20):
+        """
+        Acierto REAL de las ÚLTIMAS `ultimas` señales resueltas de un par+tiempo.
+        EL PORQUÉ: el corrector necesita el pulso RECIENTE (no el histórico total)
+        para detectar cuándo un par empieza a fallar y silenciarlo a tiempo, sin
+        arrastrar el error a las siguientes señales. Devuelve (win_rate, muestra):
+        win_rate None si no hay ninguna decidida todavía.
+        """
+        with self._lock:
+            rows = self.conn.execute(
+                """SELECT result FROM signals
+                   WHERE resolved=1 AND asset=? AND timeframe=?
+                     AND result IN ('win','loss')
+                   ORDER BY expiry_ts DESC LIMIT ?""",
+                (asset, timeframe, int(ultimas))).fetchall()
+        muestra = len(rows)
+        if muestra == 0:
+            return None, 0
+        wins = sum(1 for (r,) in rows if r == "win")
+        return wins / muestra, muestra
+
     def stats(self, asset=None):
         """
         Win-rate REAL de las señales resueltas (global o por activo). Devuelve

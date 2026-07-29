@@ -39,6 +39,8 @@ from bot.history import HistoryRepository
 from bot.market_hours import is_open
 from bot.senal_reversion import cargar_tabla
 from bot.vigilante_reversion import VigilanteReversion
+from bot.signal_log import SignalTracker
+from bot.autocorrector import debe_enviar
 
 # Activos que Pocket Option ofrece en el mercado REAL (según su menú) y que además
 # TENEMOS con historial/borde. PO real NO ofrece pares con NZD ni USDJPY; de la lista
@@ -96,6 +98,12 @@ class RobotReversion:
         gate = is_open_fn if is_open_fn is not None else (lambda p: is_open(p)[0])
         self.vig = VigilanteReversion(self.pares, tabla=tabla,
                                       expiry_min=self.expiry_min, is_open=gate)
+        # CORRECTOR: registra cada señal y, con los precios que llegan luego, mide su
+        # acierto REAL en vivo. Silencia el par+tiempo que baja del punto de equilibrio
+        # para no arrastrar el error a las demás señales (ver bot/autocorrector).
+        self.tracker = SignalTracker(self.repo)
+        self.corrector_min_muestra = 20   # antes de esta muestra se confía en el histórico
+        self.corrector_margen = 0.0       # exigencia extra sobre el equilibrio (0.03=+3pts)
         self._builders = {}
         self._cola = asyncio.Queue()
         self.client = None
@@ -133,6 +141,13 @@ class RobotReversion:
         if pago is not None and pago < self.payout_min:
             return
         cts = closed.get("timestamp")
+        # Resuelve señales ya vencidas con los precios acumulados: así el acierto REAL
+        # en vivo se mantiene al día y el corrector puede actuar (trabaja continuo).
+        if cts:
+            try:
+                self.tracker.resolve_pending(cts)
+            except Exception:
+                self.log.exception("No se pudieron resolver señales vencidas")
         from bot.escaner_reversion import tarjeta
         from bot.sesiones import etiqueta
         # LA MATRIZ: por cada tiempo configurado, emite su propia tarjeta (nombre,
@@ -140,6 +155,25 @@ class RobotReversion:
         for exp in self.expiries:
             s = self.vig.senal_para(asset, exp)
             if not s:
+                continue
+            tf = f"M{exp}"
+            # SIEMPRE se registra la señal (aunque se silencie): la "sombra" mantiene la
+            # medición viva para poder re-activar el par cuando su acierto se recupere.
+            if cts:
+                try:
+                    self.tracker.record(asset, tf, s["direccion"], closed["close"],
+                                        cts, exp * 60)
+                except Exception:
+                    self.log.exception("No se pudo registrar la señal de %s", asset)
+            # CORRECTOR: si este par+tiempo viene fallando bajo el equilibrio, se calla
+            # (no se envía) pero queda registrado. No afecta a los demás pares/tiempos.
+            wr, muestra = self.tracker.win_rate_reciente(asset, tf,
+                                                         self.corrector_min_muestra)
+            pago_ref = pago if pago else self.payout_min   # si no se conoce, usa el piso
+            enviar, motivo = debe_enviar(wr, muestra, pago_ref,
+                                         self.corrector_min_muestra, self.corrector_margen)
+            if not enviar:
+                self.log.info("Silenciado %s %s: %s", asset, tf, motivo)
                 continue
             s["payout"] = pago
             if cts:

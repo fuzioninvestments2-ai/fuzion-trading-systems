@@ -148,6 +148,28 @@ def test_on_assets_guarda_payout():
         assert r._payouts.get("EURCHF") == 85 or r._payouts.get("EURCHF") is not None
 
 
+def test_corrector_silencia_par_que_falla():
+    # Con muestra suficiente de PÉRDIDAS reales, el corrector calla ese par+tiempo.
+    with tempfile.TemporaryDirectory() as d:
+        r = _robot_tmp(os.path.join(d, "h.db"))
+        r._payouts["EURCHF"] = 85                       # pago conocido -> equilibrio ~54%
+        r.corrector_min_muestra = 5                     # muestra chica para el test
+        # Siembra 5 señales M3 ya resueltas como 'loss' (acierto reciente 0%).
+        for i in range(5):
+            r.tracker.record("EURCHF", "M3", "PUT", 1.0800, i * 1000, 60)
+        # Vela de vencimiento POSTERIOR y por ENCIMA (PUT pierde) para todas.
+        r.repo.record_candle("EURCHF", "M1", {"timestamp": 100_000, "open": 1.09,
+            "high": 1.0905, "low": 1.0895, "close": 1.0900, "volume": 1.0})
+        r.tracker.resolve_pending(200_000)
+        wr, muestra = r.tracker.win_rate_reciente("EURCHF", "M3", 5)
+        assert muestra == 5 and wr == 0.0               # 0% de acierto reciente
+        antes = r._cola.qsize()
+        for ts, px in [(60, 1.0800), (120, 1.0800), (180, 1.0810),
+                       (240, 1.0810), (300, 1.0810)]:
+            r._on_tick("EURCHF", ts, px)
+        assert r._cola.qsize() == antes                 # silenciado: no encoló nada
+
+
 def test_grafico_genera_png():
     with tempfile.TemporaryDirectory() as d:
         r = _robot_tmp(os.path.join(d, "h.db"))
