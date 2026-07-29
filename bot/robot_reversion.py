@@ -39,8 +39,16 @@ from bot.market_hours import is_open
 from bot.senal_reversion import cargar_tabla
 from bot.vigilante_reversion import VigilanteReversion
 
-# Pares con el borde de reversión más fuerte (según reversion_tabla.json / backtest).
-PARES_FUERTES = ("EURCHF", "AUDNZD", "AUDCAD", "EURGBP", "NZDUSD", "USDCHF", "GBPCHF")
+# Activos que Pocket Option ofrece en el mercado REAL (según su menú) y que además
+# TENEMOS con historial/borde. PO real NO ofrece pares con NZD ni USDJPY; de la lista
+# de PO nos faltan AUDCHF y CADCHF (no descargados). Estos 18 son los operables.
+ACTIVOS_PO = ("AUDCAD", "AUDUSD", "AUDJPY", "EURCAD", "EURUSD", "EURJPY", "EURCHF",
+              "EURGBP", "EURAUD", "USDCAD", "USDCHF", "CHFJPY", "GBPAUD", "GBPJPY",
+              "GBPUSD", "GBPCHF", "GBPCAD", "CADJPY")
+# Pares con el borde de reversión más fuerte (de reversion_tabla.json), ya SOLO los
+# que Pocket Option ofrece en real (sin NZD).
+PARES_FUERTES = ("EURCHF", "AUDCAD", "EURGBP", "USDCHF", "GBPCHF", "AUDUSD",
+                 "CHFJPY", "EURCAD")
 DWELL_SEG = 75                 # segundos escuchando cada par (>=1 vela M1)
 # Tiempos cuyo historial se pide al saltar a cada par (para guardar historial completo).
 PERIODOS_HISTORIAL = (120, 180, 300, 600, 900, 1800, 3600)
@@ -304,7 +312,14 @@ def main(argv):
             payout_min = float(resto[i + 1]); i += 2; continue
         pares.append(a.upper()); i += 1
     if pares and pares[0] in ("TODOS", "ALL"):
-        pares = list(profile.activos)
+        pares = list(ACTIVOS_PO)
+    elif pares:
+        # Descarta lo que Pocket Option no ofrece / no tenemos, y avisa.
+        fuera = [p for p in pares if p not in ACTIVOS_PO]
+        if fuera:
+            print(f"Aviso: no operables (PO no los da o sin historial), fuera: "
+                  f"{', '.join(fuera)}")
+        pares = [p for p in pares if p in ACTIVOS_PO]
     demo = os.getenv("POCKET_DEMO_REAL", "1") not in ("0", "false", "False")
     robot = RobotReversion(profile, pares=pares or None, expiry_min=expiry,
                            payout_min=payout_min, demo=demo)
