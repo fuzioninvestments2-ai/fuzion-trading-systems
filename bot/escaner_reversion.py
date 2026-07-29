@@ -41,6 +41,8 @@ def tarjeta(s):
         color, accion = "🔴", "BAJA  (poner ABAJO / PUT)"
     else:
         color, accion = "🟢", "SUBE  (poner ARRIBA / CALL)"
+    encabezado = f"🤖 {s['nombre_bot']}\n" if s.get("nombre_bot") else ""
+    sesion = f"🌍 Mercado: {s['sesion_mercado']}\n" if s.get("sesion_mercado") else ""
     pago = s.get("payout")
     linea_pago = f"💰 Pago del activo: {pago:.0f}%\n" if pago else ""
     # Si el robot puso la hora, se muestra la hora EXACTA de entrada y de vencimiento.
@@ -53,8 +55,10 @@ def tarjeta(s):
         tiempo = (f"⏳ PON LA OPERACIÓN YA — tienes ~{VENTANA_ENTRADA_SEG} seg\n"
                   f"🕒 Vencimiento: {s['expiry_min']} min  (elige M{s['expiry_min']})\n")
     return (
+        f"{encabezado}"
         f"{color} {s['par']}  ·  {accion}\n"
         f"{tiempo}"
+        f"{sesion}"
         f"{linea_pago}"
         f"🎯 Acierto histórico: {s['probabilidad']:.0f}%   (23 años reales)\n"
         f"📊 Pico {s['pips']:+.1f} pips · ventaja +{s['pnl_esperado']:.1f}%\n"

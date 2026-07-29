@@ -73,10 +73,12 @@ def _chat_de_updates(updates):
 class RobotReversion:
     def __init__(self, profile, pares=None, expiry_min=3, dwell_seg=DWELL_SEG,
                  ssid=None, token=None, chat_id=None, tabla=None, repo=None,
-                 is_open_fn=None, demo=True, payout_min=79.0, con_grafico=True):
+                 is_open_fn=None, demo=True, payout_min=79.0, con_grafico=True,
+                 nombre=None):
         self.profile = profile
         self.pares = list(pares) if pares else list(PARES_FUERTES)
         self.expiry_min = int(expiry_min)
+        self.nombre = nombre or f"FUZION FX {int(expiry_min)}M"   # nombre del bot
         self.dwell_seg = int(dwell_seg)
         self.demo = demo
         self.payout_min = float(payout_min)      # solo avisa si el activo paga >= esto
@@ -132,6 +134,11 @@ class RobotReversion:
             vence = entra + datetime.timedelta(minutes=self.expiry_min)
             s["hora_entrada"] = entra.strftime("%H:%M")
             s["hora_vence"] = vence.strftime("%H:%M")
+            # Sesión de mercado por la hora UTC de la vela (Londres/Nueva York/...).
+            from bot.sesiones import etiqueta
+            utc_h = datetime.datetime.utcfromtimestamp((ts + 60_000) / 1000.0).hour
+            s["sesion_mercado"] = etiqueta(utc_h)
+        s["nombre_bot"] = self.nombre
         from bot.escaner_reversion import tarjeta
         s["tarjeta"] = tarjeta(s)                 # re-arma la tarjeta con pago y horas
         self._cola.put_nowait(s)
@@ -302,8 +309,8 @@ class RobotReversion:
                                          demo=self.demo, logger=self.log)
         await self.bot.send_message(
             chat_id=self.chat_id,
-            text=f"FUZION FX activo. Vigilando {len(self.pares)} pares "
-                 f"({', '.join(self.pares)}). Aviso cuando haya reversión con ventaja.")
+            text=f"{self.nombre} activo (vencimiento {self.expiry_min}m). Vigilando "
+                 f"{len(self.pares)} pares. Aviso cuando haya reversión con ventaja.")
         tarea_cli = asyncio.create_task(self.client.run(asset=self.pares[0], period=60))
         try:
             await asyncio.gather(self._rotar(), self._enviar_loop(), tarea_cli)
@@ -326,7 +333,7 @@ def main(argv):
     # Argumentos tras el perfil: pares (o TODOS), y opciones --exp N (vencimiento en
     # minutos: 1/2/3/5) y --pago N (payout mínimo, p.ej. 79).
     resto = argv[1:]
-    expiry, payout_min, pares = 3, 72.0, []      # pago mínimo 72% por defecto
+    expiry, payout_min, pares, nombre = 3, 72.0, [], None   # pago mínimo 72% por defecto
     i = 0
     while i < len(resto):
         a = resto[i]
@@ -334,6 +341,8 @@ def main(argv):
             expiry = int(resto[i + 1]); i += 2; continue
         if a in ("--pago", "--payout") and i + 1 < len(resto):
             payout_min = float(resto[i + 1]); i += 2; continue
+        if a in ("--nombre", "-n") and i + 1 < len(resto):
+            nombre = resto[i + 1]; i += 2; continue
         pares.append(a.upper()); i += 1
     if pares and pares[0] in ("TODOS", "ALL"):
         pares = list(ACTIVOS_PO)         # 'TODOS' = los 18 de Pocket Option
@@ -348,9 +357,9 @@ def main(argv):
         pares = [p for p in pares if p in ACTIVOS_PO]
     demo = os.getenv("POCKET_DEMO_REAL", "1") not in ("0", "false", "False")
     robot = RobotReversion(profile, pares=pares or None, expiry_min=expiry,
-                           payout_min=payout_min, demo=demo)
+                           payout_min=payout_min, demo=demo, nombre=nombre)
     ciclo = robot.dwell_seg * len(robot.pares)
-    print(f"Robot de reversión · perfil {profile.nombre} · {len(robot.pares)} pares · "
+    print(f"{robot.nombre} · perfil {profile.nombre} · {len(robot.pares)} pares · "
           f"vencimiento {expiry}m · pago min {payout_min:.0f}% · demo={demo} · "
           f"vuelta ~{ciclo//60} min")
     try:

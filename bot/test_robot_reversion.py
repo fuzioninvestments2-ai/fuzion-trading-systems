@@ -62,6 +62,8 @@ def test_tick_a_senal_encola():
         assert s.get("hora_entrada") and s.get("hora_vence")   # trae hora de entrada
         assert "ENTRA en la vela de las" in s["tarjeta"]
         assert "Vence a las" in s["tarjeta"]
+        assert s.get("sesion_mercado") and "Mercado:" in s["tarjeta"]   # sesión
+        assert "FUZION FX" in s["tarjeta"]                     # nombre del bot
 
 
 def test_mercado_cerrado_no_encola():
