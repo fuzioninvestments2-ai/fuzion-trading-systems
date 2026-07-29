@@ -33,31 +33,40 @@ class VigilanteReversion:
         self._buffers = {p: [] for p in self.pares}
         self._ultimo_ts = {}          # par -> ts de la última vela procesada (dedup)
 
-    def nueva_vela(self, par, close, ts=None):
-        """
-        Registra el cierre de una vela M1 YA CERRADA de `par`. Devuelve la señal (dict
-        con tarjeta incluida) si hay que avisar, o None.
-
-        close: precio de cierre de la vela. ts: su timestamp (para no repetir aviso).
-        """
+    def registrar(self, par, close, ts=None):
+        """Registra el cierre de una vela M1 YA CERRADA en el buffer del par. Devuelve
+        True si hay que evaluar señales (vela nueva y mercado abierto), False si no."""
         if par not in self._buffers:
-            return None
+            return False
         if ts is not None and self._ultimo_ts.get(par) == ts:
-            return None               # ya procesamos esta vela: no repetir
+            return False              # ya procesamos esta vela: no repetir
         self._ultimo_ts[par] = ts
-
         buf = self._buffers[par]
         buf.append(float(close))
         if len(buf) > self.max_buffer:
             del buf[0]
-
         if self.is_open is not None and not self.is_open(par):
-            return None               # mercado cerrado para este par: callar
+            return False              # mercado cerrado para este par: callar
+        return True
 
-        s = senal(buf, par, self.expiry_min, self.tabla)
-        if not s.get("operar"):
+    def senal_para(self, par, expiry):
+        """Evalúa la reversión del buffer actual del par a un vencimiento dado. Devuelve
+        la señal (dict) si hay que operar, o None. No arma la tarjeta (la arma quien la
+        envía, ya con pago/hora/sesión)."""
+        buf = self._buffers.get(par)
+        if not buf:
             return None
-        s["tarjeta"] = tarjeta(s)
+        s = senal(buf, par, expiry, self.tabla)
+        return s if s.get("operar") else None
+
+    def nueva_vela(self, par, close, ts=None):
+        """Compat: registra la vela y devuelve UNA señal al vencimiento por defecto
+        (con tarjeta). Para varios tiempos, usa registrar()+senal_para()."""
+        if not self.registrar(par, close, ts):
+            return None
+        s = self.senal_para(par, self.expiry_min)
+        if s:
+            s["tarjeta"] = tarjeta(s)
         return s
 
     def precargar(self, par, closes):

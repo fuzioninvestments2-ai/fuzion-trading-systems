@@ -74,10 +74,12 @@ class RobotReversion:
     def __init__(self, profile, pares=None, expiry_min=3, dwell_seg=DWELL_SEG,
                  ssid=None, token=None, chat_id=None, tabla=None, repo=None,
                  is_open_fn=None, demo=True, payout_min=79.0, con_grafico=True,
-                 nombre=None):
+                 nombre=None, expiries=None):
         self.profile = profile
         self.pares = list(pares) if pares else list(PARES_FUERTES)
         self.expiry_min = int(expiry_min)
+        # Tiempos que emite: uno o varios (la matriz manda los 4 desde una conexión).
+        self.expiries = [int(e) for e in (expiries or [expiry_min])]
         self.nombre = nombre or f"FUZION FX {int(expiry_min)}M"   # nombre del bot
         self.dwell_seg = int(dwell_seg)
         self.demo = demo
@@ -116,32 +118,34 @@ class RobotReversion:
             self.repo.record_candle(asset, "M1", closed)                 # historial reciente
         except Exception:
             self.log.exception("No se pudo guardar la vela de %s", asset)
-        s = self.vig.nueva_vela(asset, closed["close"], ts=closed.get("timestamp"))
-        if not s:
+        if not self.vig.registrar(asset, closed["close"], ts=closed.get("timestamp")):
             return
         # FILTRO DE PAGO: solo vale la pena si el activo paga >= payout_min (costo-
         # efectivo). Si el pago es conocido y bajo, se calla; si no se conoce aún, pasa.
         pago = self._payouts.get(asset)
         if pago is not None and pago < self.payout_min:
             return
-        s["payout"] = pago
-        # HORA DE ENTRADA: la vela del pico [ts, ts+60s) acaba de cerrar; la entrada es
-        # la vela nueva que empieza en ts+60s. Se muestra en la hora LOCAL del equipo
-        # (fromtimestamp usa la zona horaria de la PC del trader).
-        ts = closed.get("timestamp")
-        if ts:
-            entra = datetime.datetime.fromtimestamp((ts + 60_000) / 1000.0)
-            vence = entra + datetime.timedelta(minutes=self.expiry_min)
-            s["hora_entrada"] = entra.strftime("%H:%M")
-            s["hora_vence"] = vence.strftime("%H:%M")
-            # Sesión de mercado por la hora UTC de la vela (Londres/Nueva York/...).
-            from bot.sesiones import etiqueta
-            utc_h = datetime.datetime.utcfromtimestamp((ts + 60_000) / 1000.0).hour
-            s["sesion_mercado"] = etiqueta(utc_h)
-        s["nombre_bot"] = self.nombre
+        cts = closed.get("timestamp")
         from bot.escaner_reversion import tarjeta
-        s["tarjeta"] = tarjeta(s)                 # re-arma la tarjeta con pago y horas
-        self._cola.put_nowait(s)
+        from bot.sesiones import etiqueta
+        # LA MATRIZ: por cada tiempo configurado, emite su propia tarjeta (nombre,
+        # acierto y hora de vencimiento propios). Con un solo tiempo, es un bot normal.
+        for exp in self.expiries:
+            s = self.vig.senal_para(asset, exp)
+            if not s:
+                continue
+            s["payout"] = pago
+            if cts:
+                entra = datetime.datetime.fromtimestamp((cts + 60_000) / 1000.0)
+                vence = entra + datetime.timedelta(minutes=exp)
+                s["hora_entrada"] = entra.strftime("%H:%M")
+                s["hora_vence"] = vence.strftime("%H:%M")
+                utc_h = datetime.datetime.utcfromtimestamp((cts + 60_000) / 1000.0).hour
+                s["sesion_mercado"] = etiqueta(utc_h)
+            s["nombre_bot"] = (self.nombre if len(self.expiries) == 1
+                               else f"FUZION FX {exp}M")
+            s["tarjeta"] = tarjeta(s)
+            self._cola.put_nowait(s)
 
     def _on_assets(self, assets):
         """Guarda el % de pago (payout) en vivo de cada activo, para el filtro."""
@@ -309,7 +313,8 @@ class RobotReversion:
                                          demo=self.demo, logger=self.log)
         await self.bot.send_message(
             chat_id=self.chat_id,
-            text=f"{self.nombre} activo (vencimiento {self.expiry_min}m). Vigilando "
+            text=f"{self.nombre} activo (tiempos "
+                 f"{'/'.join(f'{e}m' for e in self.expiries)}). Vigilando "
                  f"{len(self.pares)} pares. Aviso cuando haya reversión con ventaja.")
         tarea_cli = asyncio.create_task(self.client.run(asset=self.pares[0], period=60))
         try:
@@ -334,11 +339,15 @@ def main(argv):
     # minutos: 1/2/3/5) y --pago N (payout mínimo, p.ej. 79).
     resto = argv[1:]
     expiry, payout_min, pares, nombre = 3, 72.0, [], None   # pago mínimo 72% por defecto
+    tiempos = None                               # varios vencimientos (la matriz)
     i = 0
     while i < len(resto):
         a = resto[i]
         if a in ("--exp", "-e") and i + 1 < len(resto):
             expiry = int(resto[i + 1]); i += 2; continue
+        if a in ("--tiempos", "-t") and i + 1 < len(resto):
+            tiempos = [int(x) for x in resto[i + 1].replace(" ", "").split(",") if x]
+            i += 2; continue
         if a in ("--pago", "--payout") and i + 1 < len(resto):
             payout_min = float(resto[i + 1]); i += 2; continue
         if a in ("--nombre", "-n") and i + 1 < len(resto):
@@ -357,10 +366,12 @@ def main(argv):
         pares = [p for p in pares if p in ACTIVOS_PO]
     demo = os.getenv("POCKET_DEMO_REAL", "1") not in ("0", "false", "False")
     robot = RobotReversion(profile, pares=pares or None, expiry_min=expiry,
-                           payout_min=payout_min, demo=demo, nombre=nombre)
+                           payout_min=payout_min, demo=demo, nombre=nombre,
+                           expiries=tiempos)
     ciclo = robot.dwell_seg * len(robot.pares)
+    tiempos_txt = "/".join(f"{e}m" for e in robot.expiries)
     print(f"{robot.nombre} · perfil {profile.nombre} · {len(robot.pares)} pares · "
-          f"vencimiento {expiry}m · pago min {payout_min:.0f}% · demo={demo} · "
+          f"tiempos {tiempos_txt} · pago min {payout_min:.0f}% · demo={demo} · "
           f"vuelta ~{ciclo//60} min")
     try:
         asyncio.run(robot.arrancar())

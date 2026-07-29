@@ -101,6 +101,21 @@ def test_on_history_guarda_ticks_como_m1():
         assert df is not None and len(df) >= 1
 
 
+def test_matriz_varios_tiempos_una_tarjeta_por_tiempo():
+    with tempfile.TemporaryDirectory() as d:
+        r = RobotReversion(
+            get_profile("REAL"), pares=["EURCHF"], ssid="x", token="", chat_id="1",
+            tabla={"EURCHF": {"1": [[5, 60.0]], "3": [[5, 70.0]]}},
+            repo=HistoryRepository(os.path.join(d, "h.db")),
+            is_open_fn=lambda p: True, expiries=[1, 3])     # la matriz: 1m y 3m
+        for ts, px in [(60, 1.0800), (120, 1.0800), (180, 1.0810),
+                       (240, 1.0810), (300, 1.0810)]:
+            r._on_tick("EURCHF", ts, px)
+        assert r._cola.qsize() == 2                          # una tarjeta por tiempo
+        nombres = {r._cola.get_nowait()["nombre_bot"] for _ in range(2)}
+        assert nombres == {"FUZION FX 1M", "FUZION FX 3M"}
+
+
 def test_payout_bajo_no_encola():
     with tempfile.TemporaryDirectory() as d:
         r = _robot_tmp(os.path.join(d, "h.db"))       # payout_min = 79 por defecto
