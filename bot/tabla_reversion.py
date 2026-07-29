@@ -21,6 +21,7 @@ from bot.backtest_reversion_real import (_pip, _rutas, MAX_PIPS, FRAC_IS, UMBRAL
                                          BREAKEVEN)
 
 REF_EXP_MIN = 3                              # vencimiento de referencia (minutos)
+EXPIRIES_TABLA = (1, 2, 3, 5)               # tiempos para los que se calcula el borde
 MIN_OPS = 400                               # mínimo de operaciones OOS para fiarse del tramo
 
 
@@ -55,13 +56,16 @@ def tabla_par(c, par, ref=REF_EXP_MIN):
 
 
 def construir(destino="datasets/real", pares=None):
-    """Calcula la tabla por par y la guarda en reversion_tabla.json. Devuelve el dict."""
+    """Calcula el borde por par Y por tiempo (1/2/3/5m) y lo guarda en
+    reversion_tabla.json con formato {par: {'1':[[u,wr]], '2':..., '3':..., '5':...}}.
+    Devuelve el dict."""
     rutas = _rutas(destino)
     if pares:
         rutas = [r for r in rutas if os.path.basename(r).split("__")[0] in pares]
     tabla = {}
-    print(f"TABLA DE REVERSIÓN POR PAR sobre {destino}/  (OOS, ref {REF_EXP_MIN}m)")
-    print("=" * 60)
+    print(f"TABLA DE REVERSIÓN POR PAR Y TIEMPO sobre {destino}/  "
+          f"(OOS, tiempos {EXPIRIES_TABLA})")
+    print("=" * 66)
     for r in rutas:
         par = os.path.basename(r).split("__")[0]
         try:
@@ -69,11 +73,19 @@ def construir(destino="datasets/real", pares=None):
         except Exception as e:
             print(f"  {par:8} ERROR {e}")
             continue
-        tr = tabla_par(c, par)
-        if tr:
-            tabla[par] = [[u, wr] for u, wr, _ in tr]
-            mejor = max(tr, key=lambda x: x[1])
-            print(f"  {par:8} tramos={len(tr):2}  mejor: {mejor[0]}p -> {mejor[1]:.1f}%")
+        por_tiempo = {}
+        resumen = []
+        for exp in EXPIRIES_TABLA:
+            tr = tabla_par(c, par, exp)
+            if tr:
+                por_tiempo[str(exp)] = [[u, wr] for u, wr, _ in tr]
+                mejor = max(tr, key=lambda x: x[1])
+                resumen.append(f"{exp}m:{mejor[1]:.0f}%")
+            else:
+                resumen.append(f"{exp}m:-")
+        if por_tiempo:
+            tabla[par] = por_tiempo
+            print(f"  {par:8} " + "  ".join(resumen))
         else:
             print(f"  {par:8} sin borde por encima del break-even")
     ruta = os.path.join(destino, "reversion_tabla.json")

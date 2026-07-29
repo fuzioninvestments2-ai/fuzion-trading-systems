@@ -88,7 +88,16 @@ def senal(closes, par, expiry_min=3, tabla=None):
         return {**base, "motivo": f"pico anómalo ({magnitud:.1f} pips > {MAX_PIPS}): "
                                   f"posible error de dato, no se opera"}
 
-    buckets = tabla[par] if (tabla and par in tabla and tabla[par]) else TABLA_OOS
+    # Selección de tramos: la tabla del par puede venir POR TIEMPO
+    # ({'1':[...],'3':[...]}) o en formato viejo plano ([[u,wr],...]). Si no hay del
+    # par, se usa la global. Así cada tiempo tiene su acierto real.
+    t = tabla.get(par) if tabla else None
+    if isinstance(t, dict):
+        buckets = t.get(str(expiry_min)) or t.get("3") or TABLA_OOS
+    elif isinstance(t, list) and t:
+        buckets = t
+    else:
+        buckets = TABLA_OOS
     prob = _prob_por_pico(magnitud, buckets)
     if prob is None:                                        # el par no gana a ese pico
         return {**base, "motivo": f"pico de {magnitud:.1f} pips sin borde medido en "

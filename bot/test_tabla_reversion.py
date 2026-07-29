@@ -47,9 +47,21 @@ def test_construir_guarda_json():
             os.path.join(d, "EURUSD__M1.csv.gz"), index=False, compression="gzip")
         tabla = construir(destino=d, pares=["EURUSD"])
         assert "EURUSD" in tabla
+        assert isinstance(tabla["EURUSD"], dict)          # formato POR TIEMPO
+        assert "3" in tabla["EURUSD"]                      # tiene el tiempo de 3m
         ruta = os.path.join(d, "reversion_tabla.json")
         assert os.path.exists(ruta)
-        assert cargar_tabla(ruta)["EURUSD"]               # se relee bien
+        assert cargar_tabla(ruta)["EURUSD"]["3"]           # se relee bien
+
+
+def test_senal_usa_tabla_por_tiempo():
+    from bot.senal_reversion import senal
+    # Distinto acierto por tiempo: 1m -> 60%, 3m -> 70%. La señal debe usar el suyo.
+    tabla = {"EURCHF": {"1": [[5, 60.0]], "3": [[5, 70.0]]}}
+    s3 = senal([1.0800, 1.0806], "EURCHF", expiry_min=3, tabla=tabla)   # +6 pips
+    s1 = senal([1.0800, 1.0806], "EURCHF", expiry_min=1, tabla=tabla)
+    assert s3["probabilidad"] == 70.0
+    assert s1["probabilidad"] == 60.0
 
 
 def test_senal_usa_tabla_del_par():
