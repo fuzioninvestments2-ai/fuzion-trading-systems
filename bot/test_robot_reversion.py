@@ -15,7 +15,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from bot.robot_reversion import RobotReversion, _chat_de_updates, PARES_FUERTES
+from bot.robot_reversion import (RobotReversion, _chat_de_updates, PARES_FUERTES,
+                                 ACTIVOS_PO)
 from bot.history import HistoryRepository
 from bot.profiles import get_profile
 
@@ -32,9 +33,13 @@ def test_chat_de_updates_toma_el_ultimo():
     assert _chat_de_updates(None) is None
 
 
-def test_pares_fuertes_son_cruces():
-    assert "EURCHF" in PARES_FUERTES and "AUDNZD" in PARES_FUERTES
-    assert len(PARES_FUERTES) == 7
+def test_pares_fuertes_solo_los_de_po():
+    assert "EURCHF" in PARES_FUERTES
+    # PO real no ofrece NZD ni USDJPY: no deben estar.
+    for prohibido in ("AUDNZD", "NZDUSD", "NZDJPY", "USDJPY"):
+        assert prohibido not in PARES_FUERTES and prohibido not in ACTIVOS_PO
+    # Todos los fuertes deben estar en la lista de activos de PO.
+    assert all(p in ACTIVOS_PO for p in PARES_FUERTES)
 
 
 def _robot_tmp(tmpdb):
