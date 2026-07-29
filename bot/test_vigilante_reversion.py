@@ -20,7 +20,7 @@ def test_pico_dispara_senal():
     s = v.nueva_vela("EURCHF", 1.0810, ts=2)       # +10 pips -> PUT
     assert s is not None
     assert s["direccion"] == "PUT"
-    assert "BAJA" in s["tarjeta"] and "EURCHF" in s["tarjeta"]
+    assert "ABAJO" in s["tarjeta"] and "EURCHF" in s["tarjeta"]
 
 
 def test_sin_pico_no_avisa():

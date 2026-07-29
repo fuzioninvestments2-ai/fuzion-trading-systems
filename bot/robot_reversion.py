@@ -147,6 +147,13 @@ class RobotReversion:
                 vence = entra + datetime.timedelta(minutes=exp)
                 s["hora_entrada"] = entra.strftime("%H:%M")
                 s["hora_vence"] = vence.strftime("%H:%M")
+                # Zona horaria del PC (offset real de ESA fecha: respeta horario de
+                # verano). Así la tarjeta dice UTC-4:00 y no hay confusión de hora.
+                off = entra.astimezone().utcoffset()
+                mins = int(off.total_seconds() // 60) if off else 0
+                signo = "+" if mins >= 0 else "-"
+                hh, mm = divmod(abs(mins), 60)
+                s["zona_horaria"] = f"UTC{signo}{hh}:{mm:02d}"
                 utc_h = datetime.datetime.utcfromtimestamp((cts + 60_000) / 1000.0).hour
                 s["sesion_mercado"] = etiqueta(utc_h)
             s["nombre_bot"] = (self.nombre if len(self.expiries) == 1
@@ -239,17 +246,23 @@ class RobotReversion:
         return bool(self.chat_id)
 
     def _grafico(self, par, direccion, exp):
-        """Genera el PNG del gráfico de velas del par (últimas M1). None si no puede."""
+        """Genera el PNG del gráfico con las velas de SU tiempo (1m->M1, 2m->tf120,
+        3m->tf180, 5m->tf300). Si aún no hay velas de ese tiempo, cae a M1. None si no
+        puede."""
         if not self.con_grafico:
             return None
         try:
             import tempfile
             from bot.chart import draw_candles
-            df = self.repo.get_recent(par, "M1", 40)
-            if df is None or len(df) < 10:
-                return None
+            clave = "M1" if exp == 1 else f"tf{exp * 60}"
+            df = self.repo.get_recent(par, clave, 40)
+            etiqueta = f"{exp}m"
+            if df is None or len(df) < 10:        # sin velas de ese tiempo -> usa 1m
+                df = self.repo.get_recent(par, "M1", 40)
+                etiqueta = f"1m (opera {exp}m)"
+                if df is None or len(df) < 10:
+                    return None
             ruta = os.path.join(tempfile.gettempdir(), f"fuzion_{par}_{exp}.png")
-            etiqueta = f"1m→opera {exp}m"         # velas 1m, operación al vencimiento
             return draw_candles(df, par, etiqueta, ruta, direccion=direccion)
         except Exception:
             self.log.exception("No se pudo generar el gráfico de %s", par)

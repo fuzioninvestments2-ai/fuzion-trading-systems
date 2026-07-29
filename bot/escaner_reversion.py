@@ -38,25 +38,28 @@ def tarjeta(s):
     if not s.get("operar"):
         return f"FUZION FX · {s.get('par','')}\nSin señal: {s.get('motivo','')}"
     if s["direccion"] == "PUT":
-        color, accion = "🔴", "BAJA  (poner ABAJO / PUT)"
+        cuadro, accion = "🟥", "PUT  (poner ABAJO)"
     else:
-        color, accion = "🟢", "SUBE  (poner ARRIBA / CALL)"
+        cuadro, accion = "🟩", "CALL  (poner ARRIBA)"
     encabezado = f"🤖 {s['nombre_bot']}\n" if s.get("nombre_bot") else ""
+    zona = f"🌐 Zona Horaria: {s['zona_horaria']}\n" if s.get("zona_horaria") else ""
     sesion = f"🌍 Mercado: {s['sesion_mercado']}\n" if s.get("sesion_mercado") else ""
     pago = s.get("payout")
     linea_pago = f"💰 Pago del activo: {pago:.0f}%\n" if pago else ""
+    exp = s["expiry_min"]
     # Si el robot puso la hora, se muestra la hora EXACTA de entrada y de vencimiento.
     if s.get("hora_entrada"):
-        tiempo = (f"⏰ ENTRA en la vela de las {s['hora_entrada']}  "
-                  f"(ya, tienes ~{VENTANA_ENTRADA_SEG} seg)\n"
-                  f"🏁 Vence a las {s['hora_vence']}  "
-                  f"({s['expiry_min']} min · M{s['expiry_min']})\n")
+        tiempo = (f"⏰ HORA DE ENTRADA: {s['hora_entrada']}  "
+                  f"(ya, ~{VENTANA_ENTRADA_SEG} seg)\n"
+                  f"🏁 VENCE: {s['hora_vence']}  ({exp} min · M{exp})\n")
     else:
-        tiempo = (f"⏳ PON LA OPERACIÓN YA — tienes ~{VENTANA_ENTRADA_SEG} seg\n"
-                  f"🕒 Vencimiento: {s['expiry_min']} min  (elige M{s['expiry_min']})\n")
+        tiempo = (f"⏰ PON LA OPERACIÓN YA — tienes ~{VENTANA_ENTRADA_SEG} seg\n"
+                  f"⏱️ TIEMPO: {exp} minuto(s) (M{exp})\n")
     return (
         f"{encabezado}"
-        f"{color} {s['par']}  ·  {accion}\n"
+        f"{zona}"
+        f"📊 DIVISA: {s['par']}\n"
+        f"{cuadro} DIRECCIÓN: {accion}\n"
         f"{tiempo}"
         f"{sesion}"
         f"{linea_pago}"

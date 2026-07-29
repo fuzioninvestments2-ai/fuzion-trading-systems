@@ -60,8 +60,9 @@ def test_tick_a_senal_encola():
         s = r._cola.get_nowait()
         assert s["par"] == "EURCHF" and s["direccion"] == "PUT"
         assert s.get("hora_entrada") and s.get("hora_vence")   # trae hora de entrada
-        assert "ENTRA en la vela de las" in s["tarjeta"]
-        assert "Vence a las" in s["tarjeta"]
+        assert "HORA DE ENTRADA" in s["tarjeta"]
+        assert "VENCE" in s["tarjeta"]
+        assert s.get("zona_horaria") and "Zona Horaria" in s["tarjeta"]   # UTC offset
         assert s.get("sesion_mercado") and "Mercado:" in s["tarjeta"]   # sesión
         assert "FUZION FX" in s["tarjeta"]                     # nombre del bot
 
