@@ -154,7 +154,7 @@ def test_grafico_genera_png():
                   "high": 1.081 + i * 1e-4, "low": 1.079 + i * 1e-4,
                   "close": 1.0805 + i * 1e-4, "volume": 1.0} for i in range(30)]
         r.repo.record_many("EURCHF", "M1", velas)
-        ruta = r._grafico("EURCHF", "PUT")
+        ruta = r._grafico("EURCHF", "PUT", 3)
         assert ruta is not None and os.path.exists(ruta)   # generó el PNG
 
 

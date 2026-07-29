@@ -99,8 +99,15 @@ class RobotReversion:
         self._builders = {}
         self._cola = asyncio.Queue()
         self.client = None
-        self.bot = None
+        self.bots = {}                   # exp -> Bot de Telegram (uno por tiempo)
+        self._bot_primario = None
         self.log = logging.getLogger("robot_reversion")
+
+    def _token_para(self, exp):
+        """Token del bot de Telegram de ese tiempo: TELEGRAM_BOT_TOKEN_REAL_<N>M, o el
+        base TELEGRAM_BOT_TOKEN_REAL si no hay uno propio (así 1m usa el base)."""
+        return (os.getenv(f"TELEGRAM_BOT_TOKEN_REAL_{exp}M")
+                or self.token or os.getenv("TELEGRAM_BOT_TOKEN_REAL", ""))
 
     # --- construcción de velas desde ticks (mismo patrón que pocket_service) ---
     def _builder(self, asset):
@@ -225,13 +232,13 @@ class RobotReversion:
         if self.chat_id:
             return True
         try:
-            ups = await self.bot.get_updates(timeout=5)
+            ups = await self._bot_primario.get_updates(timeout=5)
             self.chat_id = _chat_de_updates(ups) or ""
         except Exception:
             self.log.exception("No se pudo leer get_updates")
         return bool(self.chat_id)
 
-    def _grafico(self, par, direccion):
+    def _grafico(self, par, direccion, exp):
         """Genera el PNG del gráfico de velas del par (últimas M1). None si no puede."""
         if not self.con_grafico:
             return None
@@ -241,10 +248,8 @@ class RobotReversion:
             df = self.repo.get_recent(par, "M1", 40)
             if df is None or len(df) < 10:
                 return None
-            ruta = os.path.join(tempfile.gettempdir(), f"fuzion_{par}.png")
-            # Etiqueta del gráfico = velas de 1m pero operación al vencimiento elegido,
-            # para que coincida con la tarjeta (antes decía 'M1' y confundía con el 3m).
-            etiqueta = f"1m→opera {self.expiry_min}m"
+            ruta = os.path.join(tempfile.gettempdir(), f"fuzion_{par}_{exp}.png")
+            etiqueta = f"1m→opera {exp}m"         # velas 1m, operación al vencimiento
             return draw_candles(df, par, etiqueta, ruta, direccion=direccion)
         except Exception:
             self.log.exception("No se pudo generar el gráfico de %s", par)
@@ -253,24 +258,25 @@ class RobotReversion:
     async def _enviar_loop(self):
         while True:
             s = await self._cola.get()
-            foto = self._grafico(s["par"], s.get("direccion", ""))
+            exp = s.get("expiry_min")
+            bot = self.bots.get(exp) or self._bot_primario   # el bot de ESE tiempo
+            foto = self._grafico(s["par"], s.get("direccion", ""), exp)
             try:
                 if foto:
                     with open(foto, "rb") as fh:
-                        await self.bot.send_photo(chat_id=self.chat_id, photo=fh,
-                                                  caption=s["tarjeta"],
-                                                  read_timeout=30, write_timeout=30,
-                                                  connect_timeout=15)
+                        await bot.send_photo(chat_id=self.chat_id, photo=fh,
+                                             caption=s["tarjeta"], read_timeout=30,
+                                             write_timeout=30, connect_timeout=15)
                 else:
-                    await self.bot.send_message(chat_id=self.chat_id, text=s["tarjeta"],
-                                                read_timeout=30, write_timeout=30,
-                                                connect_timeout=15)
-                self.log.info("Señal enviada: %s %s %.1f%%",
-                              s["par"], s["direccion"], s.get("probabilidad", 0))
+                    await bot.send_message(chat_id=self.chat_id, text=s["tarjeta"],
+                                           read_timeout=30, write_timeout=30,
+                                           connect_timeout=15)
+                self.log.info("Señal %sm enviada: %s %s %.1f%%",
+                              exp, s["par"], s["direccion"], s.get("probabilidad", 0))
             except Exception:
-                self.log.exception("No se pudo enviar a Telegram")
+                self.log.exception("No se pudo enviar a Telegram (bot %sm)", exp)
                 try:                              # respaldo: al menos el texto
-                    await self.bot.send_message(chat_id=self.chat_id, text=s["tarjeta"])
+                    await bot.send_message(chat_id=self.chat_id, text=s["tarjeta"])
                 except Exception:
                     self.log.exception("Tampoco se pudo enviar el texto")
 
@@ -295,33 +301,48 @@ class RobotReversion:
             await asyncio.sleep(self.dwell_seg)
 
     async def arrancar(self):
-        """Punto de entrada async: conecta, resuelve chat, rota y envía."""
+        """Punto de entrada async: crea un bot por tiempo, conecta a PO, rota y envía."""
         if not self.ssid:
             raise RuntimeError("Falta ssid_real.txt (o POCKET_OPTION_SSID_REAL).")
-        if not self.token:
-            raise RuntimeError("Falta TELEGRAM_BOT_TOKEN_REAL en el .env.")
         from telegram import Bot
-        self.bot = Bot(self.token)
-        await self.bot.initialize()
+        # UN bot de Telegram por cada tiempo (4 bots separados). Cae al base si falta.
+        self.bots = {}
+        for exp in self.expiries:
+            tok = self._token_para(exp)
+            if not tok:
+                raise RuntimeError(f"Falta el token del bot de {exp}m "
+                                   f"(TELEGRAM_BOT_TOKEN_REAL_{exp}M en el .env).")
+            b = Bot(tok)
+            await b.initialize()
+            self.bots[exp] = b
+        self._bot_primario = self.bots[self.expiries[0]]
         if not await self._resolver_chat():
-            raise RuntimeError("No sé a qué chat enviar. Manda un mensaje a tu bot en "
-                               "Telegram y reintenta, o define TELEGRAM_CHAT_ID_REAL.")
+            raise RuntimeError("No sé a qué chat enviar. Define TELEGRAM_CHAT_ID_REAL o "
+                               "manda /start a tu bot.")
         self._precargar()
         self.client = PocketOptionClient(self.ssid, on_tick=self._on_tick,
                                          on_history=self._on_history,
                                          on_assets=self._on_assets,
                                          demo=self.demo, logger=self.log)
-        await self.bot.send_message(
-            chat_id=self.chat_id,
-            text=f"{self.nombre} activo (tiempos "
-                 f"{'/'.join(f'{e}m' for e in self.expiries)}). Vigilando "
-                 f"{len(self.pares)} pares. Aviso cuando haya reversión con ventaja.")
+        # Aviso de arranque por CADA bot (ves activarse cada uno en su chat).
+        for exp, b in self.bots.items():
+            try:
+                await b.send_message(
+                    chat_id=self.chat_id,
+                    text=f"FUZION FX {exp}M activo. Vigilando {len(self.pares)} pares. "
+                         f"Aviso cuando haya reversión con ventaja a {exp} min.")
+            except Exception:
+                self.log.exception("No se pudo avisar arranque del bot %sm", exp)
         tarea_cli = asyncio.create_task(self.client.run(asset=self.pares[0], period=60))
         try:
             await asyncio.gather(self._rotar(), self._enviar_loop(), tarea_cli)
         finally:
             self.client.stop()
-            await self.bot.shutdown()
+            for b in self.bots.values():
+                try:
+                    await b.shutdown()
+                except Exception:
+                    pass
 
 
 def main(argv):
