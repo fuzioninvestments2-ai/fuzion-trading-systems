@@ -262,6 +262,7 @@ def _flujo_pico(r, z_min):
     # Buffer con RUIDO (±5 pips, media 1.0800) precargado, y luego un cierre pico a
     # 1.0810 -> z ~2. Con z_min alto se silencia; con z_min bajo pasa.
     r._payouts["EURCHF"] = 85
+    r.con_confirmacion = True                       # este test prueba la confirmación
     r.conf_z_min = z_min
     r.vig.precargar("EURCHF", [1.0795 if i % 2 else 1.0805 for i in range(20)])
     r._on_tick("EURCHF", 100 * 60, 1.0810)          # tick del pico

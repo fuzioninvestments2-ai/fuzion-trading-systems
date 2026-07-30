@@ -59,8 +59,10 @@ ACTIVOS_PO = ("AUDCAD", "AUDUSD", "AUDJPY", "EURCAD", "EURUSD", "EURJPY", "EURCH
 PARES_FUERTES = ("EURCHF", "AUDCAD", "EURGBP", "USDCHF", "GBPCHF", "CHFJPY",
                  "AUDUSD", "EURCAD", "GBPCAD", "AUDJPY")
 DWELL_SEG = 75                 # segundos escuchando cada par (>=1 vela M1)
-# Tiempos cuyo historial se pide al saltar a cada par (para guardar historial completo).
-PERIODOS_HISTORIAL = (120, 180, 300, 600, 900, 1800, 3600)
+# Tiempos cuyo historial se pide al saltar a cada par. SOLO los que usan los bots
+# (1/2/3/5m -> 60/120/180/300). Antes se pedían tiempos largos (600..3600) que ningún
+# bot analiza y solo engordaban el historial: se quitan para alinear datos y uso.
+PERIODOS_HISTORIAL = (60, 120, 180, 300)
 
 
 def _chat_de_updates(updates):
@@ -139,15 +141,16 @@ class RobotReversion:
         # de alto impacto en la ventana (±15 min). El OTC nunca se bloquea (sintético).
         self.con_noticias = bool(con_noticias)
         self.news = NewsFilter()
-        # CONFIRMACIÓN: exige que el precio esté estirado de su media (z>=z_min) en el
-        # sentido del pico; filtra picos que son arranque de tendencia, no reversión.
-        self.con_confirmacion = True
+        # CONFIRMACIÓN por z-score: DESACTIVADA por defecto. Exigía "precio estirado",
+        # que en una tendencia SIEMPRE pasa, y choca con el filtro de tendencia (dejaba
+        # todo mudo). El criterio correcto es el filtro de tendencia de abajo.
+        self.con_confirmacion = False
         self.conf_z_min = 1.0
         # TENDENCIA: no operar reversión CONTRA una tendencia fuerte (el pico es la
         # tendencia continuando, no un rebote). Evita apostar baja en plena subida.
         self.con_tendencia = True
         self.tend_n = 20                  # velas previas que miran la tendencia
-        self.tend_umbral = 0.35           # pendiente normalizada que se considera tendencia
+        self.tend_umbral = 0.5            # solo rechaza tendencias CLARAS (deja pasar rango/deriva leve)
         # WATCHDOG: si deja de llegar el flujo de ticks (con el mercado abierto) se
         # reinicia la conexión sola, sin apagar el bot.
         self.con_watchdog = True
