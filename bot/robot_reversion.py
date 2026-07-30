@@ -45,6 +45,7 @@ from bot.signal_log import SignalTracker
 from bot.autocorrector import debe_enviar
 from bot.news_filter import NewsFilter
 from bot.confirmacion_reversion import confirma
+from bot.tendencia import permite_reversion
 
 # Activos que Pocket Option ofrece en el mercado REAL (según su menú) y que además
 # TENEMOS con historial/borde. PO real NO ofrece pares con NZD ni USDJPY; de la lista
@@ -136,6 +137,11 @@ class RobotReversion:
         # sentido del pico; filtra picos que son arranque de tendencia, no reversión.
         self.con_confirmacion = True
         self.conf_z_min = 1.0
+        # TENDENCIA: no operar reversión CONTRA una tendencia fuerte (el pico es la
+        # tendencia continuando, no un rebote). Evita apostar baja en plena subida.
+        self.con_tendencia = True
+        self.tend_n = 20                  # velas previas que miran la tendencia
+        self.tend_umbral = 0.35           # pendiente normalizada que se considera tendencia
         # WATCHDOG: si deja de llegar el flujo de ticks (con el mercado abierto) se
         # reinicia la conexión sola, sin apagar el bot.
         self.con_watchdog = True
@@ -240,6 +246,12 @@ class RobotReversion:
                                                       s["direccion"], self.conf_z_min):
                 self.log.info("Sin confirmación (no estirado): %s %sm en silencio.",
                               asset, exp)
+                continue
+            # TENDENCIA: no pelear contra una tendencia fuerte (el fallo de apostar baja
+            # en plena subida). Solo reversión en rango o contra-tendencia.
+            if self.con_tendencia and not permite_reversion(vig.buffer(asset),
+                                        s["direccion"], self.tend_n, self.tend_umbral):
+                self.log.info("Contra tendencia fuerte: %s %sm en silencio.", asset, exp)
                 continue
             tf = f"M{exp}"
             cts = cerrada.get("timestamp")

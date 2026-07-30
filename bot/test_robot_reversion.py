@@ -214,6 +214,19 @@ def test_senal_tardia_no_encola():
         assert r._cola.qsize() == 0                          # descartada por tardía
 
 
+def test_contra_tendencia_no_encola():
+    # El fallo de las tarjetas: subida sostenida + pico arriba -> el bot daba PUT. Con el
+    # filtro de tendencia, esa señal contra la subida se veta (no encola).
+    with tempfile.TemporaryDirectory() as d:
+        r = _robot_tmp(os.path.join(d, "h.db"))
+        r._payouts["EURCHF"] = 85
+        subida = [1.0800 + 0.0002 * i for i in range(20)]   # tendencia alcista clara
+        r.vig.precargar("EURCHF", subida)
+        r._on_tick("EURCHF", 6000, 1.0848)                  # pico arriba (sigue subiendo)
+        r._on_tick("EURCHF", 6060, 1.0848)                  # cierra la vela del pico
+        assert r._cola.qsize() == 0                          # vetada por ir contra la subida
+
+
 def test_watchdog_decide_reinicio():
     # Mercado abierto y sin ticks nuevos -> reinicia; con ticks o cerrado -> no.
     assert _necesita_reinicio(100, 100, True) is True     # abierto y sin latido
