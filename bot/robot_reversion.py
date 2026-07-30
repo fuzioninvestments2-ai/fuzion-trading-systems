@@ -79,6 +79,21 @@ def _chat_de_updates(updates):
     return None
 
 
+def _ev_par(borde, pago, payout_min):
+    """Valor esperado por operación de un par (cuánto rinde de media cada trade):
+        EV = p*pago - (1-p)     con p = borde/100
+    Devuelve None si NO es elegible: paga menos del mínimo o no tiene borde medido. Así
+    el bot decide SOLO en qué enfocarse: el par con mayor EV (mejor borde y mejor pago).
+    `borde` y `pago` en %."""
+    if borde is None or borde <= 0:
+        return None
+    if pago is not None and pago < payout_min:
+        return None
+    p = borde / 100.0
+    pay = (pago if pago is not None else payout_min) / 100.0
+    return p * pay - (1.0 - p)
+
+
 def _proxima_entrada(ahora_epoch, seg, min_lead):
     """Epoch del INICIO de la próxima vela que empieza al menos `min_lead` seg después de
     ahora. Así la hora de entrada siempre cae en el futuro con margen para programarla."""
@@ -165,6 +180,12 @@ class RobotReversion:
         # menos este número de segundos en el futuro, para dar tiempo a programar la
         # operación antes de que arranque (lo que pidió el trader).
         self.min_lead_seg = 20
+        # INTELIGENCIA: en vez de rotar a ciegas, el bot se ENFOCA en el par con mejor
+        # valor esperado (borde x pago) en tiempo real, y cambia solo si aparece uno
+        # claramente mejor. Así decide él y capta las señales al instante.
+        self.inteligente = True
+        self.foco_seg = 120               # cada cuánto reevalúa cuál es el mejor par
+        self.foco_hist = 0.02             # margen de EV para cambiar de par (evita ir y venir)
         self._ticks = 0                          # contador de ticks recibidos (latido)
         self._builders = {}
         self._cola = asyncio.Queue()
@@ -493,6 +514,59 @@ class RobotReversion:
                     self.log.exception("No se pudo reiniciar la conexión")
             prev = self._ticks
 
+    def _mejor_borde(self, par):
+        """Mejor acierto histórico del par (máximo entre sus tiempos), como proxy de
+        calidad. 0 si el par no tiene borde en la tabla."""
+        t = self.tabla.get(par) if self.tabla else None
+        if isinstance(t, dict):
+            vals = [wr for b in t.values() for _, wr in b]
+            return max(vals) if vals else 0.0
+        if isinstance(t, list) and t:
+            return max(wr for _, wr in t)
+        return 0.0
+
+    def _ev(self, par):
+        """Valor esperado del par ahora (borde x pago vivo). None si no es elegible."""
+        return _ev_par(self._mejor_borde(par), self._payouts.get(par), self.payout_min)
+
+    def _mejor_par(self):
+        """El par ELEGIBLE (pago>=mínimo y con borde) de mayor valor esperado. Devuelve
+        (par, ev) o (None, None) si ninguno es elegible ahora."""
+        puntuados = [(p, self._ev(p)) for p in self.pares]
+        puntuados = [(p, ev) for p, ev in puntuados if ev is not None]
+        if not puntuados:
+            return None, None
+        puntuados.sort(key=lambda x: x[1], reverse=True)
+        return puntuados[0]
+
+    async def _seleccionar(self):
+        """EL BOT DECIDE: se enfoca en el par de mayor valor esperado (borde x pago) en
+        tiempo real y cambia solo si otro lo supera con margen (evita ir y venir). Así
+        capta las señales al instante en el mejor par, sin rotar a ciegas."""
+        actual = None
+        while True:
+            mejor, ev_mejor = self._mejor_par()
+            if mejor is not None:
+                ev_actual = self._ev(actual) if actual else None
+                # Cambia si no hay par actual, si el actual dejó de ser elegible, o si el
+                # mejor lo supera por el margen de histéresis.
+                if actual != mejor and (ev_actual is None or ev_mejor > ev_actual + self.foco_hist):
+                    actual = mejor
+                    try:
+                        await self.client.set_asset(actual, 60)
+                        await self.client.request_history(actual, PERIODOS_HISTORIAL)
+                        pago = self._payouts.get(actual)
+                        self.log.info("Enfoque en %s (pago %s · borde %.0f%% · EV %+.3f) "
+                                      "— el mejor ahora.", actual,
+                                      f"{pago:.0f}%" if pago is not None else "?",
+                                      self._mejor_borde(actual), ev_mejor)
+                    except Exception:
+                        self.log.exception("No se pudo enfocar %s", actual)
+            else:
+                self.log.info("Ningún par elegible (pago >= %.0f%%) ahora mismo; espero.",
+                              self.payout_min)
+            await asyncio.sleep(self.foco_seg)
+
     async def _rotar(self):
         i = 0
         while True:
@@ -547,7 +621,9 @@ class RobotReversion:
             except Exception:
                 self.log.exception("No se pudo avisar arranque del bot %sm", exp)
         tarea_cli = asyncio.create_task(self.client.run(asset=self.pares[0], period=60))
-        tareas = [self._rotar(), self._enviar_loop(), tarea_cli]
+        # El bot DECIDE su foco (inteligente) o rota a ciegas (compat) según config.
+        bucle_pares = self._seleccionar() if self.inteligente else self._rotar()
+        tareas = [bucle_pares, self._enviar_loop(), tarea_cli]
         if self.con_noticias:
             tareas.append(self._refrescar_noticias())
         if self.con_watchdog:

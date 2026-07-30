@@ -17,7 +17,7 @@ if ROOT not in sys.path:
 
 from bot.robot_reversion import (RobotReversion, _chat_de_updates, PARES_FUERTES,
                                  ACTIVOS_PO, _necesita_reinicio, _es_tardia,
-                                 _proxima_entrada)
+                                 _proxima_entrada, _ev_par)
 from bot.history import HistoryRepository
 from bot.profiles import get_profile
 
@@ -249,6 +249,33 @@ def test_contra_tendencia_no_encola():
         r._on_tick("EURCHF", 6000, 1.0848)                  # pico arriba (sigue subiendo)
         r._on_tick("EURCHF", 6060, 1.0848)                  # cierra la vela del pico
         assert r._cola.qsize() == 0                          # vetada por ir contra la subida
+
+
+def test_ev_par_elegibilidad_y_orden():
+    # Paga menos del mínimo -> no elegible (None).
+    assert _ev_par(60.0, 70.0, 72.0) is None
+    # Sin borde -> no elegible.
+    assert _ev_par(0.0, 90.0, 72.0) is None
+    # Elegible: EV = p*pago - (1-p). Mayor pago o mayor borde -> mayor EV.
+    ev_alto = _ev_par(60.0, 90.0, 72.0)
+    ev_bajo = _ev_par(60.0, 75.0, 72.0)
+    assert ev_alto is not None and ev_alto > ev_bajo   # más pago = mejor
+
+
+def test_mejor_par_elige_el_de_mayor_ev():
+    with tempfile.TemporaryDirectory() as d:
+        r = RobotReversion(
+            get_profile("REAL"), pares=["EURCHF", "CHFJPY", "AUDCAD"], ssid="x",
+            token="", chat_id="1",
+            tabla={"EURCHF": [[5, 60.0]], "CHFJPY": [[5, 64.0]], "AUDCAD": [[5, 61.0]]},
+            repo=HistoryRepository(os.path.join(d, "h.db")), is_open_fn=lambda p: True)
+        r._payouts = {"EURCHF": 85, "CHFJPY": 90, "AUDCAD": 70}   # AUDCAD paga poco
+        mejor, ev = r._mejor_par()
+        assert mejor == "CHFJPY"                        # mejor borde Y mejor pago
+        # AUDCAD no es elegible (paga < 72): no puede salir elegido.
+        r._payouts = {"EURCHF": 85, "CHFJPY": 71, "AUDCAD": 70}   # solo EURCHF elegible
+        mejor2, _ = r._mejor_par()
+        assert mejor2 == "EURCHF"
 
 
 def test_watchdog_decide_reinicio():
