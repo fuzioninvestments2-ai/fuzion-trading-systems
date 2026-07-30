@@ -250,12 +250,14 @@ class RobotReversion:
                 continue
             if seg != 60:
                 self._guardar(asset, seg, cerrada)     # historial del tiempo (gráfico)
-            # FRESCURA: si el cierre se detectó tarde (rotación), la entrada ya pasó -> se
-            # descarta. Así no llega una hora de entrada en el pasado (desfase de tiempo).
+            # FRESCURA: el cierre debe ser reciente (que el pico no sea ya viejo). Se
+            # tolera hasta UNA vela de ese tiempo de atraso: como la entrada apunta a la
+            # próxima vela, un cierre así de reciente sigue sirviendo. Cierres de hace
+            # mucho (reconexión/rotación) se descartan.
+            tolerancia = max(self.max_atraso_seg, seg)
             if self.con_atraso and _es_tardia(ts, cerrada.get("timestamp", 0), seg,
-                                              self.max_atraso_seg):
-                self.log.info("Señal %sm de %s descartada: cierre detectado tarde.",
-                              exp, asset)
+                                              tolerancia):
+                self.log.info("Señal %sm de %s descartada: cierre viejo.", exp, asset)
                 continue
             vig = self.vigilantes[exp]
             if not vig.registrar(asset, cerrada["close"], ts=cerrada.get("timestamp")):
@@ -554,32 +556,34 @@ class RobotReversion:
         return puntuados[0]
 
     async def _seleccionar(self):
-        """EL BOT DECIDE: se enfoca en el par de mayor valor esperado (borde x pago) en
-        tiempo real y cambia solo si otro lo supera con margen (evita ir y venir). Así
-        capta las señales al instante en el mejor par, sin rotar a ciegas."""
-        actual = None
+        """EL BOT DECIDE Y CUBRE: recorre los pares ELEGIBLES (pago>=mínimo y con borde),
+        del mejor valor esperado al peor, dejando dwell en cada uno para que sus velas
+        cierren en vivo y se analicen por separado por tiempo. Los no elegibles se
+        saltan. Así no se queda ciego en un solo par: cubre el mercado priorizando EV."""
         while True:
-            mejor, ev_mejor = self._mejor_par()
-            if mejor is not None:
-                ev_actual = self._ev(actual) if actual else None
-                # Cambia si no hay par actual, si el actual dejó de ser elegible, o si el
-                # mejor lo supera por el margen de histéresis.
-                if actual != mejor and (ev_actual is None or ev_mejor > ev_actual + self.foco_hist):
-                    actual = mejor
-                    try:
-                        await self.client.set_asset(actual, 60)
-                        await self.client.request_history(actual, PERIODOS_HISTORIAL)
-                        pago = self._payouts.get(actual)
-                        self.log.info("Enfoque en %s (pago %s · borde %.0f%% · EV %+.3f) "
-                                      "— el mejor ahora.", actual,
-                                      f"{pago:.0f}%" if pago is not None else "?",
-                                      self._mejor_borde(actual), ev_mejor)
-                    except Exception:
-                        self.log.exception("No se pudo enfocar %s", actual)
-            else:
-                self.log.info("Ningún par elegible (pago >= %.0f%%) ahora mismo; espero.",
+            ranking = sorted(((p, self._ev(p)) for p in self.pares),
+                             key=lambda x: (x[1] is None, -(x[1] or 0.0)))
+            elegibles = [p for p, ev in ranking if ev is not None]
+            if not elegibles:
+                self.log.info("Ningún par elegible (pago >= %.0f%%) ahora; espero.",
                               self.payout_min)
-            await asyncio.sleep(self.foco_seg)
+                await asyncio.sleep(self.foco_seg)
+                continue
+            for par in elegibles:
+                if self._ev(par) is None:            # el pago pudo cambiar: reevalúa
+                    continue
+                try:
+                    await self.client.set_asset(par, 60)
+                    await self.client.request_history(par, PERIODOS_HISTORIAL)
+                    pago = self._payouts.get(par)
+                    self.log.info("Analizando %s (pago %s · borde %.0f%% · EV %+.3f) "
+                                  "[%d elegibles]", par,
+                                  f"{pago:.0f}%" if pago is not None else "?",
+                                  self._mejor_borde(par), self._ev(par) or 0.0,
+                                  len(elegibles))
+                except Exception:
+                    self.log.exception("No se pudo cambiar a %s", par)
+                await asyncio.sleep(self.dwell_seg)
 
     async def _rotar(self):
         i = 0

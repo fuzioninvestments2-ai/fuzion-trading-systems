@@ -232,10 +232,11 @@ def test_senal_tardia_no_encola():
         r = _robot_tmp(os.path.join(d, "h.db"))
         r._payouts["EURCHF"] = 85
         r.max_atraso_seg = 25
-        # Ticks separados 2 min: la vela M1 (60s) se cierra con 60s de atraso -> tarde.
+        # Cierre MUY viejo: la vela M1 (fin en 6060) se detecta con un tick a 6200 =
+        # 140s de atraso (> una vela) -> se descarta.
         r._on_tick("EURCHF", 6000, 1.0800)
-        r._on_tick("EURCHF", 6120, 1.0810)
-        assert r._cola.qsize() == 0                          # descartada por tardía
+        r._on_tick("EURCHF", 6200, 1.0810)
+        assert r._cola.qsize() == 0                          # descartada por cierre viejo
 
 
 def test_ev_bajo_no_encola():
