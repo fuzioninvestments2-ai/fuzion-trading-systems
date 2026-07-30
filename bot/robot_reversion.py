@@ -31,6 +31,7 @@ import logging
 import math
 import os
 import sys
+import time
 
 from bot.profiles import get_profile
 from bot.pocket_probe import _load_ssid
@@ -73,6 +74,14 @@ def _chat_de_updates(updates):
         if cid is not None:
             return str(cid)
     return None
+
+
+def _es_tardia(ts_sec, inicio_ms, seg, max_atraso):
+    """True si el cierre de la vela se detectó demasiado tarde: el tick actual llegó más
+    de `max_atraso` seg después de que la vela terminara. Todo en hora del bróker (el
+    desfase se cancela al restar). Una vela detectada tarde daría una entrada ya pasada."""
+    fin = inicio_ms / 1000.0 + seg
+    return (ts_sec - fin) > max_atraso
 
 
 def _necesita_reinicio(ticks_prev, ticks_now, mercado_abierto):
@@ -131,6 +140,12 @@ class RobotReversion:
         # reinicia la conexión sola, sin apagar el bot.
         self.con_watchdog = True
         self.watchdog_seg = 180
+        # TIEMPO/FRESCURA: por la rotación, una vela puede detectarse tarde y mandaría
+        # una hora de entrada ya pasada. Se descarta si el cierre se detectó > max_atraso
+        # seg después de terminar la vela; y si la señal se quedó vieja en la cola.
+        self.con_atraso = True
+        self.max_atraso_seg = 25                 # detección tardía del cierre -> se descarta
+        self.max_cola_seg = 30                   # vieja en cola al enviar -> se descarta
         self._ticks = 0                          # contador de ticks recibidos (latido)
         self._builders = {}
         self._cola = asyncio.Queue()
@@ -191,8 +206,6 @@ class RobotReversion:
                 except Exception:
                     self.log.exception("No se pudieron resolver señales vencidas")
 
-        from bot.escaner_reversion import tarjeta
-        from bot.sesiones import etiqueta
         # Un análisis POR TIEMPO: cada bot con la vela de SU temporalidad.
         for exp in self.expiries:
             seg = exp * 60
@@ -201,6 +214,13 @@ class RobotReversion:
                 continue
             if seg != 60:
                 self._guardar(asset, seg, cerrada)     # historial del tiempo (gráfico)
+            # FRESCURA: si el cierre se detectó tarde (rotación), la entrada ya pasó -> se
+            # descarta. Así no llega una hora de entrada en el pasado (desfase de tiempo).
+            if self.con_atraso and _es_tardia(ts, cerrada.get("timestamp", 0), seg,
+                                              self.max_atraso_seg):
+                self.log.info("Señal %sm de %s descartada: cierre detectado tarde.",
+                              exp, asset)
+                continue
             vig = self.vigilantes[exp]
             if not vig.registrar(asset, cerrada["close"], ts=cerrada.get("timestamp")):
                 continue
@@ -241,22 +261,31 @@ class RobotReversion:
                 self.log.info("Silenciado %s %s: %s", asset, tf, motivo)
                 continue
             s["payout"] = pago
-            # HORA anclada al reloj REAL y al borde de la vela del tiempo (entrar justo).
-            entra = self._hora_entrada(exp)
-            vence = entra + datetime.timedelta(minutes=exp)
-            s["hora_entrada"] = entra.strftime("%H:%M")
-            s["hora_vence"] = vence.strftime("%H:%M")
-            # Zona horaria del PC (offset real de ESA fecha: respeta horario de verano).
-            off = entra.astimezone().utcoffset()
-            mins = int(off.total_seconds() // 60) if off else 0
-            signo = "+" if mins >= 0 else "-"
-            hh, mm = divmod(abs(mins), 60)
-            s["zona_horaria"] = f"UTC{signo}{hh}:{mm:02d}"
-            s["sesion_mercado"] = etiqueta(datetime.datetime.utcnow().hour)
+            s["expiry_min"] = exp
             s["nombre_bot"] = (self.nombre if len(self.expiries) == 1
                                else f"FUZION FX {exp}M")
-            s["tarjeta"] = tarjeta(s)
+            s["_mono"] = time.monotonic()          # cuándo se creó (para descartar viejas)
+            self._sellar_hora(s, exp)              # hora + tarjeta (se refresca al enviar)
             self._cola.put_nowait(s)
+
+    def _sellar_hora(self, s, exp):
+        """Fija la hora de entrada/vencimiento en el RELOJ REAL del usuario y arma la
+        tarjeta. Se llama al crear y OTRA VEZ al enviar, para que la hora que ve el
+        usuario sea la del momento de recibir (no la de hace minutos)."""
+        from bot.escaner_reversion import tarjeta
+        from bot.sesiones import etiqueta
+        entra = self._hora_entrada(exp)
+        vence = entra + datetime.timedelta(minutes=exp)
+        s["hora_entrada"] = entra.strftime("%H:%M")
+        s["hora_vence"] = vence.strftime("%H:%M")
+        # Zona horaria del PC (offset real de ESA fecha: respeta horario de verano).
+        off = entra.astimezone().utcoffset()
+        mins = int(off.total_seconds() // 60) if off else 0
+        signo = "+" if mins >= 0 else "-"
+        hh, mm = divmod(abs(mins), 60)
+        s["zona_horaria"] = f"UTC{signo}{hh}:{mm:02d}"
+        s["sesion_mercado"] = etiqueta(datetime.datetime.utcnow().hour)
+        s["tarjeta"] = tarjeta(s)
 
     def _on_assets(self, assets):
         """Guarda el % de pago (payout) en vivo de cada activo, para el filtro."""
@@ -375,6 +404,12 @@ class RobotReversion:
         while True:
             s = await self._cola.get()
             exp = s.get("expiry_min")
+            # Si la señal se quedó vieja en la cola (rotación/red), se descarta: mejor no
+            # mandar una entrada tarde que mandarla con la hora ya pasada.
+            if self.max_cola_seg and time.monotonic() - s.get("_mono", 0) > self.max_cola_seg:
+                self.log.info("Señal %sm de %s descartada: vieja en cola.", exp, s.get("par"))
+                continue
+            self._sellar_hora(s, exp)          # refresca la hora al momento de enviar
             bot = self.bots.get(exp) or self._bot_primario   # el bot de ESE tiempo
             foto = self._grafico(s["par"], s.get("direccion", ""), exp)
             try:

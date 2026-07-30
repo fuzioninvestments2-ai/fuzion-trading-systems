@@ -16,7 +16,7 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from bot.robot_reversion import (RobotReversion, _chat_de_updates, PARES_FUERTES,
-                                 ACTIVOS_PO, _necesita_reinicio)
+                                 ACTIVOS_PO, _necesita_reinicio, _es_tardia)
 from bot.history import HistoryRepository
 from bot.profiles import get_profile
 
@@ -115,6 +115,7 @@ def test_matriz_cada_bot_analiza_su_tiempo():
             tabla={"EURCHF": {"1": [[5, 60.0], [8, 62.0]], "2": [[5, 70.0], [8, 72.0]]}},
             repo=HistoryRepository(os.path.join(d, "h.db")),
             is_open_fn=lambda p: True, expiries=[1, 2])     # la matriz: 1m y 2m
+        r.con_atraso = False                                 # ticks espaciados a propósito
         r._payouts["EURCHF"] = 85
         serie = [1.0795 if i % 2 else 1.0805 for i in range(20)]   # ruido, media 1.0800
         r.vigilantes[1].precargar("EURCHF", serie)
@@ -193,6 +194,24 @@ def test_noticia_alto_impacto_calla_el_par():
                        (240, 1.0810), (300, 1.0810)]:
             r._on_tick("EURCHF", ts, px)
         assert r._cola.qsize() == 0                     # noticia -> silencio
+
+
+def test_es_tardia_detecta_cierre_atrasado():
+    # Vela que empezó en 60s (M1: termina en 120s). Un tick a 130s = 10s de atraso.
+    assert _es_tardia(130, 60_000, 60, 25) is False        # 10s <= 25: a tiempo
+    assert _es_tardia(200, 60_000, 60, 25) is True         # 80s > 25: tarde
+
+
+def test_senal_tardia_no_encola():
+    # Con el guard activo, un cierre detectado muy tarde (ticks separados) se descarta.
+    with tempfile.TemporaryDirectory() as d:
+        r = _robot_tmp(os.path.join(d, "h.db"))
+        r._payouts["EURCHF"] = 85
+        r.max_atraso_seg = 25
+        # Ticks separados 2 min: la vela M1 (60s) se cierra con 60s de atraso -> tarde.
+        r._on_tick("EURCHF", 6000, 1.0800)
+        r._on_tick("EURCHF", 6120, 1.0810)
+        assert r._cola.qsize() == 0                          # descartada por tardía
 
 
 def test_watchdog_decide_reinicio():
