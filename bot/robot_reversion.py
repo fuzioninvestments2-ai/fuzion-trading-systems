@@ -409,9 +409,12 @@ class RobotReversion:
             if self.max_cola_seg and time.monotonic() - s.get("_mono", 0) > self.max_cola_seg:
                 self.log.info("Señal %sm de %s descartada: vieja en cola.", exp, s.get("par"))
                 continue
-            self._sellar_hora(s, exp)          # refresca la hora al momento de enviar
             bot = self.bots.get(exp) or self._bot_primario   # el bot de ESE tiempo
+            # Se renderiza el gráfico ANTES y se sella la hora en el ÚLTIMO instante,
+            # justo antes de mandar, para el mínimo desfase entre la hora y su recepción.
             foto = self._grafico(s["par"], s.get("direccion", ""), exp)
+            self._sellar_hora(s, exp)
+            reaccion = time.monotonic() - s.get("_mono", time.monotonic())
             try:
                 if foto:
                     with open(foto, "rb") as fh:
@@ -422,8 +425,9 @@ class RobotReversion:
                     await bot.send_message(chat_id=self.chat_id, text=s["tarjeta"],
                                            read_timeout=30, write_timeout=30,
                                            connect_timeout=15)
-                self.log.info("Señal %sm enviada: %s %s %.1f%%",
-                              exp, s["par"], s["direccion"], s.get("probabilidad", 0))
+                self.log.info("Señal %sm enviada: %s %s %.1f%% (reacción %.1fs)",
+                              exp, s["par"], s["direccion"], s.get("probabilidad", 0),
+                              reaccion)
             except Exception:
                 self.log.exception("No se pudo enviar a Telegram (bot %sm)", exp)
                 try:                              # respaldo: al menos el texto
@@ -554,6 +558,7 @@ def main(argv):
     resto = argv[1:]
     expiry, payout_min, pares, nombre = 3, 72.0, [], None   # pago mínimo 72% por defecto
     tiempos = None                               # varios vencimientos (la matriz)
+    dwell = None                                 # segundos por par (None = por defecto)
     i = 0
     while i < len(resto):
         a = resto[i]
@@ -564,6 +569,8 @@ def main(argv):
             i += 2; continue
         if a in ("--pago", "--payout") and i + 1 < len(resto):
             payout_min = float(resto[i + 1]); i += 2; continue
+        if a in ("--dwell", "-d") and i + 1 < len(resto):
+            dwell = int(resto[i + 1]); i += 2; continue
         if a in ("--nombre", "-n") and i + 1 < len(resto):
             nombre = resto[i + 1]; i += 2; continue
         pares.append(a.upper()); i += 1
@@ -581,7 +588,7 @@ def main(argv):
     demo = os.getenv("POCKET_DEMO_REAL", "1") not in ("0", "false", "False")
     robot = RobotReversion(profile, pares=pares or None, expiry_min=expiry,
                            payout_min=payout_min, demo=demo, nombre=nombre,
-                           expiries=tiempos)
+                           expiries=tiempos, dwell_seg=dwell if dwell else DWELL_SEG)
     ciclo = robot.dwell_seg * len(robot.pares)
     tiempos_txt = "/".join(f"{e}m" for e in robot.expiries)
     print(f"{robot.nombre} · perfil {profile.nombre} · {len(robot.pares)} pares · "
