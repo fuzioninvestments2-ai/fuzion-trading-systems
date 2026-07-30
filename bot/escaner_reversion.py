@@ -47,15 +47,14 @@ def tarjeta(s):
     pago = s.get("payout")
     linea_pago = f"💰 Pago del activo: {pago:.0f}%\n" if pago else ""
     exp = s["expiry_min"]
-    # Si el robot puso la hora, se muestra la hora EXACTA de entrada y de vencimiento,
-    # con la cuenta atrás para que dé TIEMPO a programar la operación antes de la vela.
+    # Hora EXACTA de entrada y de vencimiento, limpias (sin cuenta atrás que confunda).
+    # La entrada apunta a la PRÓXIMA vela, así el aviso llega con una vela de margen
+    # (5m -> ~5 min antes, 3m -> ~3 min, 1m -> ~1 min): da tiempo a programarla.
     if s.get("hora_entrada"):
-        faltan = s.get("faltan_seg")
-        aviso = f"faltan ~{faltan} seg" if faltan is not None else f"~{VENTANA_ENTRADA_SEG} seg"
-        tiempo = (f"⏰ HORA DE ENTRADA: {s['hora_entrada']}  ({aviso}, prepárala)\n"
+        tiempo = (f"⏰ HORA DE ENTRADA: {s['hora_entrada']}\n"
                   f"🏁 VENCE: {s['hora_vence']}  ({exp} min · M{exp})\n")
     else:
-        tiempo = (f"⏰ PON LA OPERACIÓN YA — tienes ~{VENTANA_ENTRADA_SEG} seg\n"
+        tiempo = (f"⏰ PON LA OPERACIÓN YA\n"
                   f"⏱️ TIEMPO: {exp} minuto(s) (M{exp})\n")
     return (
         f"{encabezado}"

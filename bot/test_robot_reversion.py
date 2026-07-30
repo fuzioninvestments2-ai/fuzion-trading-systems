@@ -206,7 +206,7 @@ def test_proxima_entrada_da_margen():
         assert 20 <= inicio - ahora < 20 + 60            # margen garantizado, acotado
 
 
-def test_senal_trae_cuenta_atras():
+def test_senal_hora_limpia_sin_cuenta_atras():
     with tempfile.TemporaryDirectory() as d:
         r = _robot_tmp(os.path.join(d, "h.db"))
         r._payouts["EURCHF"] = 85
@@ -214,8 +214,10 @@ def test_senal_trae_cuenta_atras():
                        (240, 1.0810), (300, 1.0810)]:
             r._on_tick("EURCHF", ts, px)
         s = r._cola.get_nowait()
-        assert s.get("faltan_seg") is not None and s["faltan_seg"] >= 20   # margen
-        assert "faltan" in s["tarjeta"]
+        assert s.get("hora_entrada") and s.get("hora_vence")
+        # Sin textos que confunden (segundos/cuenta atrás): solo la hora.
+        assert "faltan" not in s["tarjeta"] and "seg" not in s["tarjeta"]
+        assert "HORA DE ENTRADA" in s["tarjeta"]
 
 
 def test_es_tardia_detecta_cierre_atrasado():
