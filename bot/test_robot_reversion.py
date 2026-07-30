@@ -238,6 +238,37 @@ def test_senal_tardia_no_encola():
         assert r._cola.qsize() == 0                          # descartada por tardía
 
 
+def test_ev_bajo_no_encola():
+    # El fallo de las tarjetas: acierto 53% a pago 81% -> EV negativo -> PIERDE. Se veta.
+    with tempfile.TemporaryDirectory() as d:
+        r = RobotReversion(
+            get_profile("REAL"), pares=["EURCHF"], ssid="x", token="", chat_id="1",
+            expiry_min=1, tabla={"EURCHF": [[5, 53.0]]},
+            repo=HistoryRepository(os.path.join(d, "h.db")), is_open_fn=lambda p: True)
+        r._payouts["EURCHF"] = 81                        # pago real 81% -> equilibrio ~55%
+        for ts, px in [(60, 1.0800), (120, 1.0800), (180, 1.0810),
+                       (240, 1.0810), (300, 1.0810)]:
+            r._on_tick("EURCHF", ts, px)
+        assert r._cola.qsize() == 0                       # 53% a 81% pierde -> callado
+
+
+def test_ev_alto_si_encola_con_ventaja_real():
+    # Mismo pico pero acierto 70%: a 81% de pago SÍ rinde -> se envía y la ventaja de la
+    # tarjeta refleja el pago REAL (no el 92% de la tabla).
+    with tempfile.TemporaryDirectory() as d:
+        r = RobotReversion(
+            get_profile("REAL"), pares=["EURCHF"], ssid="x", token="", chat_id="1",
+            expiry_min=1, tabla={"EURCHF": [[5, 70.0]]},
+            repo=HistoryRepository(os.path.join(d, "h.db")), is_open_fn=lambda p: True)
+        r._payouts["EURCHF"] = 81
+        for ts, px in [(60, 1.0800), (120, 1.0800), (180, 1.0810),
+                       (240, 1.0810), (300, 1.0810)]:
+            r._on_tick("EURCHF", ts, px)
+        assert r._cola.qsize() >= 1
+        s = r._cola.get_nowait()
+        assert s["pnl_esperado"] > 0                      # ventaja positiva con pago real
+
+
 def test_contra_tendencia_no_encola():
     # El fallo de las tarjetas: subida sostenida + pico arriba -> el bot daba PUT. Con el
     # filtro de tendencia, esa señal contra la subida se veta (no encola).

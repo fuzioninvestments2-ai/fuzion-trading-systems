@@ -152,6 +152,10 @@ class RobotReversion:
         self.tracker = SignalTracker(self.repo)
         self.corrector_min_muestra = 20   # antes de esta muestra se confía en el histórico
         self.corrector_margen = 0.0       # exigencia extra sobre el equilibrio (0.03=+3pts)
+        # RIESGO/EV: la señal debe RENDIR con el pago REAL de ahora (no con el 92% de la
+        # tabla). A 81% de pago el equilibrio es 55%: una señal de 53% pierde. Se exige un
+        # valor esperado mínimo por operación; así no se envían perdedoras.
+        self.margen_ev = 0.03
         # NOTICIAS: en mercado real, callar el par si una de sus monedas tiene noticia
         # de alto impacto en la ventana (±15 min). El OTC nunca se bloquea (sintético).
         self.con_noticias = bool(con_noticias)
@@ -165,7 +169,7 @@ class RobotReversion:
         # tendencia continuando, no un rebote). Evita apostar baja en plena subida.
         self.con_tendencia = True
         self.tend_n = 20                  # velas previas que miran la tendencia
-        self.tend_umbral = 0.5            # solo rechaza tendencias CLARAS (deja pasar rango/deriva leve)
+        self.tend_umbral = 0.35           # rechaza subidas/bajadas incluso moderadas (calidad > cantidad)
         # WATCHDOG: si deja de llegar el flujo de ticks (con el mercado abierto) se
         # reinicia la conexión sola, sin apagar el bot.
         self.con_watchdog = True
@@ -267,6 +271,16 @@ class RobotReversion:
             s = vig.senal_para(asset, exp)
             if not s:
                 continue
+            # RIESGO / VALOR ESPERADO: la señal debe RENDIR con el pago REAL de ahora.
+            # La tabla filtra a equilibrio de 92% (52%), pero si el activo paga 85% el
+            # equilibrio sube (~54%): una señal de 53% PIERDE. Se exige EV>=margen. Esto
+            # descarta las perdedoras de acierto bajo / pico de ruido (1m/2m sobre todo).
+            ev = _ev_par(s.get("probabilidad"), pago, self.payout_min)
+            if ev is None or ev < self.margen_ev:
+                self.log.info("EV bajo (acierto %s%% a pago %s): %s %sm en silencio.",
+                              s.get("probabilidad"), pago, asset, exp)
+                continue
+            s["pnl_esperado"] = round(ev * 100, 2)   # ventaja con el pago REAL, no el 92%
             # CONFIRMACIÓN por extensión, sobre las velas de ESE tiempo.
             if self.con_confirmacion and not confirma(vig.buffer(asset),
                                                       s["direccion"], self.conf_z_min):
