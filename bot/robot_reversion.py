@@ -212,7 +212,11 @@ class RobotReversion:
                 continue
             s["payout"] = pago
             if cts:
-                entra = datetime.datetime.fromtimestamp((cts + 60_000) / 1000.0)
+                # LA HORA SE ANCLA AL RELOJ REAL DEL USUARIO (igual que el gráfico), NO
+                # al timestamp de Pocket Option: PO manda la hora en la zona del bróker
+                # (desfasada ~2h) y eso mostraba una hora de entrada equivocada. La vela
+                # que ACABA de cerrar es "ahora": se entra en la que arranca ya.
+                entra = datetime.datetime.now()
                 vence = entra + datetime.timedelta(minutes=exp)
                 s["hora_entrada"] = entra.strftime("%H:%M")
                 s["hora_vence"] = vence.strftime("%H:%M")
@@ -223,7 +227,8 @@ class RobotReversion:
                 signo = "+" if mins >= 0 else "-"
                 hh, mm = divmod(abs(mins), 60)
                 s["zona_horaria"] = f"UTC{signo}{hh}:{mm:02d}"
-                utc_h = datetime.datetime.utcfromtimestamp((cts + 60_000) / 1000.0).hour
+                # Sesión de mercado también en tiempo REAL (UTC del reloj), coherente.
+                utc_h = datetime.datetime.utcnow().hour
                 s["sesion_mercado"] = etiqueta(utc_h)
             s["nombre_bot"] = (self.nombre if len(self.expiries) == 1
                                else f"FUZION FX {exp}M")
