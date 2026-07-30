@@ -16,7 +16,7 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from bot.robot_reversion import (RobotReversion, _chat_de_updates, PARES_FUERTES,
-                                 ACTIVOS_PO)
+                                 ACTIVOS_PO, _necesita_reinicio)
 from bot.history import HistoryRepository
 from bot.profiles import get_profile
 
@@ -184,6 +184,36 @@ def test_noticia_alto_impacto_calla_el_par():
                        (240, 1.0810), (300, 1.0810)]:
             r._on_tick("EURCHF", ts, px)
         assert r._cola.qsize() == 0                     # noticia -> silencio
+
+
+def test_watchdog_decide_reinicio():
+    # Mercado abierto y sin ticks nuevos -> reinicia; con ticks o cerrado -> no.
+    assert _necesita_reinicio(100, 100, True) is True     # abierto y sin latido
+    assert _necesita_reinicio(100, 105, True) is False    # llegaron ticks
+    assert _necesita_reinicio(100, 100, False) is False   # cerrado: silencio normal
+
+
+def _flujo_pico(r, z_min):
+    # Buffer con RUIDO (±5 pips, media 1.0800) precargado, y luego un cierre pico a
+    # 1.0810 -> z ~2. Con z_min alto se silencia; con z_min bajo pasa.
+    r._payouts["EURCHF"] = 85
+    r.conf_z_min = z_min
+    r.vig.precargar("EURCHF", [1.0795 if i % 2 else 1.0805 for i in range(20)])
+    r._on_tick("EURCHF", 100 * 60, 1.0810)          # tick del pico
+    r._on_tick("EURCHF", 101 * 60, 1.0810)          # cierra la vela del pico (close=1.0810)
+    return r._cola.qsize()
+
+
+def test_sin_confirmacion_no_encola():
+    with tempfile.TemporaryDirectory() as d:
+        r = _robot_tmp(os.path.join(d, "h.db"))
+        assert _flujo_pico(r, z_min=3.0) == 0        # z~2 < 3 -> sin confirmación, callado
+
+
+def test_con_confirmacion_encola():
+    with tempfile.TemporaryDirectory() as d:
+        r = _robot_tmp(os.path.join(d, "h.db"))
+        assert _flujo_pico(r, z_min=1.0) >= 1        # z~2 >= 1 -> confirmado, encola
 
 
 def test_grafico_genera_png():

@@ -49,6 +49,10 @@ class VigilanteReversion:
             return False              # mercado cerrado para este par: callar
         return True
 
+    def buffer(self, par):
+        """Copia de los cierres M1 recientes del par (para confirmaciones externas)."""
+        return list(self._buffers.get(par, []))
+
     def senal_para(self, par, expiry):
         """Evalúa la reversión del buffer actual del par a un vencimiento dado. Devuelve
         la señal (dict) si hay que operar, o None. No arma la tarjeta (la arma quien la

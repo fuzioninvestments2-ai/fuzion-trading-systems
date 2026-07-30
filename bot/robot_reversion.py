@@ -42,6 +42,7 @@ from bot.vigilante_reversion import VigilanteReversion
 from bot.signal_log import SignalTracker
 from bot.autocorrector import debe_enviar
 from bot.news_filter import NewsFilter
+from bot.confirmacion_reversion import confirma
 
 # Activos que Pocket Option ofrece en el mercado REAL (según su menú) y que además
 # TENEMOS con historial/borde. PO real NO ofrece pares con NZD ni USDJPY; de la lista
@@ -71,6 +72,13 @@ def _chat_de_updates(updates):
         if cid is not None:
             return str(cid)
     return None
+
+
+def _necesita_reinicio(ticks_prev, ticks_now, mercado_abierto):
+    """Reinicio si el mercado está abierto pero NO llegó ningún tick en el intervalo
+    (el flujo se cortó y la reconexión interna no lo resolvió). Con mercado cerrado el
+    silencio es normal: no se reinicia."""
+    return bool(mercado_abierto) and ticks_now == ticks_prev
 
 
 class RobotReversion:
@@ -109,6 +117,15 @@ class RobotReversion:
         # de alto impacto en la ventana (±15 min). El OTC nunca se bloquea (sintético).
         self.con_noticias = bool(con_noticias)
         self.news = NewsFilter()
+        # CONFIRMACIÓN: exige que el precio esté estirado de su media (z>=z_min) en el
+        # sentido del pico; filtra picos que son arranque de tendencia, no reversión.
+        self.con_confirmacion = True
+        self.conf_z_min = 1.0
+        # WATCHDOG: si deja de llegar el flujo de ticks (con el mercado abierto) se
+        # reinicia la conexión sola, sin apagar el bot.
+        self.con_watchdog = True
+        self.watchdog_seg = 180
+        self._ticks = 0                          # contador de ticks recibidos (latido)
         self._builders = {}
         self._cola = asyncio.Queue()
         self.client = None
@@ -128,6 +145,7 @@ class RobotReversion:
 
     def _on_tick(self, asset, ts, price):
         """Callback del websocket: alimenta la vela; al cerrar, evalúa reversión."""
+        self._ticks += 1                         # latido para el watchdog
         try:
             closed = self._builder(asset).add_tick(price, ts * 1000.0)   # ts en ms
         except Exception:
@@ -165,6 +183,13 @@ class RobotReversion:
         for exp in self.expiries:
             s = self.vig.senal_para(asset, exp)
             if not s:
+                continue
+            # CONFIRMACIÓN: descarta el pico que NO es reversión (no hay estiramiento
+            # de la media en su sentido). No se registra ni se envía.
+            if self.con_confirmacion and not confirma(self.vig.buffer(asset),
+                                                      s["direccion"], self.conf_z_min):
+                self.log.info("Sin confirmación (no estirado): %s %sm en silencio.",
+                              asset, exp)
                 continue
             tf = f"M{exp}"
             # SIEMPRE se registra la señal (aunque se silencie): la "sombra" mantiene la
@@ -349,6 +374,31 @@ class RobotReversion:
                 self.log.exception("No se pudo refrescar el calendario de noticias")
             await asyncio.sleep(1800)             # media hora
 
+    async def _watchdog(self):
+        """Vigila el latido de ticks. Si con el mercado abierto no llega ninguno en la
+        ventana, reinicia la conexión sola (backstop de la reconexión interna)."""
+        prev = self._ticks
+        while True:
+            await asyncio.sleep(self.watchdog_seg)
+            abierto = (any(self.vig.is_open(p) for p in self.pares)
+                       if self.vig.is_open else True)
+            if _necesita_reinicio(prev, self._ticks, abierto):
+                self.log.warning("Watchdog: sin ticks en %ds con mercado abierto. "
+                                 "Reiniciando conexión.", self.watchdog_seg)
+                try:
+                    self.client.stop()
+                except Exception:
+                    self.log.exception("No se pudo detener el cliente")
+                try:
+                    self.client = PocketOptionClient(
+                        self.ssid, on_tick=self._on_tick, on_history=self._on_history,
+                        on_assets=self._on_assets, demo=self.demo, logger=self.log)
+                    asyncio.create_task(
+                        self.client.run(asset=self.pares[0], period=60))
+                except Exception:
+                    self.log.exception("No se pudo reiniciar la conexión")
+            prev = self._ticks
+
     async def _rotar(self):
         i = 0
         while True:
@@ -406,6 +456,8 @@ class RobotReversion:
         tareas = [self._rotar(), self._enviar_loop(), tarea_cli]
         if self.con_noticias:
             tareas.append(self._refrescar_noticias())
+        if self.con_watchdog:
+            tareas.append(self._watchdog())
         try:
             await asyncio.gather(*tareas)
         finally:
