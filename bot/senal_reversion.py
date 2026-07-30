@@ -81,13 +81,6 @@ def senal(closes, par, expiry_min=3, tabla=None):
     magnitud = abs(mov)
     base["pips"] = round(mov, 1)
 
-    if magnitud < PISO_PIPS:
-        return {**base, "motivo": f"pico chico ({magnitud:.1f} pips < {PISO_PIPS}): "
-                                  f"el borde no cubre el payout, no se opera"}
-    if magnitud > MAX_PIPS:
-        return {**base, "motivo": f"pico anómalo ({magnitud:.1f} pips > {MAX_PIPS}): "
-                                  f"posible error de dato, no se opera"}
-
     # Selección de tramos: la tabla del par puede venir POR TIEMPO
     # ({'1':[...],'3':[...]}) o en formato viejo plano ([[u,wr],...]). Si no hay del
     # par, se usa la global. Así cada tiempo tiene su acierto real.
@@ -98,6 +91,24 @@ def senal(closes, par, expiry_min=3, tabla=None):
         buckets = t
     else:
         buckets = TABLA_OOS
+
+    # PISO y TECHO del pico salen de la PROPIA tabla medida: cada tiempo tiene picos de
+    # otro tamaño (una vela de 5m se mueve mucho más que una de 1m), así que un piso/techo
+    # fijo no sirve. El piso = umbral más chico medido; techo = 3x el mayor medido (por
+    # encima ya es anomalía/error de dato). Para la tabla global se usan los fijos.
+    if buckets is TABLA_OOS:
+        piso, techo = PISO_PIPS, MAX_PIPS
+    else:
+        umbrales = [u for u, _ in buckets]
+        piso, techo = min(umbrales), max(umbrales) * 3
+
+    if magnitud < piso:
+        return {**base, "motivo": f"pico chico ({magnitud:.1f} pips < {piso:g}): "
+                                  f"el borde no cubre el payout, no se opera"}
+    if magnitud > techo:
+        return {**base, "motivo": f"pico anómalo ({magnitud:.1f} pips > {techo:g}): "
+                                  f"posible error de dato, no se opera"}
+
     prob = _prob_por_pico(magnitud, buckets)
     if prob is None:                                        # el par no gana a ese pico
         return {**base, "motivo": f"pico de {magnitud:.1f} pips sin borde medido en "

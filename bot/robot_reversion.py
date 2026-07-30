@@ -28,6 +28,7 @@ conexión). Las partes puras se prueban en bot/test_robot_reversion.py.
 import asyncio
 import datetime
 import logging
+import math
 import os
 import sys
 
@@ -105,8 +106,13 @@ class RobotReversion:
             tabla = cargar_tabla(os.path.join(profile.datasets_dir, "reversion_tabla.json"))
         self.tabla = tabla
         gate = is_open_fn if is_open_fn is not None else (lambda p: is_open(p)[0])
-        self.vig = VigilanteReversion(self.pares, tabla=tabla,
-                                      expiry_min=self.expiry_min, is_open=gate)
+        # UN vigilante POR TIEMPO: cada bot analiza las velas de SU temporalidad (el de
+        # 5m mira velas de 5m, el de 3m velas de 3m...), no el mismo pico de 1m repetido.
+        # Así los 4 bots son 4 análisis distintos y las señales son raras y propias.
+        self.vigilantes = {exp: VigilanteReversion(self.pares, tabla=tabla,
+                                                   expiry_min=exp, is_open=gate)
+                           for exp in self.expiries}
+        self.vig = self.vigilantes[self.expiries[0]]     # compat / precarga base
         # CORRECTOR: registra cada señal y, con los precios que llegan luego, mide su
         # acierto REAL en vivo. Silencia el par+tiempo que baja del punto de equilibrio
         # para no arrastrar el error a las demás señales (ver bot/autocorrector).
@@ -139,64 +145,88 @@ class RobotReversion:
         return (os.getenv(f"TELEGRAM_BOT_TOKEN_REAL_{exp}M")
                 or self.token or os.getenv("TELEGRAM_BOT_TOKEN_REAL", ""))
 
-    # --- construcción de velas desde ticks (mismo patrón que pocket_service) ---
-    def _builder(self, asset):
-        return self._builders.setdefault(asset, CandleBuilder(60))
+    # --- construcción de velas POR TIEMPO desde ticks ---
+    def _builder(self, asset, seg):
+        """CandleBuilder por (par, segundos): 60=M1, 120=2m, 180=3m, 300=5m. Cada tiempo
+        arma sus PROPIAS velas para que su bot analice su temporalidad."""
+        return self._builders.setdefault((asset, seg), CandleBuilder(seg))
+
+    def _add_seguro(self, asset, seg, price, ts):
+        try:
+            return self._builder(asset, seg).add_tick(price, ts * 1000.0)
+        except Exception:
+            return None
+
+    def _guardar(self, asset, seg, vela):
+        clave = "M1" if seg == 60 else f"tf{seg}"
+        try:
+            self.repo.record_candle(asset, clave, vela)
+        except Exception:
+            self.log.exception("No se pudo guardar la vela de %s (%s)", asset, clave)
+
+    def _hora_entrada(self, exp):
+        """Inicio de la vela ACTUAL del tiempo, en el RELOJ REAL del usuario: es el
+        minuto exacto en que debe poner la operación (la vela que arranca ya). Se ancla
+        al reloj real (como el gráfico), no al timestamp del bróker (desfasado)."""
+        seg = exp * 60
+        inicio = math.floor(datetime.datetime.now().timestamp() / seg) * seg
+        return datetime.datetime.fromtimestamp(inicio)
 
     def _on_tick(self, asset, ts, price):
-        """Callback del websocket: alimenta la vela; al cerrar, evalúa reversión."""
+        """Alimenta las velas de cada tiempo; cuando CIERRA una vela de un tiempo, ese
+        bot analiza SU vela y decide su señal. Los 4 bots son 4 análisis distintos (no el
+        mismo pico de 1m repetido), por eso las señales son propias y raras."""
         self._ticks += 1                         # latido para el watchdog
+        # Vela M1 base SIEMPRE: historial reciente, gráfico 1m y resolución del tracker.
         try:
-            closed = self._builder(asset).add_tick(price, ts * 1000.0)   # ts en ms
+            m1 = self._builder(asset, 60).add_tick(price, ts * 1000.0)   # ts en ms
         except Exception:
             return
-        if not closed:
-            return
-        try:
-            self.repo.record_candle(asset, "M1", closed)                 # historial reciente
-        except Exception:
-            self.log.exception("No se pudo guardar la vela de %s", asset)
-        if not self.vig.registrar(asset, closed["close"], ts=closed.get("timestamp")):
-            return
-        # FILTRO DE PAGO: solo vale la pena si el activo paga >= payout_min (costo-
-        # efectivo). Si el pago es conocido y bajo, se calla; si no se conoce aún, pasa.
-        pago = self._payouts.get(asset)
-        if pago is not None and pago < self.payout_min:
-            return
-        # FILTRO DE NOTICIAS: con noticia de alto impacto en la ventana, la técnica no
-        # vale (velas descontroladas). Se calla ese par (protección, no predicción).
-        if self.con_noticias and not self.news.can_trade(asset):
-            self.log.info("Noticia de alto impacto: %s en silencio.", asset)
-            return
-        cts = closed.get("timestamp")
-        # Resuelve señales ya vencidas con los precios acumulados: así el acierto REAL
-        # en vivo se mantiene al día y el corrector puede actuar (trabaja continuo).
-        if cts:
-            try:
-                self.tracker.resolve_pending(cts)
-            except Exception:
-                self.log.exception("No se pudieron resolver señales vencidas")
+        if m1:
+            self._guardar(asset, 60, m1)
+            cts_m1 = m1.get("timestamp")
+            if cts_m1:
+                try:
+                    self.tracker.resolve_pending(cts_m1)   # acierto real al día (continuo)
+                except Exception:
+                    self.log.exception("No se pudieron resolver señales vencidas")
+
         from bot.escaner_reversion import tarjeta
         from bot.sesiones import etiqueta
-        # LA MATRIZ: por cada tiempo configurado, emite su propia tarjeta (nombre,
-        # acierto y hora de vencimiento propios). Con un solo tiempo, es un bot normal.
+        # Un análisis POR TIEMPO: cada bot con la vela de SU temporalidad.
         for exp in self.expiries:
-            s = self.vig.senal_para(asset, exp)
+            seg = exp * 60
+            cerrada = m1 if seg == 60 else self._add_seguro(asset, seg, price, ts)
+            if not cerrada:
+                continue
+            if seg != 60:
+                self._guardar(asset, seg, cerrada)     # historial del tiempo (gráfico)
+            vig = self.vigilantes[exp]
+            if not vig.registrar(asset, cerrada["close"], ts=cerrada.get("timestamp")):
+                continue
+            # FILTRO DE PAGO
+            pago = self._payouts.get(asset)
+            if pago is not None and pago < self.payout_min:
+                continue
+            # FILTRO DE NOTICIAS
+            if self.con_noticias and not self.news.can_trade(asset):
+                self.log.info("Noticia de alto impacto: %s en silencio.", asset)
+                continue
+            s = vig.senal_para(asset, exp)
             if not s:
                 continue
-            # CONFIRMACIÓN: descarta el pico que NO es reversión (no hay estiramiento
-            # de la media en su sentido). No se registra ni se envía.
-            if self.con_confirmacion and not confirma(self.vig.buffer(asset),
+            # CONFIRMACIÓN por extensión, sobre las velas de ESE tiempo.
+            if self.con_confirmacion and not confirma(vig.buffer(asset),
                                                       s["direccion"], self.conf_z_min):
                 self.log.info("Sin confirmación (no estirado): %s %sm en silencio.",
                               asset, exp)
                 continue
             tf = f"M{exp}"
-            # SIEMPRE se registra la señal (aunque se silencie): la "sombra" mantiene la
-            # medición viva para poder re-activar el par cuando su acierto se recupere.
+            cts = cerrada.get("timestamp")
+            # SIEMPRE se registra (sombra) para mantener viva la medición del corrector.
             if cts:
                 try:
-                    self.tracker.record(asset, tf, s["direccion"], closed["close"],
+                    self.tracker.record(asset, tf, s["direccion"], cerrada["close"],
                                         cts, exp * 60)
                 except Exception:
                     self.log.exception("No se pudo registrar la señal de %s", asset)
@@ -211,25 +241,18 @@ class RobotReversion:
                 self.log.info("Silenciado %s %s: %s", asset, tf, motivo)
                 continue
             s["payout"] = pago
-            if cts:
-                # LA HORA SE ANCLA AL RELOJ REAL DEL USUARIO (igual que el gráfico), NO
-                # al timestamp de Pocket Option: PO manda la hora en la zona del bróker
-                # (desfasada ~2h) y eso mostraba una hora de entrada equivocada. La vela
-                # que ACABA de cerrar es "ahora": se entra en la que arranca ya.
-                entra = datetime.datetime.now()
-                vence = entra + datetime.timedelta(minutes=exp)
-                s["hora_entrada"] = entra.strftime("%H:%M")
-                s["hora_vence"] = vence.strftime("%H:%M")
-                # Zona horaria del PC (offset real de ESA fecha: respeta horario de
-                # verano). Así la tarjeta dice UTC-4:00 y no hay confusión de hora.
-                off = entra.astimezone().utcoffset()
-                mins = int(off.total_seconds() // 60) if off else 0
-                signo = "+" if mins >= 0 else "-"
-                hh, mm = divmod(abs(mins), 60)
-                s["zona_horaria"] = f"UTC{signo}{hh}:{mm:02d}"
-                # Sesión de mercado también en tiempo REAL (UTC del reloj), coherente.
-                utc_h = datetime.datetime.utcnow().hour
-                s["sesion_mercado"] = etiqueta(utc_h)
+            # HORA anclada al reloj REAL y al borde de la vela del tiempo (entrar justo).
+            entra = self._hora_entrada(exp)
+            vence = entra + datetime.timedelta(minutes=exp)
+            s["hora_entrada"] = entra.strftime("%H:%M")
+            s["hora_vence"] = vence.strftime("%H:%M")
+            # Zona horaria del PC (offset real de ESA fecha: respeta horario de verano).
+            off = entra.astimezone().utcoffset()
+            mins = int(off.total_seconds() // 60) if off else 0
+            signo = "+" if mins >= 0 else "-"
+            hh, mm = divmod(abs(mins), 60)
+            s["zona_horaria"] = f"UTC{signo}{hh}:{mm:02d}"
+            s["sesion_mercado"] = etiqueta(datetime.datetime.utcnow().hour)
             s["nombre_bot"] = (self.nombre if len(self.expiries) == 1
                                else f"FUZION FX {exp}M")
             s["tarjeta"] = tarjeta(s)
@@ -300,13 +323,19 @@ class RobotReversion:
 
     # --- precarga de contexto desde el historial guardado ---
     def _precargar(self):
-        for p in self.pares:
-            try:
-                df = self.repo.get_recent(p, "M1", 50)
-            except Exception:
-                df = None
-            if df is not None and len(df):
-                self.vig.precargar(p, df["close"].astype(float).tolist())
+        # Cada bot carga las velas de SU tiempo (M1/tf120/tf180/tf300), para tener
+        # contexto inmediato (incluida la confirmación por extensión) sin esperar.
+        for exp in self.expiries:
+            seg = exp * 60
+            clave = "M1" if seg == 60 else f"tf{seg}"
+            vig = self.vigilantes[exp]
+            for p in self.pares:
+                try:
+                    df = self.repo.get_recent(p, clave, 50)
+                except Exception:
+                    df = None
+                if df is not None and len(df):
+                    vig.precargar(p, df["close"].astype(float).tolist())
 
     # --- Telegram ---
     async def _resolver_chat(self):

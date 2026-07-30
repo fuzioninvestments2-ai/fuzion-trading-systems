@@ -12,45 +12,63 @@ suficiente — los demás no se operan.
 Corre sobre datasets/real (M1). Sin red. Test: bot/test_tabla_reversion.py.
 """
 import json
+import math
 import os
 
 import numpy as np
 import pandas as pd
 
-from bot.backtest_reversion_real import (_pip, _rutas, MAX_PIPS, FRAC_IS, UMBRALES,
-                                         BREAKEVEN)
+from bot.backtest_reversion_real import (_pip, _rutas, MAX_PIPS, FRAC_IS, BREAKEVEN)
 
 REF_EXP_MIN = 3                              # vencimiento de referencia (minutos)
 EXPIRIES_TABLA = (1, 2, 3, 5)               # tiempos para los que se calcula el borde
-MIN_OPS = 400                               # mínimo de operaciones OOS para fiarse del tramo
+MIN_OPS = 400                               # mínimo de operaciones OOS (a 1m; escala por tiempo)
 
 
-def tabla_par(c, par, ref=REF_EXP_MIN):
-    """Devuelve [(umbral_pips, win_rate_oos, n)] del par, solo tramos OOS con >=MIN_OPS
-    operaciones y win-rate por encima del break-even."""
-    n = len(c)
-    if n < 300:
+def _umbrales_tf(tf):
+    """Umbrales de pico (pips) a probar en un tiempo de `tf` minutos. La volatilidad de
+    los precios escala ~ raíz del tiempo (paseo aleatorio), así que los umbrales de un
+    tiempo largo son mayores que los de 1m: se escalan por sqrt(tf). Así el pico que se
+    exige en 5m es proporcional a lo que una vela de 5m se mueve de verdad."""
+    base = (1, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20)
+    r = math.sqrt(tf)
+    return sorted({int(round(u * r)) for u in base if u * r >= 1})
+
+
+def tabla_par(c, par, tf_min=REF_EXP_MIN):
+    """Borde de reversión medido en velas de `tf_min` MINUTOS (no en 1m). Resamplea los
+    cierres M1 a velas de ese tiempo, mide el pico de CADA vela y si el precio se devuelve
+    en la SIGUIENTE vela (revertir sobre el mismo tiempo = el vencimiento). Devuelve
+    [(umbral_pips, win_rate_oos, n)] solo con tramos OOS con muestra y por encima del
+    break-even. Así el bot de 5m analiza velas de 5m, el de 3m velas de 3m, etc."""
+    tf = max(1, int(tf_min))
+    cT = c[tf - 1::tf] if tf > 1 else c       # cierre al final de cada bloque de tf minutos
+    n = len(cT)
+    if n < 200:
         return []
     pip = _pip(par)
-    mov = (c[1:] - c[:-1]) / pip
+    mov = (cT[1:] - cT[:-1]) / pip            # pips de cada vela de tf minutos
     sm = np.sign(mov)
     idx = np.arange(1, n)
-    split = max(1, int(n * FRAC_IS))         # inicio del tramo OOS
+    split = max(1, int(n * FRAC_IS))          # inicio del tramo OOS
+    max_tf = MAX_PIPS * math.sqrt(tf)         # techo de anomalía, también escala con sqrt(tf)
+    min_ops = max(50, MIN_OPS // tf)          # menos velas en tiempos largos -> menos exigencia
     out = []
-    for u in UMBRALES:
-        base = (np.abs(mov) >= u) & (np.abs(mov) <= MAX_PIPS) & (sm != 0)
-        valido = base & (idx + ref <= n - 1) & (idx >= split)   # solo OOS
+    for u in _umbrales_tf(tf):
+        base = (np.abs(mov) >= u) & (np.abs(mov) <= max_tf) & (sm != 0)
+        # Reversión sobre la SIGUIENTE vela (i+1) = el vencimiento del tiempo. Solo OOS.
+        valido = base & (idx + 1 <= n - 1) & (idx >= split)
         if not valido.any():
             continue
         i = idx[valido]
-        ret = c[i + ref] - c[i]
+        ret = cT[i + 1] - cT[i]
         res = ret != 0
         gana = (np.sign(ret) == -sm[i - 1]) & res
         w = int((gana & res).sum())
         l = int((~gana & res).sum())
-        if w + l >= MIN_OPS:
+        if w + l >= min_ops:
             wr = round(w / (w + l) * 100.0, 2)
-            if wr > BREAKEVEN:               # solo tramos que ganan
+            if wr > BREAKEVEN:                # solo tramos que ganan
                 out.append((u, wr, w + l))
     return out
 

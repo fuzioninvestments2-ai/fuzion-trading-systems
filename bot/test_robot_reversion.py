@@ -43,9 +43,12 @@ def test_pares_fuertes_solo_los_de_po():
 
 
 def _robot_tmp(tmpdb):
+    # expiry_min=1: el análisis corre sobre velas M1 (las que cierran con los ticks del
+    # test). Cada bot analiza SU tiempo; aquí probamos los filtros con el de 1m.
     return RobotReversion(
         get_profile("REAL"), pares=["EURCHF"], ssid="x", token="", chat_id="1",
-        tabla={"EURCHF": [[5, 70.0]]}, repo=HistoryRepository(tmpdb),
+        expiry_min=1, tabla={"EURCHF": [[5, 70.0], [8, 72.0]]},
+        repo=HistoryRepository(tmpdb),
         is_open_fn=lambda p: True)                          # horario forzado abierto
 
 
@@ -102,19 +105,25 @@ def test_on_history_guarda_ticks_como_m1():
         assert df is not None and len(df) >= 1
 
 
-def test_matriz_varios_tiempos_una_tarjeta_por_tiempo():
+def test_matriz_cada_bot_analiza_su_tiempo():
+    # La matriz 1m + 2m: cada bot arma SUS velas y da su propia señal. Un par de ticks
+    # separados 2 min cierra a la vez una vela M1 y una de 2m; ambos bots deben disparar
+    # con SU nombre (no el mismo pico repetido: análisis independientes por tiempo).
     with tempfile.TemporaryDirectory() as d:
         r = RobotReversion(
             get_profile("REAL"), pares=["EURCHF"], ssid="x", token="", chat_id="1",
-            tabla={"EURCHF": {"1": [[5, 60.0]], "3": [[5, 70.0]]}},
+            tabla={"EURCHF": {"1": [[5, 60.0], [8, 62.0]], "2": [[5, 70.0], [8, 72.0]]}},
             repo=HistoryRepository(os.path.join(d, "h.db")),
-            is_open_fn=lambda p: True, expiries=[1, 3])     # la matriz: 1m y 3m
-        for ts, px in [(60, 1.0800), (120, 1.0800), (180, 1.0810),
-                       (240, 1.0810), (300, 1.0810)]:
-            r._on_tick("EURCHF", ts, px)
+            is_open_fn=lambda p: True, expiries=[1, 2])     # la matriz: 1m y 2m
+        r._payouts["EURCHF"] = 85
+        serie = [1.0795 if i % 2 else 1.0805 for i in range(20)]   # ruido, media 1.0800
+        r.vigilantes[1].precargar("EURCHF", serie)
+        r.vigilantes[2].precargar("EURCHF", serie)
+        r._on_tick("EURCHF", 6000, 1.0810)                  # pico (cierra M1 y 2m al saltar)
+        r._on_tick("EURCHF", 6120, 1.0810)                  # +2 min: cierra ambas velas
         assert r._cola.qsize() == 2                          # una tarjeta por tiempo
         nombres = {r._cola.get_nowait()["nombre_bot"] for _ in range(2)}
-        assert nombres == {"FUZION FX 1M", "FUZION FX 3M"}
+        assert nombres == {"FUZION FX 1M", "FUZION FX 2M"}
 
 
 def test_payout_bajo_no_encola():
@@ -154,14 +163,14 @@ def test_corrector_silencia_par_que_falla():
         r = _robot_tmp(os.path.join(d, "h.db"))
         r._payouts["EURCHF"] = 85                       # pago conocido -> equilibrio ~54%
         r.corrector_min_muestra = 5                     # muestra chica para el test
-        # Siembra 5 señales M3 ya resueltas como 'loss' (acierto reciente 0%).
+        # Siembra 5 señales M1 ya resueltas como 'loss' (acierto reciente 0%).
         for i in range(5):
-            r.tracker.record("EURCHF", "M3", "PUT", 1.0800, i * 1000, 60)
+            r.tracker.record("EURCHF", "M1", "PUT", 1.0800, i * 1000, 60)
         # Vela de vencimiento POSTERIOR y por ENCIMA (PUT pierde) para todas.
         r.repo.record_candle("EURCHF", "M1", {"timestamp": 100_000, "open": 1.09,
             "high": 1.0905, "low": 1.0895, "close": 1.0900, "volume": 1.0})
         r.tracker.resolve_pending(200_000)
-        wr, muestra = r.tracker.win_rate_reciente("EURCHF", "M3", 5)
+        wr, muestra = r.tracker.win_rate_reciente("EURCHF", "M1", 5)
         assert muestra == 5 and wr == 0.0               # 0% de acierto reciente
         antes = r._cola.qsize()
         for ts, px in [(60, 1.0800), (120, 1.0800), (180, 1.0810),
