@@ -39,7 +39,7 @@ from bot.pocket_client import PocketOptionClient
 from bot.candles import CandleBuilder
 from bot.history import HistoryRepository
 from bot.market_hours import is_open
-from bot.senal_reversion import cargar_tabla
+from bot.senal_reversion import cargar_tabla, senal
 from bot.vigilante_reversion import VigilanteReversion
 from bot.signal_log import SignalTracker
 from bot.autocorrector import debe_enviar
@@ -191,6 +191,8 @@ class RobotReversion:
         self.foco_seg = 120               # cada cuánto reevalúa cuál es el mejor par
         self.foco_hist = 0.02             # margen de EV para cambiar de par (evita ir y venir)
         self._ticks = 0                          # contador de ticks recibidos (latido)
+        self._ultimo_ts_broker = 0               # último tiempo (seg) visto del bróker
+        self._ultima_eval = {}                   # (par,exp)->ts de vela ya evaluada (dedup)
         self._builders = {}
         self._cola = asyncio.Queue()
         self.client = None
@@ -228,6 +230,7 @@ class RobotReversion:
         bot analiza SU vela y decide su señal. Los 4 bots son 4 análisis distintos (no el
         mismo pico de 1m repetido), por eso las señales son propias y raras."""
         self._ticks += 1                         # latido para el watchdog
+        self._ultimo_ts_broker = ts              # hora del bróker para la frescura
         # Vela M1 base SIEMPRE: historial reciente, gráfico 1m y resolución del tracker.
         try:
             m1 = self._builder(asset, 60).add_tick(price, ts * 1000.0)   # ts en ms
@@ -242,7 +245,8 @@ class RobotReversion:
                 except Exception:
                     self.log.exception("No se pudieron resolver señales vencidas")
 
-        # Un análisis POR TIEMPO: cada bot con la vela de SU temporalidad.
+        # Un análisis POR TIEMPO: cada bot con la vela de SU temporalidad. Cuando cierra
+        # una vela en vivo, se evalúa con el buffer de ese tiempo.
         for exp in self.expiries:
             seg = exp * 60
             cerrada = m1 if seg == 60 else self._add_seguro(asset, seg, price, ts)
@@ -250,77 +254,80 @@ class RobotReversion:
                 continue
             if seg != 60:
                 self._guardar(asset, seg, cerrada)     # historial del tiempo (gráfico)
-            # FRESCURA: el cierre debe ser reciente (que el pico no sea ya viejo). Se
-            # tolera hasta UNA vela de ese tiempo de atraso: como la entrada apunta a la
-            # próxima vela, un cierre así de reciente sigue sirviendo. Cierres de hace
-            # mucho (reconexión/rotación) se descartan.
-            tolerancia = max(self.max_atraso_seg, seg)
-            if self.con_atraso and _es_tardia(ts, cerrada.get("timestamp", 0), seg,
-                                              tolerancia):
-                self.log.info("Señal %sm de %s descartada: cierre viejo.", exp, asset)
-                continue
             vig = self.vigilantes[exp]
-            if not vig.registrar(asset, cerrada["close"], ts=cerrada.get("timestamp")):
-                continue
-            # FILTRO DE PAGO
-            pago = self._payouts.get(asset)
-            if pago is not None and pago < self.payout_min:
-                continue
-            # FILTRO DE NOTICIAS
-            if self.con_noticias and not self.news.can_trade(asset):
-                self.log.info("Noticia de alto impacto: %s en silencio.", asset)
-                continue
-            s = vig.senal_para(asset, exp)
-            if not s:
-                continue
-            # RIESGO / VALOR ESPERADO: la señal debe RENDIR con el pago REAL de ahora.
-            # La tabla filtra a equilibrio de 92% (52%), pero si el activo paga 85% el
-            # equilibrio sube (~54%): una señal de 53% PIERDE. Se exige EV>=margen. Esto
-            # descarta las perdedoras de acierto bajo / pico de ruido (1m/2m sobre todo).
-            ev = _ev_par(s.get("probabilidad"), pago, self.payout_min)
-            if ev is None or ev < self.margen_ev:
-                self.log.info("EV bajo (acierto %s%% a pago %s): %s %sm en silencio.",
-                              s.get("probabilidad"), pago, asset, exp)
-                continue
-            s["pnl_esperado"] = round(ev * 100, 2)   # ventaja con el pago REAL, no el 92%
-            # CONFIRMACIÓN por extensión, sobre las velas de ESE tiempo.
-            if self.con_confirmacion and not confirma(vig.buffer(asset),
-                                                      s["direccion"], self.conf_z_min):
-                self.log.info("Sin confirmación (no estirado): %s %sm en silencio.",
-                              asset, exp)
-                continue
-            # TENDENCIA: no pelear contra una tendencia fuerte (el fallo de apostar baja
-            # en plena subida). Solo reversión en rango o contra-tendencia.
-            if self.con_tendencia and not permite_reversion(vig.buffer(asset),
-                                        s["direccion"], self.tend_n, self.tend_umbral):
-                self.log.info("Contra tendencia fuerte: %s %sm en silencio.", asset, exp)
-                continue
-            tf = f"M{exp}"
-            cts = cerrada.get("timestamp")
-            # SIEMPRE se registra (sombra) para mantener viva la medición del corrector.
-            if cts:
-                try:
-                    self.tracker.record(asset, tf, s["direccion"], cerrada["close"],
-                                        cts, exp * 60)
-                except Exception:
-                    self.log.exception("No se pudo registrar la señal de %s", asset)
-            # CORRECTOR: si este par+tiempo viene fallando bajo el equilibrio, se calla
-            # (no se envía) pero queda registrado. No afecta a los demás pares/tiempos.
-            wr, muestra = self.tracker.win_rate_reciente(asset, tf,
-                                                         self.corrector_min_muestra)
-            pago_ref = pago if pago else self.payout_min   # si no se conoce, usa el piso
-            enviar, motivo = debe_enviar(wr, muestra, pago_ref,
-                                         self.corrector_min_muestra, self.corrector_margen)
-            if not enviar:
-                self.log.info("Silenciado %s %s: %s", asset, tf, motivo)
-                continue
-            s["payout"] = pago
-            s["expiry_min"] = exp
-            s["nombre_bot"] = (self.nombre if len(self.expiries) == 1
-                               else f"FUZION FX {exp}M")
-            s["_mono"] = time.monotonic()          # cuándo se creó (para descartar viejas)
-            self._sellar_hora(s, exp)              # hora + tarjeta (se refresca al enviar)
-            self._cola.put_nowait(s)
+            vig.registrar(asset, cerrada["close"], ts=cerrada.get("timestamp"))  # buffer
+            self._evaluar(asset, exp, vig.buffer(asset), cerrada.get("timestamp"), ts)
+
+    def _evaluar(self, asset, exp, closes, vela_inicio_ms, ahora_sec):
+        """Evalúa UNA vela cerrada de un tiempo y, si pasa TODOS los filtros, encola la
+        señal. Se usa igual desde el tick en vivo (_on_tick) y desde el historial que
+        llega al saltar de par (_on_history), para que los 4 tiempos se analicen aunque
+        no cierre una vela justo en la ventana de escucha. Dedup por vela para no repetir."""
+        if not closes or len(closes) < 2:
+            return
+        # DEDUP: no re-evaluar la misma vela (el historial llega en cada rotación).
+        if vela_inicio_ms and self._ultima_eval.get((asset, exp)) == vela_inicio_ms:
+            return
+        # HORARIO de mercado (el vigilante tiene el gate).
+        vig = self.vigilantes.get(exp)
+        if vig is not None and vig.is_open is not None and not vig.is_open(asset):
+            return
+        seg = exp * 60
+        # FRESCURA: el cierre debe ser reciente (tolera hasta una vela); cierres viejos
+        # (reconexión/rotación/mercado parado) se descartan.
+        tolerancia = max(self.max_atraso_seg, seg)
+        if self.con_atraso and _es_tardia(ahora_sec, vela_inicio_ms or 0, seg, tolerancia):
+            return
+        # FILTRO DE PAGO
+        pago = self._payouts.get(asset)
+        if pago is not None and pago < self.payout_min:
+            return
+        # FILTRO DE NOTICIAS
+        if self.con_noticias and not self.news.can_trade(asset):
+            return
+        s = senal(closes, asset, exp, self.tabla)
+        if not s.get("operar"):
+            return
+        # RIESGO / VALOR ESPERADO con el pago REAL de ahora (no el 92% de la tabla).
+        ev = _ev_par(s.get("probabilidad"), pago, self.payout_min)
+        if ev is None or ev < self.margen_ev:
+            self.log.info("EV bajo (acierto %s%% a pago %s): %s %sm en silencio.",
+                          s.get("probabilidad"), pago, asset, exp)
+            return
+        s["pnl_esperado"] = round(ev * 100, 2)      # ventaja con el pago REAL
+        # CONFIRMACIÓN por extensión (desactivada por defecto).
+        if self.con_confirmacion and not confirma(closes, s["direccion"], self.conf_z_min):
+            return
+        # TENDENCIA: no pelear contra una tendencia fuerte.
+        if self.con_tendencia and not permite_reversion(closes, s["direccion"],
+                                                        self.tend_n, self.tend_umbral):
+            self.log.info("Contra tendencia fuerte: %s %sm en silencio.", asset, exp)
+            return
+        # Marca la vela como evaluada (aunque luego el corrector la calle): no repetir.
+        if vela_inicio_ms:
+            self._ultima_eval[(asset, exp)] = vela_inicio_ms
+        tf = f"M{exp}"
+        close_price = float(closes[-1])
+        if vela_inicio_ms:
+            try:
+                self.tracker.record(asset, tf, s["direccion"], close_price,
+                                    vela_inicio_ms, exp * 60)
+            except Exception:
+                self.log.exception("No se pudo registrar la señal de %s", asset)
+        # CORRECTOR: si este par+tiempo viene fallando bajo el equilibrio, se calla.
+        wr, muestra = self.tracker.win_rate_reciente(asset, tf, self.corrector_min_muestra)
+        enviar, motivo = debe_enviar(wr, muestra, pago if pago else self.payout_min,
+                                     self.corrector_min_muestra, self.corrector_margen)
+        if not enviar:
+            self.log.info("Silenciado %s %s: %s", asset, tf, motivo)
+            return
+        s["payout"] = pago
+        s["expiry_min"] = exp
+        s["nombre_bot"] = (self.nombre if len(self.expiries) == 1
+                           else f"FUZION FX {exp}M")
+        s["_mono"] = time.monotonic()
+        self._sellar_hora(s, exp)
+        self._cola.put_nowait(s)
 
     def _sellar_hora(self, s, exp):
         """Fija la hora de entrada/vencimiento en el RELOJ REAL del usuario y arma la
@@ -407,6 +414,30 @@ class RobotReversion:
                 self.repo.record_many(asset, key, filas)
             except Exception:
                 self.log.exception("No se pudo guardar historial de %s", asset)
+            # EVALÚA la última vela de este tiempo con el historial recién llegado. Así,
+            # al saltar a un par, se analizan los 4 tiempos aunque no cierre una vela justo
+            # en la ventana de escucha (antes 2m/3m/5m casi no se evaluaban -> mudo).
+            self._evaluar_historial(asset, period)
+
+    def _evaluar_historial(self, asset, period):
+        """Corre la evaluación sobre la última vela cerrada de `period` para este par,
+        usando el historial ya guardado. El dedup evita repetir la misma vela."""
+        exp = {60: 1, 120: 2, 180: 3, 300: 5}.get(int(period))
+        if exp is None or exp not in self.expiries:
+            return
+        clave = "M1" if period == 60 else f"tf{period}"
+        try:
+            df = self.repo.get_recent(asset, clave, 50)
+        except Exception:
+            df = None
+        if df is None or len(df) < 2:
+            return
+        closes = df["close"].astype(float).tolist()
+        ultima_inicio = int(df["timestamp"].iloc[-1])
+        seg = exp * 60
+        # "Ahora" del bróker: el último tick visto, o (si aún no hay) la vela recién cerrada.
+        ahora = self._ultimo_ts_broker or (ultima_inicio / 1000.0 + seg)
+        self._evaluar(asset, exp, closes, ultima_inicio, ahora)
 
     # --- precarga de contexto desde el historial guardado ---
     def _precargar(self):

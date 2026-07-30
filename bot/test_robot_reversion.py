@@ -83,6 +83,27 @@ def test_mercado_cerrado_no_encola():
         assert r._cola.qsize() == 0                         # cerrado -> nada
 
 
+def test_on_history_evalua_y_encola():
+    # Al llegar el historial de un tiempo (rotación), se evalúa su última vela: si hay
+    # pico con ventaja, encola señal aunque no cierre una vela en vivo. Así los 2m/3m/5m
+    # no quedan mudos.
+    with tempfile.TemporaryDirectory() as d:
+        r = RobotReversion(
+            get_profile("REAL"), pares=["EURCHF"], ssid="x", token="", chat_id="1",
+            expiry_min=3, tabla={"EURCHF": {"3": [[5, 70.0]]}},
+            repo=HistoryRepository(os.path.join(d, "h.db")), is_open_fn=lambda p: True)
+        r._payouts["EURCHF"] = 85
+        base = 180
+        velas = [{"time": (base + i * 180), "open": 1.0800, "high": 1.0801,
+                  "low": 1.0799, "close": 1.0800} for i in range(6)]
+        velas[-1] = {"time": base + 6 * 180, "open": 1.0800, "high": 1.0811,
+                     "low": 1.0800, "close": 1.0810}          # pico +10 pips -> PUT
+        r._on_history({"asset": "EURCHF", "period": 180, "candles": velas})
+        assert r._cola.qsize() >= 1                            # el historial disparó señal
+        s = r._cola.get_nowait()
+        assert s["par"] == "EURCHF" and s["direccion"] == "PUT" and s["expiry_min"] == 3
+
+
 def test_on_history_guarda_velas_ohlc():
     with tempfile.TemporaryDirectory() as d:
         r = _robot_tmp(os.path.join(d, "h.db"))
