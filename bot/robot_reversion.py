@@ -77,6 +77,12 @@ def _chat_de_updates(updates):
     return None
 
 
+def _proxima_entrada(ahora_epoch, seg, min_lead):
+    """Epoch del INICIO de la próxima vela que empieza al menos `min_lead` seg después de
+    ahora. Así la hora de entrada siempre cae en el futuro con margen para programarla."""
+    return math.ceil((ahora_epoch + min_lead) / seg) * seg
+
+
 def _es_tardia(ts_sec, inicio_ms, seg, max_atraso):
     """True si el cierre de la vela se detectó demasiado tarde: el tick actual llegó más
     de `max_atraso` seg después de que la vela terminara. Todo en hora del bróker (el
@@ -152,6 +158,10 @@ class RobotReversion:
         self.con_atraso = True
         self.max_atraso_seg = 25                 # detección tardía del cierre -> se descarta
         self.max_cola_seg = 30                   # vieja en cola al enviar -> se descarta
+        # MARGEN PARA ENTRAR: la hora de entrada apunta a la PRÓXIMA vela que empiece al
+        # menos este número de segundos en el futuro, para dar tiempo a programar la
+        # operación antes de que arranque (lo que pidió el trader).
+        self.min_lead_seg = 20
         self._ticks = 0                          # contador de ticks recibidos (latido)
         self._builders = {}
         self._cola = asyncio.Queue()
@@ -184,14 +194,6 @@ class RobotReversion:
             self.repo.record_candle(asset, clave, vela)
         except Exception:
             self.log.exception("No se pudo guardar la vela de %s (%s)", asset, clave)
-
-    def _hora_entrada(self, exp):
-        """Inicio de la vela ACTUAL del tiempo, en el RELOJ REAL del usuario: es el
-        minuto exacto en que debe poner la operación (la vela que arranca ya). Se ancla
-        al reloj real (como el gráfico), no al timestamp del bróker (desfasado)."""
-        seg = exp * 60
-        inicio = math.floor(datetime.datetime.now().timestamp() / seg) * seg
-        return datetime.datetime.fromtimestamp(inicio)
 
     def _on_tick(self, asset, ts, price):
         """Alimenta las velas de cada tiempo; cuando CIERRA una vela de un tiempo, ese
@@ -286,10 +288,14 @@ class RobotReversion:
         usuario sea la del momento de recibir (no la de hace minutos)."""
         from bot.escaner_reversion import tarjeta
         from bot.sesiones import etiqueta
-        entra = self._hora_entrada(exp)
+        ahora = datetime.datetime.now()
+        seg = exp * 60
+        inicio = _proxima_entrada(ahora.timestamp(), seg, self.min_lead_seg)
+        entra = datetime.datetime.fromtimestamp(inicio)
         vence = entra + datetime.timedelta(minutes=exp)
         s["hora_entrada"] = entra.strftime("%H:%M")
         s["hora_vence"] = vence.strftime("%H:%M")
+        s["faltan_seg"] = max(0, int(inicio - ahora.timestamp()))   # cuenta atrás para entrar
         # Zona horaria del PC (offset real de ESA fecha: respeta horario de verano).
         off = entra.astimezone().utcoffset()
         mins = int(off.total_seconds() // 60) if off else 0

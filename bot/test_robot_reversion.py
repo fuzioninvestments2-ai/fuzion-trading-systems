@@ -16,7 +16,8 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from bot.robot_reversion import (RobotReversion, _chat_de_updates, PARES_FUERTES,
-                                 ACTIVOS_PO, _necesita_reinicio, _es_tardia)
+                                 ACTIVOS_PO, _necesita_reinicio, _es_tardia,
+                                 _proxima_entrada)
 from bot.history import HistoryRepository
 from bot.profiles import get_profile
 
@@ -194,6 +195,27 @@ def test_noticia_alto_impacto_calla_el_par():
                        (240, 1.0810), (300, 1.0810)]:
             r._on_tick("EURCHF", ts, px)
         assert r._cola.qsize() == 0                     # noticia -> silencio
+
+
+def test_proxima_entrada_da_margen():
+    # La hora de entrada siempre cae en un borde de vela futuro con al menos min_lead seg
+    # de margen (para dar tiempo a programarla), pero sin saltarse más de una vela.
+    for ahora in (1000, 1005, 1037, 1059, 1200, 1233):
+        inicio = _proxima_entrada(ahora, 60, 20)
+        assert inicio % 60 == 0                          # cae en el borde de la vela
+        assert 20 <= inicio - ahora < 20 + 60            # margen garantizado, acotado
+
+
+def test_senal_trae_cuenta_atras():
+    with tempfile.TemporaryDirectory() as d:
+        r = _robot_tmp(os.path.join(d, "h.db"))
+        r._payouts["EURCHF"] = 85
+        for ts, px in [(60, 1.0800), (120, 1.0800), (180, 1.0810),
+                       (240, 1.0810), (300, 1.0810)]:
+            r._on_tick("EURCHF", ts, px)
+        s = r._cola.get_nowait()
+        assert s.get("faltan_seg") is not None and s["faltan_seg"] >= 20   # margen
+        assert "faltan" in s["tarjeta"]
 
 
 def test_es_tardia_detecta_cierre_atrasado():
