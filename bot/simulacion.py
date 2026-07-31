@@ -18,7 +18,7 @@ Sin red. Test: bot/test_simulacion.py.
 """
 import numpy as np
 
-from bot.senal_reversion import senal, PISO_PIPS
+from bot.senal_reversion import senal, PISO_PIPS, _pip
 from bot.tendencia import permite_reversion
 from bot.evaluacion_riesgo import en_golpes
 
@@ -30,13 +30,19 @@ def _ev(borde, pago):
 
 def resamplear(ts_ms, closes, tf_min):
     """Resamplea M1 a velas de `tf_min` por TIEMPO REAL: agrupa por bloque de tiempo y
-    toma el último cierre de cada bloque. Devuelve (inicios_ms, cierres) en orden."""
+    toma el último cierre de cada bloque. Devuelve (inicios_ms, cierres) en orden.
+    Vectorizado (numpy): asume `ts_ms` ordenado ascendente (así viene del historial)."""
+    ts = np.asarray(ts_ms, dtype=np.int64)
+    cl = np.asarray(closes, dtype=float)
+    if ts.size == 0:
+        return [], []
     seg_ms = tf_min * 60_000
-    ult = {}
-    for t, c in zip(ts_ms, closes):
-        ult[(int(t) // seg_ms) * seg_ms] = float(c)   # último cierre del bloque
-    inicios = sorted(ult)
-    return inicios, [ult[b] for b in inicios]
+    buckets = (ts // seg_ms) * seg_ms
+    cambio = np.empty(buckets.size, dtype=bool)        # último tick de cada bloque
+    cambio[:-1] = buckets[1:] != buckets[:-1]
+    cambio[-1] = True
+    idx = np.where(cambio)[0]
+    return buckets[idx].tolist(), cl[idx].tolist()
 
 
 def _piso(tabla, par, exp):
@@ -62,13 +68,22 @@ def simular(ts_ms, closes, par, exp, tabla, payout=85.0, margen_ev=0.03,
     warm = max(tend_n, riesgo_n) + 2
     wins = losses = señales = 0
     pnl = 0.0
-    for i in range(warm, n - 2):
+    # RÁPIDO: los picos son raros; se detectan de golpe con numpy y solo en esos se corre
+    # el análisis (evita llamar a `senal` en millones de velas planas). El pico de la vela
+    # i es |bc[i]-bc[i-1]|; candidato si >= piso.
+    arr = np.asarray(bc, dtype=float)
+    pip = _pip(par)
+    mov = np.abs(np.diff(arr)) / pip
+    cand = np.where(mov >= piso)[0] + 1                # i = índice de la vela-pico
+    cand = cand[(cand >= warm) & (cand <= n - 3)]
+    for i in cand:
+        i = int(i)
         # ADYACENCIA: el pico (i vs i-1) y la operación (i+1, i+2) deben ser consecutivos.
         if bts[i] - bts[i - 1] != seg_ms:
             continue
         if bts[i + 1] - bts[i] != seg_ms or bts[i + 2] - bts[i + 1] != seg_ms:
             continue
-        win = bc[:i + 1]
+        win = bc[i - 40 if i >= 40 else 0:i + 1]       # solo la cola necesaria (rápido)
         s = senal(win, par, exp, tabla)
         if not s.get("operar"):
             continue
@@ -156,7 +171,7 @@ if __name__ == "__main__":
             linea.append(f"{e}m:{wr}({x['señales']})")
             if x["win_rate"] is not None:
                 gw += x["wins"]; gl += x["losses"]; gs += x["señales"]
-        print(f"  {par:8} " + "  ".join(f"{c:>12}" for c in linea))
+        print(f"  {par:8} " + "  ".join(f"{c:>12}" for c in linea), flush=True)
     print("=" * 76)
     dec = gw + gl
     if dec:
