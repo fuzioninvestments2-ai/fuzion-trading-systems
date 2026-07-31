@@ -78,13 +78,16 @@ class SignalTracker:
         expiry_ts = int(entry_ts_ms) + int(expiry_seconds) * 1000
         votes_json = json.dumps(votes) if votes else None
         meta_json = json.dumps(meta) if meta else None
+        # entry_price puede venir None: el precio de entrada se resuelve luego desde la
+        # malla M1 en el BORDE de entrada, así se mide el trade real (no el precio del pico).
+        ep = float(entry_price) if entry_price is not None else None
         with self._lock:
             cur = self.conn.execute(
                 """INSERT INTO signals
                    (asset, timeframe, direction, entry_price, entry_ts, expiry_ts,
                     votes, meta)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (asset, timeframe, direction, float(entry_price),
+                (asset, timeframe, direction, ep,
                  int(entry_ts_ms), expiry_ts, votes_json, meta_json))
             self.conn.commit()
             return cur.lastrowid
@@ -107,11 +110,18 @@ class SignalTracker:
         """
         with self._lock:
             pend = self.conn.execute(
-                """SELECT id, asset, direction, entry_price, expiry_ts
+                """SELECT id, asset, direction, entry_price, entry_ts, expiry_ts
                    FROM signals WHERE resolved=0 AND expiry_ts <= ?""",
                 (int(now_ts_ms),)).fetchall()
             n = 0
-            for sid, asset, direction, entry, expiry_ts in pend:
+            for sid, asset, direction, entry, entry_ts, expiry_ts in pend:
+                # Si no se guardó el precio de entrada, se toma de la malla M1 en el BORDE
+                # de entrada: así entrada y salida son las del trade real (misma ventana
+                # que la tabla), no el precio del pico.
+                if entry is None:
+                    entry = self._price_at(asset, entry_ts)
+                    if entry is None:
+                        continue                   # aún sin vela en el borde de entrada
                 exit_price = self._price_at(asset, expiry_ts)
                 if exit_price is None:
                     continue                       # aún sin vela de vencimiento

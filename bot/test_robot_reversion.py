@@ -96,8 +96,8 @@ def test_on_history_evalua_y_encola():
         base = 180
         velas = [{"time": (base + i * 180), "open": 1.0800, "high": 1.0801,
                   "low": 1.0799, "close": 1.0800} for i in range(6)]
-        velas[-1] = {"time": base + 6 * 180, "open": 1.0800, "high": 1.0811,
-                     "low": 1.0800, "close": 1.0810}          # pico +10 pips -> PUT
+        velas[-1] = {"time": base + 5 * 180, "open": 1.0800, "high": 1.0811,
+                     "low": 1.0800, "close": 1.0810}          # última vela (contigua): pico +10
         r._on_history({"asset": "EURCHF", "period": 180, "candles": velas})
         assert r._cola.qsize() >= 1                            # el historial disparó señal
         s = r._cola.get_nowait()
@@ -128,26 +128,28 @@ def test_on_history_guarda_ticks_como_m1():
 
 
 def test_matriz_cada_bot_analiza_su_tiempo():
-    # La matriz 1m + 2m: cada bot arma SUS velas y da su propia señal. Un par de ticks
-    # separados 2 min cierra a la vez una vela M1 y una de 2m; ambos bots deben disparar
-    # con SU nombre (no el mismo pico repetido: análisis independientes por tiempo).
+    # La matriz 1m + 2m: el 1m se evalúa en vivo (ticks), el 2m con las velas LIMPIAS del
+    # bróker (historial). Cada bot da su propia señal con SU nombre (análisis por tiempo).
     with tempfile.TemporaryDirectory() as d:
         r = RobotReversion(
             get_profile("REAL"), pares=["EURCHF"], ssid="x", token="", chat_id="1",
             tabla={"EURCHF": {"1": [[5, 60.0], [8, 62.0]], "2": [[5, 70.0], [8, 72.0]]}},
             repo=HistoryRepository(os.path.join(d, "h.db")),
-            is_open_fn=lambda p: True, expiries=[1, 2])     # la matriz: 1m y 2m
-        r.con_atraso = False                                 # ticks espaciados a propósito
-        r.con_riesgo = False                                 # la serie alterna: no probamos golpes aquí
+            is_open_fn=lambda p: True, expiries=[1, 2])
+        r.con_riesgo = False
         r._payouts["EURCHF"] = 85
-        serie = [1.0795 if i % 2 else 1.0805 for i in range(20)]   # ruido, media 1.0800
-        r.vigilantes[1].precargar("EURCHF", serie)
-        r.vigilantes[2].precargar("EURCHF", serie)
-        r._on_tick("EURCHF", 6000, 1.0810)                  # pico (cierra M1 y 2m al saltar)
-        r._on_tick("EURCHF", 6120, 1.0810)                  # +2 min: cierra ambas velas
-        assert r._cola.qsize() == 2                          # una tarjeta por tiempo
-        nombres = {r._cola.get_nowait()["nombre_bot"] for _ in range(2)}
-        assert nombres == {"FUZION FX 1M", "FUZION FX 2M"}
+        # 1m EN VIVO: velas M1 adyacentes, la última con pico +10 -> señal 1m.
+        for ts, px in [(60, 1.0800), (120, 1.0800), (180, 1.0810),
+                       (240, 1.0810), (300, 1.0810)]:
+            r._on_tick("EURCHF", ts, px)
+        # 2m POR HISTORIAL: velas tf120 contiguas, la última con pico +10 -> señal 2m.
+        velas = [{"time": 120 + i * 120, "open": 1.0800, "high": 1.0801,
+                  "low": 1.0799, "close": 1.0800} for i in range(6)]
+        velas[-1] = {"time": 120 + 5 * 120, "open": 1.0800, "high": 1.0811,
+                     "low": 1.0800, "close": 1.0810}
+        r._on_history({"asset": "EURCHF", "period": 120, "candles": velas})
+        nombres = {r._cola.get_nowait()["nombre_bot"] for _ in range(r._cola.qsize())}
+        assert "FUZION FX 1M" in nombres and "FUZION FX 2M" in nombres
 
 
 def test_payout_bajo_no_encola():
@@ -353,15 +355,18 @@ def test_watchdog_decide_reinicio():
 
 
 def _flujo_pico(r, z_min):
-    # Buffer con RUIDO (±5 pips, media 1.0800) precargado, y luego un cierre pico a
-    # 1.0810 -> z ~2. Con z_min alto se silencia; con z_min bajo pasa.
+    # Buffer con RUIDO (±5 pips, media 1.0800) precargado CON timestamps adyacentes, y
+    # luego un cierre pico a 1.0810 -> z ~2. Con z_min alto se silencia; con z_min bajo pasa.
     r._payouts["EURCHF"] = 85
     r.con_confirmacion = True                       # este test prueba la confirmación
     r.con_riesgo = False                            # la serie alterna: no probamos golpes aquí
     r.conf_z_min = z_min
-    r.vig.precargar("EURCHF", [1.0795 if i % 2 else 1.0805 for i in range(20)])
-    r._on_tick("EURCHF", 100 * 60, 1.0810)          # tick del pico
-    r._on_tick("EURCHF", 101 * 60, 1.0810)          # cierra la vela del pico (close=1.0810)
+    serie = [1.0795 if i % 2 else 1.0805 for i in range(20)]
+    # timestamps adyacentes que terminan justo antes de la vela viva (min 99 -> 5_940_000).
+    tss = [6_000_000 - (20 - i) * 60_000 for i in range(20)]
+    r.vig.precargar("EURCHF", serie, tss)
+    r._on_tick("EURCHF", 6000, 1.0810)              # tick del pico (min 100)
+    r._on_tick("EURCHF", 6060, 1.0810)              # cierra la vela del pico (ts 6_000_000)
     return r._cola.qsize()
 
 

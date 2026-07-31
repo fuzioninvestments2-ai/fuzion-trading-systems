@@ -251,38 +251,41 @@ class RobotReversion:
                 except Exception:
                     self.log.exception("No se pudieron resolver señales vencidas")
 
-        # Un análisis POR TIEMPO: cada bot con la vela de SU temporalidad. Cuando cierra
-        # una vela en vivo, se evalúa con el buffer de ese tiempo.
-        for exp in self.expiries:
-            seg = exp * 60
-            cerrada = m1 if seg == 60 else self._add_seguro(asset, seg, price, ts)
-            if not cerrada:
-                continue
-            if seg != 60:
-                self._guardar(asset, seg, cerrada)     # historial del tiempo (gráfico)
-            vig = self.vigilantes[exp]
-            vig.registrar(asset, cerrada["close"], ts=cerrada.get("timestamp"))  # buffer
-            self._evaluar(asset, exp, vig.buffer(asset), cerrada.get("timestamp"), ts)
+        # SOLO 1m se evalúa EN VIVO (su vela M1 es fiable). Los tiempos 2m/3m/5m NO se
+        # construyen del stream: en una escucha de ~75s la vela larga sería PARCIAL y con
+        # el timestamp de la visita anterior. Esos tiempos se evalúan con las velas LIMPIAS
+        # que manda el bróker en _on_history al saltar de par.
+        if m1 and 1 in self.expiries:
+            vig = self.vigilantes[1]
+            vig.registrar(asset, m1["close"], ts=m1.get("timestamp"))
+            self._evaluar(asset, 1, vig.buffer(asset), vig.timestamps(asset), ts)
 
-    def _evaluar(self, asset, exp, closes, vela_inicio_ms, ahora_sec):
+    def _evaluar(self, asset, exp, closes, tss, ahora_sec):
         """Evalúa UNA vela cerrada de un tiempo y, si pasa TODOS los filtros, encola la
-        señal. Se usa igual desde el tick en vivo (_on_tick) y desde el historial que
-        llega al saltar de par (_on_history), para que los 4 tiempos se analicen aunque
-        no cierre una vela justo en la ventana de escucha. Dedup por vela para no repetir."""
-        if not closes or len(closes) < 2:
+        señal. Se usa igual desde el tick en vivo (1m) y desde el historial (2/3/5m).
+        `tss` = timestamps (ms) de cada cierre, para exigir ADYACENCIA (no comparar a
+        través de un hueco). `ahora_sec` = hora del bróker. Dedup por vela."""
+        if not closes or len(closes) < 2 or not tss or len(tss) < 2:
             return
+        seg = exp * 60
+        vela_inicio_ms = tss[-1]
         # DEDUP: no re-evaluar la misma vela (el historial llega en cada rotación).
         if vela_inicio_ms and self._ultima_eval.get((asset, exp)) == vela_inicio_ms:
             return
-        # HORARIO de mercado (el vigilante tiene el gate).
+        # HORARIO de mercado.
         vig = self.vigilantes.get(exp)
         if vig is not None and vig.is_open is not None and not vig.is_open(asset):
             return
-        seg = exp * 60
-        # FRESCURA: el cierre debe ser reciente (tolera hasta una vela); cierres viejos
-        # (reconexión/rotación/mercado parado) se descartan.
-        tolerancia = max(self.max_atraso_seg, seg)
-        if self.con_atraso and _es_tardia(ahora_sec, vela_inicio_ms or 0, seg, tolerancia):
+        # ADYACENCIA: las dos últimas velas deben ser CONSECUTIVAS (Δt == una vela). Si
+        # hay hueco (rotación, mercado parado), `closes[-1]-closes[-2]` no es un pico real
+        # sino un salto de tiempo -> NO se opera (raíz de los picos falsos de +40 pips).
+        if tss[-1] is None or tss[-2] is None or (tss[-1] - tss[-2]) != seg * 1000:
+            return
+        # TIEMPO: borde de ENTRADA en hora del BRÓKER = dos velas tras el inicio del pico
+        # (vela de margen + vela operada), igual que mide la tabla (retardo=1). Si ya no da
+        # tiempo a entrar en esa vela, se DESCARTA (no se desliza a la siguiente).
+        entrada_broker = vela_inicio_ms / 1000.0 + 2 * seg
+        if entrada_broker - ahora_sec < self.min_lead_seg:
             return
         # FILTRO DE PAGO
         pago = self._payouts.get(asset)
@@ -294,39 +297,36 @@ class RobotReversion:
         s = senal(closes, asset, exp, self.tabla)
         if not s.get("operar"):
             return
-        # RIESGO / VALOR ESPERADO con el pago REAL de ahora (no el 92% de la tabla).
+        # VALOR ESPERADO con el pago REAL de ahora.
         ev = _ev_par(s.get("probabilidad"), pago, self.payout_min)
         if ev is None or ev < self.margen_ev:
             self.log.info("EV bajo (acierto %s%% a pago %s): %s %sm en silencio.",
                           s.get("probabilidad"), pago, asset, exp)
             return
-        s["pnl_esperado"] = round(ev * 100, 2)      # ventaja con el pago REAL
-        # CONFIRMACIÓN por extensión (desactivada por defecto).
+        s["pnl_esperado"] = round(ev * 100, 2)
         if self.con_confirmacion and not confirma(closes, s["direccion"], self.conf_z_min):
             return
-        # TENDENCIA: no pelear contra una tendencia fuerte.
+        # TENDENCIA
         if self.con_tendencia and not permite_reversion(closes, s["direccion"],
                                                         self.tend_n, self.tend_umbral):
             self.log.info("Contra tendencia fuerte: %s %sm en silencio.", asset, exp)
             return
-        # RIESGO: si el par está siendo martillado (muchos golpes alrededor), la reversión
-        # falla -> no se opera aquí (el bot preferirá otra moneda más tranquila).
+        # RIESGO / zona de golpes
         if self.con_riesgo and en_golpes(closes, asset, self._piso_pico(asset, exp),
                                          self.riesgo_n, self.max_golpes):
             self.log.info("Zona de golpes (riesgo alto): %s %sm en silencio.", asset, exp)
             return
-        # Marca la vela como evaluada (aunque luego el corrector la calle): no repetir.
-        if vela_inicio_ms:
-            self._ultima_eval[(asset, exp)] = vela_inicio_ms
+        self._ultima_eval[(asset, exp)] = vela_inicio_ms
         tf = f"M{exp}"
-        close_price = float(closes[-1])
-        if vela_inicio_ms:
-            try:
-                self.tracker.record(asset, tf, s["direccion"], close_price,
-                                    vela_inicio_ms, exp * 60)
-            except Exception:
-                self.log.exception("No se pudo registrar la señal de %s", asset)
-        # CORRECTOR: si este par+tiempo viene fallando bajo el equilibrio, se calla.
+        # TRACKER: registra el TRADE REAL (entra en el borde m+2, dura UNA vela). El precio
+        # de entrada y salida se resuelven luego desde la malla M1, así el acierto medido
+        # es el de la operación que de verdad se hace (no una ventana inventada).
+        try:
+            self.tracker.record(asset, tf, s["direccion"], None,
+                                int(entrada_broker * 1000), seg)
+        except Exception:
+            self.log.exception("No se pudo registrar la señal de %s", asset)
+        # CORRECTOR
         wr, muestra = self.tracker.win_rate_reciente(asset, tf, self.corrector_min_muestra)
         enviar, motivo = debe_enviar(wr, muestra, pago if pago else self.payout_min,
                                      self.corrector_min_muestra, self.corrector_margen)
@@ -335,6 +335,7 @@ class RobotReversion:
             return
         s["payout"] = pago
         s["expiry_min"] = exp
+        s["vela_inicio_ms"] = vela_inicio_ms
         s["nombre_bot"] = (self.nombre if len(self.expiries) == 1
                            else f"FUZION FX {exp}M")
         s["_mono"] = time.monotonic()
@@ -349,12 +350,23 @@ class RobotReversion:
         from bot.sesiones import etiqueta
         ahora = datetime.datetime.now()
         seg = exp * 60
-        inicio = _proxima_entrada(ahora.timestamp(), seg, self.min_lead_seg)
-        entra = datetime.datetime.fromtimestamp(inicio)
+        vela_ms = s.get("vela_inicio_ms")
+        if vela_ms and self._ultimo_ts_broker:
+            # La entrada se ancla a la VELA (borde m+2 en hora del bróker). El desfase
+            # hasta esa vela se mide en tiempo del bróker (Δ), y se muestra sumándolo al
+            # reloj real del usuario: así la hora cuadra con Pocket Option pase lo que pase
+            # con la zona horaria, y NO se desliga de la vela que disparó la señal.
+            entrada_broker = vela_ms / 1000.0 + 2 * seg
+            delta = entrada_broker - self._ultimo_ts_broker
+            entra = ahora + datetime.timedelta(seconds=delta)
+            s["faltan_seg"] = max(0, int(delta))
+        else:
+            inicio = _proxima_entrada(ahora.timestamp(), seg, self.min_lead_seg)
+            entra = datetime.datetime.fromtimestamp(inicio)
+            s["faltan_seg"] = max(0, int(inicio - ahora.timestamp()))
         vence = entra + datetime.timedelta(minutes=exp)
         s["hora_entrada"] = entra.strftime("%H:%M")
         s["hora_vence"] = vence.strftime("%H:%M")
-        s["faltan_seg"] = max(0, int(inicio - ahora.timestamp()))   # cuenta atrás para entrar
         # Zona horaria del PC (offset real de ESA fecha: respeta horario de verano).
         off = entra.astimezone().utcoffset()
         mins = int(off.total_seconds() // 60) if off else 0
@@ -445,11 +457,12 @@ class RobotReversion:
         if df is None or len(df) < 2:
             return
         closes = df["close"].astype(float).tolist()
-        ultima_inicio = int(df["timestamp"].iloc[-1])
+        tss = [int(t) for t in df["timestamp"].tolist()]     # timestamps para la adyacencia
+        ultima_inicio = tss[-1]
         seg = exp * 60
         # "Ahora" del bróker: el último tick visto, o (si aún no hay) la vela recién cerrada.
         ahora = self._ultimo_ts_broker or (ultima_inicio / 1000.0 + seg)
-        self._evaluar(asset, exp, closes, ultima_inicio, ahora)
+        self._evaluar(asset, exp, closes, tss, ahora)
 
     # --- precarga de contexto desde el historial guardado ---
     def _precargar(self):
@@ -512,9 +525,15 @@ class RobotReversion:
                 continue
             bot = self.bots.get(exp) or self._bot_primario   # el bot de ESE tiempo
             # Se renderiza el gráfico ANTES y se sella la hora en el ÚLTIMO instante,
-            # justo antes de mandar, para el mínimo desfase entre la hora y su recepción.
+            # anclada a la VELA (no a 'now'), para el mínimo desfase con Pocket Option.
             foto = self._grafico(s["par"], s.get("direccion", ""), exp)
             self._sellar_hora(s, exp)
+            # Si al enviar ya no da tiempo a entrar en la vela que mide el borde, se
+            # descarta: mejor no mandarla que mandarla tarde para una vela distinta.
+            if s.get("faltan_seg", 0) < self.min_lead_seg:
+                self.log.info("Señal %sm de %s descartada: ya no da tiempo a la vela.",
+                              exp, s.get("par"))
+                continue
             reaccion = time.monotonic() - s.get("_mono", time.monotonic())
             try:
                 if foto:
@@ -612,9 +631,10 @@ class RobotReversion:
             return False
         if df is None or len(df) < 6:
             return False
-        exp0 = self.expiries[0] if self.expiries else 1
+        # Lee velas M1, así que el piso debe ser el de 1m (antes usaba el del primer tiempo
+        # -> con 3m/5m el piso quedaba enorme para M1 y no detectaba nunca los golpes).
         return en_golpes(df["close"].astype(float).tolist(), par,
-                         self._piso_pico(par, exp0), self.riesgo_n, self.max_golpes)
+                         self._piso_pico(par, 1), self.riesgo_n, self.max_golpes)
 
     def _mejor_par(self):
         """El par ELEGIBLE (pago>=mínimo y con borde) de mayor valor esperado. Devuelve

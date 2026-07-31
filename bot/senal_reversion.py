@@ -16,6 +16,8 @@ pips se descartan (posible error de dato / evento anómalo).
 Este módulo NO conecta a red ni opera: solo decide la señal a partir de velas ya
 recibidas. Test: bot/test_senal_reversion.py.
 """
+import math
+
 CALL = "CALL"
 PUT = "PUT"
 PAYOUT = 0.92
@@ -100,11 +102,18 @@ def senal(closes, par, expiry_min=3, tabla=None):
     # otro tamaño (una vela de 5m se mueve mucho más que una de 1m), así que un piso/techo
     # fijo no sirve. El piso = umbral más chico medido; techo = 3x el mayor medido (por
     # encima ya es anomalía/error de dato). Para la tabla global se usan los fijos.
+    # El techo NUNCA supera el límite de anomalía del backtest (MAX_PIPS*sqrt(tiempo)):
+    # por encima de eso el pico se excluyó al medir, así que en vivo tampoco se opera (no
+    # se le presta un acierto que nunca se midió para ese tamaño).
+    cap_anomalia = MAX_PIPS * math.sqrt(max(1, int(expiry_min)))
     if buckets is TABLA_OOS:
-        piso, techo = PISO_PIPS, MAX_PIPS
+        # Sin tabla del par: TABLA_OOS está medida a 3m, así que se escala RELATIVO a 3m
+        # (√(exp/3)): a 3m queda igual (piso 4, techo 20), a 1m menor, a 5m mayor.
+        esc = math.sqrt(max(1, int(expiry_min)) / 3.0)
+        piso, techo = PISO_PIPS * esc, MAX_PIPS * esc
     else:
         umbrales = [u for u, _ in buckets]
-        piso, techo = min(umbrales), max(umbrales) * 3
+        piso, techo = min(umbrales), min(max(umbrales) * 3, cap_anomalia)
 
     if magnitud < piso:
         return {**base, "motivo": f"pico chico ({magnitud:.1f} pips < {piso:g}): "

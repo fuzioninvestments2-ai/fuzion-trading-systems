@@ -31,6 +31,7 @@ class VigilanteReversion:
         self.is_open = is_open
         self.max_buffer = int(max_buffer)
         self._buffers = {p: [] for p in self.pares}
+        self._ts = {p: [] for p in self.pares}   # timestamps (ms) de cada cierre (adyacencia)
         self._ultimo_ts = {}          # par -> ts de la última vela procesada (dedup)
 
     def registrar(self, par, close, ts=None):
@@ -42,9 +43,12 @@ class VigilanteReversion:
             return False              # ya procesamos esta vela: no repetir
         self._ultimo_ts[par] = ts
         buf = self._buffers[par]
+        tsb = self._ts[par]
         buf.append(float(close))
+        tsb.append(int(ts) if ts is not None else None)
         if len(buf) > self.max_buffer:
             del buf[0]
+            del tsb[0]
         if self.is_open is not None and not self.is_open(par):
             return False              # mercado cerrado para este par: callar
         return True
@@ -52,6 +56,11 @@ class VigilanteReversion:
     def buffer(self, par):
         """Copia de los cierres M1 recientes del par (para confirmaciones externas)."""
         return list(self._buffers.get(par, []))
+
+    def timestamps(self, par):
+        """Copia de los timestamps (ms) de cada cierre del buffer (para verificar que dos
+        velas son ADYACENTES en el tiempo y no comparar a través de un hueco de rotación)."""
+        return list(self._ts.get(par, []))
 
     def senal_para(self, par, expiry):
         """Evalúa la reversión del buffer actual del par a un vencimiento dado. Devuelve
@@ -73,13 +82,19 @@ class VigilanteReversion:
             s["tarjeta"] = tarjeta(s)
         return s
 
-    def precargar(self, par, closes):
+    def precargar(self, par, closes, tss=None):
         """Rellena el buffer de un par con cierres M1 históricos (al arrancar), para
-        tener contexto inmediato sin esperar a que lleguen velas en vivo."""
+        tener contexto inmediato sin esperar a que lleguen velas en vivo. `tss` opcional:
+        timestamps (ms) de cada cierre para poder verificar adyacencia."""
         if par not in self._buffers:
             return
         seq = [float(c) for c in closes][-self.max_buffer:]
         self._buffers[par] = seq
+        if tss is not None:
+            self._ts[par] = [int(t) if t is not None else None
+                             for t in tss][-self.max_buffer:]
+        else:
+            self._ts[par] = [None] * len(seq)
 
 
 if __name__ == "__main__":
