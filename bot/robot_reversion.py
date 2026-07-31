@@ -636,8 +636,17 @@ class RobotReversion:
                              key=lambda x: (x[1] is None, -(x[1] or 0.0)))
             elegibles = [p for p, ev in ranking if ev is not None]
             if not elegibles:
-                self.log.info("Ningún par elegible (pago >= %.0f%%) ahora; espero.",
-                              self.payout_min)
+                # Muestra el MEJOR pago disponible para que se vea que es la HORA (pagos
+                # bajos, sesión floja), no un fallo del bot.
+                pagos = [(self._payouts.get(p), p) for p in self.pares
+                         if self._payouts.get(p) is not None]
+                if pagos:
+                    mp, mpar = max(pagos)
+                    self.log.info("Ningún par paga >= %.0f%%. Mejor ahora: %.0f%% en %s "
+                                  "(pagos bajos = hora floja). Espero.",
+                                  self.payout_min, mp, mpar)
+                else:
+                    self.log.info("Aún sin pagos del bróker (o pagos bajos); espero.")
                 await asyncio.sleep(self.foco_seg)
                 continue
             for par in elegibles:
