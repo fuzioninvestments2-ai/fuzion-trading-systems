@@ -35,13 +35,24 @@ def _umbrales_tf(tf):
     return sorted({int(round(u * r)) for u in base if u * r >= 1})
 
 
-def tabla_par(c, par, tf_min=REF_EXP_MIN):
-    """Borde de reversión medido en velas de `tf_min` MINUTOS (no en 1m). Resamplea los
-    cierres M1 a velas de ese tiempo, mide el pico de CADA vela y si el precio se devuelve
-    en la SIGUIENTE vela (revertir sobre el mismo tiempo = el vencimiento). Devuelve
-    [(umbral_pips, win_rate_oos, n)] solo con tramos OOS con muestra y por encima del
-    break-even. Así el bot de 5m analiza velas de 5m, el de 3m velas de 3m, etc."""
+RETARDO_ENTRADA = 1     # velas entre el pico y la ENTRADA (ver abajo). Debe igualar el vivo.
+
+
+def tabla_par(c, par, tf_min=REF_EXP_MIN, retardo=RETARDO_ENTRADA):
+    """Borde de reversión medido en velas de `tf_min` MINUTOS, CON el desfase de entrada
+    real. Resamplea los cierres M1 a velas de ese tiempo, mide el pico de cada vela y si
+    el precio se devuelve.
+
+    CLAVE (corrección D1): el bot NO entra al cierre del pico, sino en la PRÓXIMA vela
+    (te da una vela de margen para programar la orden). Por eso aquí la entrada es
+    `cT[i+retardo]` y la salida `cT[i+retardo+1]` — con `retardo=1`, una vela después del
+    pico, exactamente como se opera. Así el acierto medido es el que de verdad obtienes,
+    no uno idealizado que entra imposible-de-rápido.
+
+    Devuelve [(umbral_pips, win_rate_oos, n)] solo con tramos OOS con muestra y por encima
+    del break-even."""
     tf = max(1, int(tf_min))
+    ret_v = max(0, int(retardo))
     cT = c[tf - 1::tf] if tf > 1 else c       # cierre al final de cada bloque de tf minutos
     n = len(cT)
     if n < 200:
@@ -56,14 +67,14 @@ def tabla_par(c, par, tf_min=REF_EXP_MIN):
     out = []
     for u in _umbrales_tf(tf):
         base = (np.abs(mov) >= u) & (np.abs(mov) <= max_tf) & (sm != 0)
-        # Reversión sobre la SIGUIENTE vela (i+1) = el vencimiento del tiempo. Solo OOS.
-        valido = base & (idx + 1 <= n - 1) & (idx >= split)
+        # Entrada `retardo` velas después del pico; salida una vela más allá. Solo OOS.
+        valido = base & (idx + ret_v + 1 <= n - 1) & (idx >= split)
         if not valido.any():
             continue
         i = idx[valido]
-        ret = cT[i + 1] - cT[i]
+        ret = cT[i + ret_v + 1] - cT[i + ret_v]        # movimiento DESDE la entrada real
         res = ret != 0
-        gana = (np.sign(ret) == -sm[i - 1]) & res
+        gana = (np.sign(ret) == -sm[i - 1]) & res      # se devolvió respecto al pico
         w = int((gana & res).sum())
         l = int((~gana & res).sum())
         if w + l >= min_ops:
