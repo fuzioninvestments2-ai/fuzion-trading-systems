@@ -56,18 +56,18 @@ def _piso(tabla, par, exp):
     return PISO_PIPS
 
 
-def simular(ts_ms, closes, par, exp, tabla, payout=85.0, margen_ev=0.03,
-            tend_n=20, tend_umbral=0.35, riesgo_n=15, max_golpes=4,
-            con_tendencia=True, con_riesgo=True):
-    """Corre el pipeline en vivo sobre la serie M1 (ts_ms, closes) para un tiempo `exp` y
-    devuelve {señales, wins, losses, win_rate, pnl_por_op, equilibrio}."""
+def simular_ops(ts_ms, closes, par, exp, tabla, payout=85.0, margen_ev=0.03,
+                tend_n=20, tend_umbral=0.35, riesgo_n=15, max_golpes=4,
+                con_tendencia=True, con_riesgo=True):
+    """Corre el pipeline en vivo y devuelve la LISTA de operaciones reales, cada una con su
+    metadata para poder cortar por condición (sesión horaria, tamaño de pico) después:
+    [{hora, pico, direccion, gana}, ...]. `hora` es la hora UTC de ENTRADA (vela i+1)."""
     seg_ms = exp * 60_000
     bts, bc = resamplear(ts_ms, closes, exp)
     n = len(bc)
     piso = _piso(tabla, par, exp)
     warm = max(tend_n, riesgo_n) + 2
-    wins = losses = señales = 0
-    pnl = 0.0
+    ops = []
     # RÁPIDO: los picos son raros; se detectan de golpe con numpy y solo en esos se corre
     # el análisis (evita llamar a `senal` en millones de velas planas). El pico de la vela
     # i es |bc[i]-bc[i-1]|; candidato si >= piso.
@@ -98,18 +98,33 @@ def simular(ts_ms, closes, par, exp, tabla, payout=85.0, margen_ev=0.03,
         if salida == entrada:
             continue
         gana = (salida < entrada) if s["direccion"] == "PUT" else (salida > entrada)
-        señales += 1
-        if gana:
-            wins += 1
-            pnl += payout / 100.0
-        else:
-            losses += 1
-            pnl -= 1.0
+        # hora UTC de la ENTRADA (bts está en ms) para poder cortar por sesión de mercado.
+        hora = int((bts[i + 1] // 3_600_000) % 24)
+        ops.append({"hora": hora, "pico": abs(mov[i - 1]), "direccion": s["direccion"],
+                    "gana": bool(gana)})
+    return ops
+
+
+def _resumen(ops, payout):
+    """Agrega una lista de ops en {señales, wins, losses, win_rate, pnl_por_op, equilibrio}."""
+    wins = sum(1 for o in ops if o["gana"])
+    losses = len(ops) - wins
     dec = wins + losses
-    return {"señales": señales, "wins": wins, "losses": losses,
+    pnl = wins * (payout / 100.0) - losses
+    return {"señales": len(ops), "wins": wins, "losses": losses,
             "win_rate": (round(wins / dec * 100, 1) if dec else None),
             "pnl_por_op": (round(pnl / dec * 100, 2) if dec else None),
             "equilibrio": round(100.0 / (1.0 + payout / 100.0), 1)}
+
+
+def simular(ts_ms, closes, par, exp, tabla, payout=85.0, margen_ev=0.03,
+            tend_n=20, tend_umbral=0.35, riesgo_n=15, max_golpes=4,
+            con_tendencia=True, con_riesgo=True):
+    """Corre el pipeline en vivo sobre la serie M1 (ts_ms, closes) para un tiempo `exp` y
+    devuelve {señales, wins, losses, win_rate, pnl_por_op, equilibrio}."""
+    ops = simular_ops(ts_ms, closes, par, exp, tabla, payout, margen_ev, tend_n,
+                      tend_umbral, riesgo_n, max_golpes, con_tendencia, con_riesgo)
+    return _resumen(ops, payout)
 
 
 def correr_par(df, par, tabla_train, tiempos=(1, 2, 3, 5), payout=85.0, frac_test=0.4):
