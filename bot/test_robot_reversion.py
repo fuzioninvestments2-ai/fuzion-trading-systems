@@ -138,6 +138,7 @@ def test_matriz_cada_bot_analiza_su_tiempo():
             repo=HistoryRepository(os.path.join(d, "h.db")),
             is_open_fn=lambda p: True, expiries=[1, 2])     # la matriz: 1m y 2m
         r.con_atraso = False                                 # ticks espaciados a propósito
+        r.con_riesgo = False                                 # la serie alterna: no probamos golpes aquí
         r._payouts["EURCHF"] = 85
         serie = [1.0795 if i % 2 else 1.0805 for i in range(20)]   # ruido, media 1.0800
         r.vigilantes[1].precargar("EURCHF", serie)
@@ -291,6 +292,19 @@ def test_ev_alto_si_encola_con_ventaja_real():
         assert s["pnl_esperado"] > 0                      # ventaja positiva con pago real
 
 
+def test_zona_de_golpes_no_encola():
+    # Par siendo martillado (muchos golpes alrededor) -> la reversion falla -> se calla,
+    # aunque el pico y el EV sean validos. El bot preferira otra moneda.
+    with tempfile.TemporaryDirectory() as d:
+        r = _robot_tmp(os.path.join(d, "h.db"))
+        r._payouts["EURCHF"] = 85
+        martillado = [1.0800 + 0.0012 * ((-1) ** i) for i in range(20)]   # saltos ~24 pips
+        r.vig.precargar("EURCHF", martillado)                              # termina en 1.0788
+        r._on_tick("EURCHF", 6000, 1.0798)                                # pico +10 pips
+        r._on_tick("EURCHF", 6060, 1.0798)
+        assert r._cola.qsize() == 0                                        # zona de golpes -> callado
+
+
 def test_contra_tendencia_no_encola():
     # El fallo de las tarjetas: subida sostenida + pico arriba -> el bot daba PUT. Con el
     # filtro de tendencia, esa señal contra la subida se veta (no encola).
@@ -343,6 +357,7 @@ def _flujo_pico(r, z_min):
     # 1.0810 -> z ~2. Con z_min alto se silencia; con z_min bajo pasa.
     r._payouts["EURCHF"] = 85
     r.con_confirmacion = True                       # este test prueba la confirmación
+    r.con_riesgo = False                            # la serie alterna: no probamos golpes aquí
     r.conf_z_min = z_min
     r.vig.precargar("EURCHF", [1.0795 if i % 2 else 1.0805 for i in range(20)])
     r._on_tick("EURCHF", 100 * 60, 1.0810)          # tick del pico

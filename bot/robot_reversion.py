@@ -46,6 +46,7 @@ from bot.autocorrector import debe_enviar
 from bot.news_filter import NewsFilter
 from bot.confirmacion_reversion import confirma
 from bot.tendencia import permite_reversion
+from bot.evaluacion_riesgo import en_golpes
 
 # Activos que Pocket Option ofrece en el mercado REAL (según su menú) y que además
 # TENEMOS con historial/borde. PO real NO ofrece pares con NZD ni USDJPY; de la lista
@@ -170,6 +171,11 @@ class RobotReversion:
         self.con_tendencia = True
         self.tend_n = 20                  # velas previas que miran la tendencia
         self.tend_umbral = 0.35           # rechaza subidas/bajadas incluso moderadas (calidad > cantidad)
+        # EVALUACIÓN DE RIESGO: si el par está siendo martillado (muchos golpes/picos
+        # recientes), la reversión falla -> no operar ahí y buscar otra moneda.
+        self.con_riesgo = True
+        self.riesgo_n = 15                # velas recientes que se evalúan
+        self.max_golpes = 4               # tantos golpes o más = zona de golpes (no operar)
         # WATCHDOG: si deja de llegar el flujo de ticks (con el mercado abierto) se
         # reinicia la conexión sola, sin apagar el bot.
         self.con_watchdog = True
@@ -302,6 +308,12 @@ class RobotReversion:
         if self.con_tendencia and not permite_reversion(closes, s["direccion"],
                                                         self.tend_n, self.tend_umbral):
             self.log.info("Contra tendencia fuerte: %s %sm en silencio.", asset, exp)
+            return
+        # RIESGO: si el par está siendo martillado (muchos golpes alrededor), la reversión
+        # falla -> no se opera aquí (el bot preferirá otra moneda más tranquila).
+        if self.con_riesgo and en_golpes(closes, asset, self._piso_pico(asset, exp),
+                                         self.riesgo_n, self.max_golpes):
+            self.log.info("Zona de golpes (riesgo alto): %s %sm en silencio.", asset, exp)
             return
         # Marca la vela como evaluada (aunque luego el corrector la calle): no repetir.
         if vela_inicio_ms:
@@ -576,6 +588,34 @@ class RobotReversion:
         """Valor esperado del par ahora (borde x pago vivo). None si no es elegible."""
         return _ev_par(self._mejor_borde(par), self._payouts.get(par), self.payout_min)
 
+    def _piso_pico(self, par, exp):
+        """Piso de pico (pips) del par+tiempo: el umbral más chico de su tabla, o el piso
+        base. Es lo que se considera 'golpe' al evaluar el riesgo del par."""
+        from bot.senal_reversion import PISO_PIPS
+        t = self.tabla.get(par) if self.tabla else None
+        buckets = t.get(str(exp)) if isinstance(t, dict) else (t if isinstance(t, list) else None)
+        if buckets:
+            try:
+                return min(u for u, _ in buckets)
+            except (TypeError, ValueError):
+                pass
+        return PISO_PIPS
+
+    def _par_en_golpes(self, par):
+        """True si el par viene siendo martillado (muchos golpes recientes en M1): el
+        selector lo salta y busca otra moneda más tranquila."""
+        if not self.con_riesgo:
+            return False
+        try:
+            df = self.repo.get_recent(par, "M1", self.riesgo_n + 2)
+        except Exception:
+            return False
+        if df is None or len(df) < 6:
+            return False
+        exp0 = self.expiries[0] if self.expiries else 1
+        return en_golpes(df["close"].astype(float).tolist(), par,
+                         self._piso_pico(par, exp0), self.riesgo_n, self.max_golpes)
+
     def _mejor_par(self):
         """El par ELEGIBLE (pago>=mínimo y con borde) de mayor valor esperado. Devuelve
         (par, ev) o (None, None) si ninguno es elegible ahora."""
@@ -602,6 +642,10 @@ class RobotReversion:
                 continue
             for par in elegibles:
                 if self._ev(par) is None:            # el pago pudo cambiar: reevalúa
+                    continue
+                if self._par_en_golpes(par):         # martillado: mejor otra moneda
+                    self.log.info("Salta %s: en zona de golpes (busca otra más tranquila).",
+                                  par)
                     continue
                 try:
                     await self.client.set_asset(par, 60)
