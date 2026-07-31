@@ -81,12 +81,16 @@ def senal(closes, par, expiry_min=3, tabla=None):
     magnitud = abs(mov)
     base["pips"] = round(mov, 1)
 
-    # Selección de tramos: la tabla del par puede venir POR TIEMPO
-    # ({'1':[...],'3':[...]}) o en formato viejo plano ([[u,wr],...]). Si no hay del
-    # par, se usa la global. Así cada tiempo tiene su acierto real.
+    # Selección de tramos: la tabla del par viene POR TIEMPO ({'1':[...],'3':[...]}) o en
+    # formato plano ([[u,wr],...]). CLAVE: si el par tiene tabla pero NO tiene borde en
+    # ESTE tiempo, NO se opera ese tiempo — NO se cae a otro tiempo (antes caía a '3', y
+    # un bot de 1m disparaba con criterios de 3m: pico enorme y señal falsa). Solo se usa
+    # la tabla global cuando el par no tiene tabla propia.
     t = tabla.get(par) if tabla else None
     if isinstance(t, dict):
-        buckets = t.get(str(expiry_min)) or t.get("3") or TABLA_OOS
+        buckets = t.get(str(expiry_min))
+        if not buckets:
+            return {**base, "motivo": f"{par} sin borde medido a {expiry_min}m; no se opera"}
     elif isinstance(t, list) and t:
         buckets = t
     else:

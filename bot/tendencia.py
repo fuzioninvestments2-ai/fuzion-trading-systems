@@ -46,8 +46,13 @@ def fuerza_tendencia(closes, n=20):
     ventana = serie[-(n + 1):-1]          # las n velas previas al pico
     if len(ventana) < 3:
         return None
-    difs = [abs(ventana[i] - ventana[i - 1]) for i in range(1, len(ventana))]
-    tipico = sum(difs) / len(difs)
+    difs = sorted(abs(ventana[i] - ventana[i - 1]) for i in range(1, len(ventana)))
+    # MEDIANA, no promedio: en una tendencia con volatilidad, un par de picos grandes
+    # inflaban el promedio y hacían que la fuerza pareciera baja -> la subida se colaba y
+    # el bot le apostaba en contra. La mediana ignora esos picos y detecta la tendencia.
+    tipico = difs[len(difs) // 2]
+    if tipico == 0:
+        tipico = sum(difs) / len(difs)    # respaldo si la mediana es 0 (muchos ceros)
     if tipico == 0:
         return None
     p = _pendiente(ventana)
