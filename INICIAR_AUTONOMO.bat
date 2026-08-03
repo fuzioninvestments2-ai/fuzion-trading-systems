@@ -22,7 +22,7 @@ echo      esta ventana o pulsa Ctrl + C)
 echo ============================================================
 echo.
 set PYTHONPATH=.
-python -m bot.motor_autonomo REAL
+python -m bot.motor_autonomo REAL TODOS
 
 echo.
 echo ============================================================
