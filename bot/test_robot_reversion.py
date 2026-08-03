@@ -393,6 +393,50 @@ def test_grafico_genera_png():
         assert ruta is not None and os.path.exists(ruta)   # generó el PNG
 
 
+def test_seleccionar_no_spinea_si_todos_en_golpes():
+    # BUG del viernes: con todos los pares elegibles en zona de golpes, el `for` los
+    # saltaba sin ningún await y el `while True` giraba sin parar (miles de logs/seg,
+    # CPU al 100%, sin enviar nada). Ahora, si no se analiza ninguno, debe DORMIR
+    # foco_seg en vez de girar. Se valida que llega a un solo sleep tras revisar los
+    # pares una vez, no que los revisa un número enorme de veces.
+    import asyncio as _asyncio
+
+    with tempfile.TemporaryDirectory() as d:
+        r = RobotReversion(
+            get_profile("REAL"), pares=["EURCHF", "GBPUSD", "USDCHF"], ssid="x",
+            token="", chat_id="1", expiry_min=1,
+            tabla={p: [[5, 70.0]] for p in ("EURCHF", "GBPUSD", "USDCHF")},
+            repo=HistoryRepository(os.path.join(d, "h.db")), is_open_fn=lambda p: True)
+        for p in r.pares:
+            r._payouts[p] = 85                       # todos elegibles (pagan >= mínimo)
+        checks = {"golpes": 0}
+        def _contar(par):                            # todos martillados; cuenta llamadas
+            checks["golpes"] += 1
+            return True
+        r._par_en_golpes = _contar
+
+        async def _sleep_falso(seg):                 # rompe en el PRIMER sleep alcanzado
+            raise _StopLoop(seg)
+
+        r_sleep = _asyncio.sleep
+        _asyncio.sleep = _sleep_falso
+        try:
+            try:
+                _asyncio.get_event_loop().run_until_complete(r._seleccionar())
+            except _StopLoop as e:
+                dormido = e.seg
+        finally:
+            _asyncio.sleep = r_sleep
+        # Durmió foco_seg (no dwell) y revisó cada par UNA sola vez antes de dormir:
+        assert dormido == r.foco_seg
+        assert checks["golpes"] == len(r.pares)      # no giró: 3 checks, no miles
+
+
+class _StopLoop(Exception):
+    def __init__(self, seg):
+        self.seg = seg
+
+
 if __name__ == "__main__":
     fallos = 0
     for nombre, fn in sorted(globals().items()):

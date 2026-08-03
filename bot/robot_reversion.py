@@ -669,13 +669,15 @@ class RobotReversion:
                     self.log.info("Aún sin pagos del bróker (o pagos bajos); espero.")
                 await asyncio.sleep(self.foco_seg)
                 continue
+            analizado = 0                            # cuántos pares se llegaron a analizar
+            saltados = []                            # los que se saltaron por golpes
             for par in elegibles:
                 if self._ev(par) is None:            # el pago pudo cambiar: reevalúa
                     continue
                 if self._par_en_golpes(par):         # martillado: mejor otra moneda
-                    self.log.info("Salta %s: en zona de golpes (busca otra más tranquila).",
-                                  par)
+                    saltados.append(par)             # se agrupa; no se loguea uno por uno
                     continue
+                analizado += 1
                 try:
                     await self.client.set_asset(par, 60)
                     await self.client.request_history(par, PERIODOS_HISTORIAL)
@@ -688,6 +690,15 @@ class RobotReversion:
                 except Exception:
                     self.log.exception("No se pudo cambiar a %s", par)
                 await asyncio.sleep(self.dwell_seg)
+            # CLAVE: si NINGÚN elegible se analizó (todos en zona de golpes), el `for` no
+            # esperó nada; sin esta pausa el `while True` gira sin parar quemando CPU y
+            # llenando el log con miles de "Salta ... en golpes" por segundo. Se loguea UNA
+            # línea agrupada y se duerme foco_seg hasta que algún par salga del martilleo.
+            if analizado == 0:
+                if saltados:
+                    self.log.info("Todos los elegibles en zona de golpes (%s); espero %ds.",
+                                  ", ".join(saltados), int(self.foco_seg))
+                await asyncio.sleep(self.foco_seg)
 
     async def _rotar(self):
         i = 0
