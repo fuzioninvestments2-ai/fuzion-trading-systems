@@ -47,10 +47,10 @@ def _cel(ops, equilibrio, z):
 
 
 def _anio(ts_ms):
-    """Año UTC de una marca de tiempo en ms, sin depender de zona horaria local."""
-    # 1970 + días/365.25; entero. Evita datetime para no arrastrar tz.
+    """Año UTC de una marca de tiempo en ms, sin depender de zona horaria local.
+    Se usa fromtimestamp con tz=UTC explícita (utcfromtimestamp está deprecado)."""
     import datetime
-    return datetime.datetime.utcfromtimestamp(ts_ms / 1000.0).year
+    return datetime.datetime.fromtimestamp(ts_ms / 1000.0, datetime.timezone.utc).year
 
 
 def validar(ops_por_par, sesion, payout=85.0, tests=32, min_anio=50):
