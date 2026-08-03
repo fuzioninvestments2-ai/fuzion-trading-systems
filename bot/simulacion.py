@@ -99,9 +99,10 @@ def simular_ops(ts_ms, closes, par, exp, tabla, payout=85.0, margen_ev=0.03,
             continue
         gana = (salida < entrada) if s["direccion"] == "PUT" else (salida > entrada)
         # hora UTC de la ENTRADA (bts está en ms) para poder cortar por sesión de mercado.
+        # `ts` (ms de la entrada) permite además cortar por AÑO al validar el edge.
         hora = int((bts[i + 1] // 3_600_000) % 24)
-        ops.append({"hora": hora, "pico": abs(mov[i - 1]), "direccion": s["direccion"],
-                    "gana": bool(gana)})
+        ops.append({"hora": hora, "ts": int(bts[i + 1]), "pico": abs(mov[i - 1]),
+                    "direccion": s["direccion"], "gana": bool(gana)})
     return ops
 
 
