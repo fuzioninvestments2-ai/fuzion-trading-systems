@@ -156,16 +156,20 @@ if __name__ == "__main__":
     print("=" * 78)
 
     ops_por_par = {}
-    for r in rutas:
+    total = len(rutas)
+    for idx, r in enumerate(rutas, 1):
         par = os.path.basename(r).split("__")[0]
+        # Avisa ANTES de procesar: con 23 años cada par tarda; sin esto el usuario ve la
+        # pantalla quieta minutos y cree que se colgó. El "..." se queda hasta que termina.
+        print(f"  [{idx}/{total}] {par:8} leyendo y evaluando ...", end="", flush=True)
         try:
             df = pd.read_csv(r)
         except Exception as e:
-            print(f"  {par:8} ERROR {e}", flush=True)
+            print(f" ERROR {e}", flush=True)
             continue
         ops_por_par[par] = _ops_test(df, par, TIEMPOS, a.pago)
         tot = sum(len(v) for v in ops_por_par[par].values())
-        print(f"  {par:8} {tot} operaciones evaluadas", flush=True)
+        print(f" {len(df)} velas -> {tot} operaciones", flush=True)
 
     res = buscar(ops_por_par, a.pago, a.min_n)
 
