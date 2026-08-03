@@ -125,15 +125,21 @@ async def correr(analizar, enviar, pares, expiry_ref=3, pausa_par=PAUSA_PAR_SEG,
     while True:
         for par in pares:
             try:
-                resultado, seg, _ = await analizar(par, expiry_ref)
+                resultado, seg, n = await analizar(par, expiry_ref)
             except Exception:
                 log.exception("Fallo analizando %s", par)
                 await asyncio.sleep(pausa_par)
                 continue
+            # LATIDO: muestra cada par con su veredicto y convergencia, para VER que el
+            # bot está vivo y POR QUÉ calla (plano / pocos datos / NO OPERAR). Sin esto
+            # la ventana queda muda y parece parado aunque esté escaneando bien.
+            v = (resultado or {}).get("veredicto", "?")
+            coinc = (resultado or {}).get("coinciden", "?")
+            log.info("%-8s %s  (%s tiempos · %d ticks)", par, v, coinc, n or 0)
             if es_operar(resultado) and anti.nueva(par, lado(resultado)):
                 try:
                     await enviar(tarjeta(par, resultado, seg))
-                    log.info("Señal enviada: %s %s", par, lado(resultado))
+                    log.info(">>> SEÑAL enviada: %s %s", par, lado(resultado))
                 except Exception:
                     log.exception("No se pudo enviar la señal de %s", par)
             await asyncio.sleep(pausa_par)
