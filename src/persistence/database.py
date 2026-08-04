@@ -112,6 +112,13 @@ class Database:
             self.conn.commit()
         return len(rows)
 
+    # Alias de compatibilidad: el loader existente (bot/historical_loader.py)
+    # llama repo.record_many(asset, timeframe, velas). Se delega en save_candles
+    # para poder reutilizarlo sin tocar ese modulo.
+    def record_many(self, asset: str, timeframe: str,
+                    candles: Sequence[Dict[str, Any]]) -> int:
+        return self.save_candles(asset, timeframe, candles)
+
     def get_candles(self, asset: str, timeframe: str,
                     limit: int = 500) -> pd.DataFrame:
         """Ultimas `limit` velas en orden cronologico (listo para indicadores)."""
