@@ -73,13 +73,15 @@ def tarjeta(par, resultado, seg, expiries=EXPIRIES, ahora=None):
     exp = _expiry_sugerido(resultado, expiries)
     fuerza = resultado.get("fuerza")
     fuerza_txt = f"{fuerza * 100:.0f}%" if isinstance(fuerza, (int, float)) else "?"
+    # `coinciden` ya viene con su palabra ("3/3 tiempos" / "6/12 débiles"): no le
+    # añado " tiempos" o saldría duplicado ("3/3 tiempos tiempos") en la tarjeta.
     coinc = resultado.get("coinciden", "?")
     entra = hora_entrada(seg, ahora)
     return (f"FUZION FX · SEÑAL AUTÓNOMA\n"
             f"Par: {par}\n"
             f"Dirección: {direc}\n"
             f"Tiempo sugerido: {exp}m\n"
-            f"Fuerza: {fuerza_txt}  ·  Convergencia: {coinc} tiempos\n"
+            f"Fuerza: {fuerza_txt}  ·  Convergencia: {coinc}\n"
             f"HORA DE ENTRADA: {entra}\n"
             f"(4 temporalidades leídas juntas. Demo · solo lectura.)")
 
@@ -135,7 +137,7 @@ async def correr(analizar, enviar, pares, expiry_ref=3, pausa_par=PAUSA_PAR_SEG,
             # la ventana queda muda y parece parado aunque esté escaneando bien.
             v = (resultado or {}).get("veredicto", "?")
             coinc = (resultado or {}).get("coinciden", "?")
-            log.info("%-8s %s  (%s tiempos · %d ticks)", par, v, coinc, n or 0)
+            log.info("%-8s %s  (%s · %d ticks)", par, v, coinc, n or 0)
             if es_operar(resultado) and anti.nueva(par, lado(resultado)):
                 try:
                     await enviar(tarjeta(par, resultado, seg))
