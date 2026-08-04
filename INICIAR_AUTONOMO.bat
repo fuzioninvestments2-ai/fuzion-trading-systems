@@ -1,9 +1,10 @@
 @echo off
 REM ============================================================
 REM  INICIAR_AUTONOMO.bat  -  Doble clic para ACTUALIZAR y ARRANCAR
-REM  el MOTOR AUTONOMO del mercado REAL (FX). El bot trabaja SOLO:
-REM  lee las 4 temporalidades juntas y te avisa por Telegram cuando
-REM  hay OPERAR. Demo, solo lectura, nunca coloca ordenes.
+REM  el BOT AUTONOMO del mercado REAL (FX). El bot trabaja SOLO en las
+REM  4 temporalidades (1/2/3/5 min) y te manda por Telegram la tarjeta
+REM  con GRAFICO (divisa, direccion, hora de entrada, vence, pago,
+REM  acierto historico y pico). Demo, solo lectura, nunca coloca ordenes.
 REM  No necesitas escribir nada: solo doble clic.
 REM ============================================================
 title FUZION FX - Motor Autonomo (REAL)
@@ -22,7 +23,7 @@ echo      esta ventana o pulsa Ctrl + C)
 echo ============================================================
 echo.
 set PYTHONPATH=.
-python -m bot.motor_autonomo REAL TODOS
+python -m bot.robot_reversion REAL TODOS --tiempos 1,2,3,5
 
 echo.
 echo ============================================================
