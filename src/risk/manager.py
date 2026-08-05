@@ -25,11 +25,55 @@ SRP: solo decide riesgo. No conecta a red, no coloca ordenes. Se prueba sin red.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+from enum import Enum
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
 from bot.manipulation import ManipulationGuard
+
+
+class TradeDecision(Enum):
+    """
+    Veredicto de riesgo sobre una senal. PORQUE: no es binario; a veces la senal
+    es valida pero el contexto pide entrar con MENOS tamano en vez de bloquear.
+      - ALLOW : condiciones sanas, tamano completo.
+      - REDUCE: valida pero con reservas (recovery o contexto marginal) -> mitad.
+      - BLOCK : algun filtro de proteccion la rechaza; NO operar.
+    """
+    ALLOW = "ALLOW"
+    REDUCE = "REDUCE"
+    BLOCK = "BLOCK"
+
+
+@dataclass(frozen=True)
+class MarketCondition:
+    """
+    Foto del CONTEXTO de mercado al momento de la senal (todo en pips salvo los
+    flags). Es entrada de `assess_signal`; el modulo no la calcula (la aporta el
+    servicio que ya mide spread, ATR y S/R).
+    """
+    spread_pips: float                     # coste de entrada; ancho = mala ejecucion
+    atr_pips: float                        # volatilidad real reciente
+    distance_to_nearest_sr: float          # distancia al soporte/resistencia mas cercano
+    session: str = ""                      # "Londres"/"NuevaYork"/"Asia"... informativo
+    is_news_event: bool = False            # noticia de alto impacto en curso
+    volume_anomaly: bool = False           # volumen anomalo (posible manipulacion)
+    gap_detected: bool = False             # hueco de precio detectado
+
+
+@dataclass(frozen=True)
+class RiskAssessment:
+    """Resultado de evaluar una senal: veredicto + porque + tamano sugerido."""
+    decision: TradeDecision
+    reason: str
+    size: float = 0.0                      # monto sugerido (0 si BLOCK)
+    probability: float = 0.0
+    pair: str = ""
+    direction: str = ""
+    is_recovery: bool = False
+    details: Dict[str, object] = field(default_factory=dict)
 
 
 def average_true_range(high: Sequence[float], low: Sequence[float],
@@ -83,6 +127,10 @@ class RiskManager:
                  max_daily_drawdown: float = 0.05, max_trades_por_par: int = 3,
                  atr_period: int = 14, atr_stop_mult: float = 1.5,
                  gap_umbral_pct: float = 0.004,
+                 min_probability: float = 90.0,
+                 max_spread_pips: float = 3.0,
+                 min_atr_pips: float = 3.0, max_atr_pips: float = 40.0,
+                 min_dist_sr_pips: float = 8.0,
                  manipulation_guard: Optional[ManipulationGuard] = None) -> None:
         if capital <= 0:
             raise ValueError("capital debe ser > 0")
@@ -99,9 +147,29 @@ class RiskManager:
         self.atr_stop_mult = float(atr_stop_mult)
         self.gap_umbral_pct = float(gap_umbral_pct)       # 0.4% salto = gap
 
+        # Umbrales de `assess_signal`. PORQUE: el motor cuantico exige 90%+; el
+        # resto son filtros de contexto (spread, volatilidad, cercania a S/R)
+        # que protegen de entradas de mala calidad aun con probabilidad alta.
+        self.min_probability = float(min_probability)     # 90% (motor cuantico)
+        self.max_spread_pips = float(max_spread_pips)     # spread ancho = mala ejecucion
+        self.min_atr_pips = float(min_atr_pips)           # por debajo: mercado muerto
+        self.max_atr_pips = float(max_atr_pips)           # por encima: volatilidad extrema
+        self.min_dist_sr_pips = float(min_dist_sr_pips)   # pegado a soporte/resistencia
+
         # Composicion (Regla 1): reutiliza el guardian ya probado.
         self.guard = manipulation_guard or ManipulationGuard()
 
+        self.reset_dia()
+
+    def set_capital(self, capital: float) -> None:
+        """
+        Fija el capital de la cuenta y rebasa la linea del dia a ese valor.
+        PORQUE: el sizing (2%) y el drawdown se miden sobre el capital vigente;
+        se llama al arrancar (o al recargar la cuenta) antes de operar.
+        """
+        if capital <= 0:
+            raise ValueError("capital debe ser > 0")
+        self.capital_inicial = float(capital)
         self.reset_dia()
 
     # ------------------------------------------------------------------ estado
@@ -214,6 +282,89 @@ class RiskManager:
                 return False, "anti-manipulacion: " + ", ".join(razones)
 
         return True, "ok"
+
+    # ---------------------------------------------- evaluacion de senal (alto nivel)
+    @staticmethod
+    def _norm_prob(probability: float) -> float:
+        """
+        Normaliza la probabilidad a escala 0-100. PORQUE: unas partes del sistema
+        la manejan como fraccion (0.92) y otras como porcentaje (92); si llega
+        <=1 se asume fraccion y se escala, evitando bloquear todo por error.
+        """
+        p = float(probability)
+        return p * 100.0 if 0.0 < p <= 1.0 else p
+
+    def assess_signal(self, pair: str, direction: str, probability: float,
+                      market: MarketCondition,
+                      is_recovery: bool = False) -> RiskAssessment:
+        """
+        Veredicto de riesgo de una senal concreta, combinando el estado del dia
+        (circuit breaker, tope por par) con el CONTEXTO de mercado (spread, ATR,
+        S/R, noticias, gaps). Devuelve un RiskAssessment con decision + porque.
+
+        `is_recovery`: senal que busca recuperar una perdida previa. NO es
+        martingala (no se dobla el tamano — eso esta prohibido); al reves, se
+        exige mas probabilidad y se REDUCE el tamano. Es la disciplina que evita
+        el pozo de "recuperar" arriesgando de mas.
+        """
+        prob = self._norm_prob(probability)
+        det: Dict[str, object] = {"session": market.session, "atr_pips": market.atr_pips,
+                                  "spread_pips": market.spread_pips,
+                                  "dist_sr": market.distance_to_nearest_sr}
+
+        def block(reason: str) -> RiskAssessment:
+            return RiskAssessment(TradeDecision.BLOCK, reason, 0.0, prob, pair,
+                                  direction, is_recovery, det)
+
+        # --- Bloqueos duros (baratos primero) -------------------------------
+        # 1) Direccion valida: solo CALL/PUT operan; HOLD u otra -> no hay senal.
+        d = str(direction).upper()
+        if d not in ("CALL", "PUT", "BUY", "SELL"):
+            return block(f"sin direccion operable ({direction})")
+
+        # 2) Estado del dia: circuit breaker y tope por par (protecciones ya probadas).
+        ok, motivo = self.circuit_breaker()
+        if not ok:
+            return block(motivo)
+        ok, motivo = self._tope_par_ok(pair)
+        if not ok:
+            return block(motivo)
+
+        # 3) Filtros de contexto que son manipulacion/ruido: no se opera ahi.
+        if market.is_news_event:
+            return block("noticia de alto impacto en curso")
+        if market.gap_detected:
+            return block("gap de precio detectado")
+        if market.volume_anomaly:
+            return block("volumen anomalo (posible manipulacion)")
+
+        # 4) Calidad de ejecucion / mercado.
+        if market.spread_pips > self.max_spread_pips:
+            return block(f"spread {market.spread_pips} > {self.max_spread_pips} pips")
+        if market.atr_pips < self.min_atr_pips:
+            return block(f"ATR {market.atr_pips} < {self.min_atr_pips} pips (mercado muerto)")
+        if market.atr_pips > self.max_atr_pips:
+            return block(f"ATR {market.atr_pips} > {self.max_atr_pips} pips (volatilidad extrema)")
+        if market.distance_to_nearest_sr < self.min_dist_sr_pips:
+            return block(f"pegado a S/R ({market.distance_to_nearest_sr} < "
+                         f"{self.min_dist_sr_pips} pips)")
+
+        # 5) Probabilidad del motor. En recovery se exige un plus (mas estricto).
+        umbral = self.min_probability + (3.0 if is_recovery else 0.0)
+        if prob < umbral:
+            return block(f"probabilidad {prob:.1f}% < {umbral:.1f}% requerido")
+
+        # --- Pasa: ALLOW o REDUCE -------------------------------------------
+        base_size = self.position_size()
+        # Recovery o contexto marginal -> media posicion (nunca mas).
+        marginal = prob < (umbral + 3.0) or market.atr_pips > (0.8 * self.max_atr_pips)
+        if is_recovery or marginal:
+            razon = "recovery: media posicion" if is_recovery else "contexto marginal: media posicion"
+            return RiskAssessment(TradeDecision.REDUCE, razon, round(base_size / 2.0, 2),
+                                  prob, pair, d, is_recovery, det)
+
+        return RiskAssessment(TradeDecision.ALLOW, "condiciones sanas", base_size,
+                              prob, pair, d, is_recovery, det)
 
     # -------------------------------------------------- registro de resultado
     def registrar_trade(self, par: str, pnl: float) -> None:

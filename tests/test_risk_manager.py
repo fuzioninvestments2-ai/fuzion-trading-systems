@@ -18,7 +18,9 @@ _RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _RAIZ not in sys.path:
     sys.path.insert(0, _RAIZ)
 
-from src.risk.manager import RiskManager, average_true_range   # noqa: E402
+from src.risk.manager import (                                 # noqa: E402
+    RiskManager, MarketCondition, TradeDecision, average_true_range,
+)
 
 
 def test_position_sizing_2pct() -> None:
@@ -96,10 +98,91 @@ def test_puede_operar_integrado() -> None:
     assert rm.puede_operar(par, prices=serie)[0] is False
 
 
+def _market(**kw) -> MarketCondition:
+    base = dict(spread_pips=1.5, atr_pips=12.0, distance_to_nearest_sr=25.0,
+                session="Londres", is_news_event=False, volume_anomaly=False,
+                gap_detected=False)
+    base.update(kw)
+    return MarketCondition(**base)
+
+
+def test_assess_allow_caso_feliz() -> None:
+    rm = RiskManager()
+    rm.set_capital(10000.0)                       # sizing sobre 10k -> 2% = 200
+    a = rm.assess_signal(pair="EURUSD_otc", direction="CALL", probability=94.0,
+                         market=_market(), is_recovery=False)
+    assert a.decision == TradeDecision.ALLOW
+    assert a.size == 200.0
+
+
+def test_assess_set_capital_afecta_sizing() -> None:
+    rm = RiskManager()
+    assert rm.position_size() == 20.0             # 2% de 1000 (default)
+    rm.set_capital(10000.0)
+    assert rm.position_size() == 200.0            # rebasea a 10k
+
+
+def test_assess_bloqueos() -> None:
+    rm = RiskManager()
+    rm.set_capital(10000.0)
+    # Noticia, gap, volumen anomalo, spread ancho, pegado a S/R, prob baja, HOLD.
+    casos = [
+        dict(market=_market(is_news_event=True)),
+        dict(market=_market(gap_detected=True)),
+        dict(market=_market(volume_anomaly=True)),
+        dict(market=_market(spread_pips=5.0)),
+        dict(market=_market(distance_to_nearest_sr=2.0)),
+        dict(market=_market(atr_pips=1.0)),        # mercado muerto
+        dict(market=_market(atr_pips=99.0)),       # volatilidad extrema
+    ]
+    for c in casos:
+        a = rm.assess_signal(pair="EURUSD_otc", direction="CALL",
+                             probability=94.0, **c)
+        assert a.decision == TradeDecision.BLOCK, c
+    # Probabilidad por debajo del 90% -> BLOCK.
+    a = rm.assess_signal("EURUSD_otc", "CALL", 80.0, _market())
+    assert a.decision == TradeDecision.BLOCK
+    # Direccion no operable -> BLOCK.
+    a = rm.assess_signal("EURUSD_otc", "HOLD", 94.0, _market())
+    assert a.decision == TradeDecision.BLOCK
+
+
+def test_assess_recovery_reduce() -> None:
+    rm = RiskManager()
+    rm.set_capital(10000.0)
+    # Recovery valida: exige +3% y entra a MEDIA posicion (nunca dobla).
+    a = rm.assess_signal("EURUSD_otc", "CALL", 94.0, _market(), is_recovery=True)
+    assert a.decision == TradeDecision.REDUCE
+    assert a.size == 100.0                         # mitad de 200
+    # Recovery con prob justa al 90 (< 93 requerido) -> BLOCK.
+    b = rm.assess_signal("EURUSD_otc", "CALL", 90.0, _market(), is_recovery=True)
+    assert b.decision == TradeDecision.BLOCK
+
+
+def test_assess_prob_fraccion_se_normaliza() -> None:
+    rm = RiskManager()
+    rm.set_capital(10000.0)
+    # 0.94 se interpreta como 94% (no bloquea por confundir escala).
+    a = rm.assess_signal("EURUSD_otc", "PUT", 0.94, _market())
+    assert a.decision == TradeDecision.ALLOW
+
+
+def test_assess_respeta_circuit_breaker() -> None:
+    rm = RiskManager()
+    rm.set_capital(10000.0)
+    rm.registrar_trade("EURUSD_otc", -600.0)      # -6% -> circuit breaker
+    a = rm.assess_signal("GBPUSD_otc", "CALL", 94.0, _market())
+    assert a.decision == TradeDecision.BLOCK and "circuit breaker" in a.reason
+
+
 def _run_all() -> None:
     tests = [test_position_sizing_2pct, test_atr_y_stop_dinamico,
              test_circuit_breaker_5pct, test_tope_trades_por_par,
-             test_anti_manipulacion_gap, test_puede_operar_integrado]
+             test_anti_manipulacion_gap, test_puede_operar_integrado,
+             test_assess_allow_caso_feliz, test_assess_set_capital_afecta_sizing,
+             test_assess_bloqueos, test_assess_recovery_reduce,
+             test_assess_prob_fraccion_se_normaliza,
+             test_assess_respeta_circuit_breaker]
     for t in tests:
         t()
         print(f"  OK  {t.__name__}")
