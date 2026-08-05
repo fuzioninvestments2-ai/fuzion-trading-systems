@@ -38,11 +38,15 @@ class TradeDecision(Enum):
     """
     Veredicto de riesgo sobre una senal. PORQUE: no es binario; a veces la senal
     es valida pero el contexto pide entrar con MENOS tamano en vez de bloquear.
-      - ALLOW      : condiciones sanas, tamano completo.
-      - REDUCE_SIZE: valida pero con reservas (recovery/contexto marginal) -> mitad.
-      - BLOCK      : algun filtro de proteccion la rechaza; NO operar.
+      - ALLOW        : condiciones sanas, tamano completo (x1.0).
+      - RECOVERY_ONLY: senal de recuperacion valida; entra reducida (x0.75). No
+                       es martingala (no dobla): se exige +probabilidad y menos
+                       tamano tras una perdida.
+      - REDUCE_SIZE  : valida pero con contexto marginal (no-recovery) -> x0.5.
+      - BLOCK        : algun filtro de proteccion la rechaza; NO operar.
     """
     ALLOW = "ALLOW"
+    RECOVERY_ONLY = "RECOVERY_ONLY"
     REDUCE_SIZE = "REDUCE_SIZE"
     BLOCK = "BLOCK"
     # Alias retro-compat: `REDUCE` es lo mismo que `REDUCE_SIZE` (mismo valor ->
@@ -379,14 +383,19 @@ class RiskManager:
         if prob < umbral:
             return block(f"probabilidad {prob:.1f}% < {umbral:.1f}% requerido")
 
-        # --- Pasa: ALLOW o REDUCE -------------------------------------------
+        # --- Pasa: decidir tamano (una sola fuente de verdad: assessment.size) --
         base_size = self.position_size()
-        # Recovery o contexto marginal -> media posicion (nunca mas).
+
+        # Recovery valido -> entrada reducida a x0.75 (nunca dobla: anti-martingala).
+        if is_recovery:
+            return RiskAssessment(TradeDecision.RECOVERY_ONLY, "recovery: entrada reducida",
+                                  round(base_size * 0.75, 2), prob, pair, d, is_recovery, det)
+
+        # Contexto marginal (prob apenas sobre el umbral o ATR alto) -> x0.5.
         marginal = prob < (umbral + 3.0) or market.atr_pips > (0.8 * self.max_atr_pips)
-        if is_recovery or marginal:
-            razon = "recovery: media posicion" if is_recovery else "contexto marginal: media posicion"
-            return RiskAssessment(TradeDecision.REDUCE_SIZE, razon, round(base_size / 2.0, 2),
-                                  prob, pair, d, is_recovery, det)
+        if marginal:
+            return RiskAssessment(TradeDecision.REDUCE_SIZE, "contexto marginal: media posicion",
+                                  round(base_size * 0.5, 2), prob, pair, d, is_recovery, det)
 
         return RiskAssessment(TradeDecision.ALLOW, "condiciones sanas", base_size,
                               prob, pair, d, is_recovery, det)

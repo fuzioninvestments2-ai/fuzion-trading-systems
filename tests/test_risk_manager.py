@@ -161,16 +161,25 @@ def test_get_current_session() -> None:
     assert get_current_session(23) == "Asia"
 
 
-def test_assess_recovery_reduce() -> None:
+def test_assess_recovery_only() -> None:
     rm = RiskManager()
     rm.set_capital(10000.0)
-    # Recovery valida: exige +3% y entra a MEDIA posicion (nunca dobla).
-    a = rm.assess_signal("EURUSD_otc", "CALL", 94.0, _market(), is_recovery=True)
-    assert a.decision == TradeDecision.REDUCE_SIZE
-    assert a.size == 100.0                         # mitad de 200
+    # Recovery valida: exige +3% y entra REDUCIDA a x0.75 (nunca dobla).
+    a = rm.assess_signal("EURUSD_otc", "CALL", 96.0, _market(), is_recovery=True)
+    assert a.decision == TradeDecision.RECOVERY_ONLY
+    assert a.size == 150.0                         # 0.75 de 200
     # Recovery con prob justa al 90 (< 93 requerido) -> BLOCK.
     b = rm.assess_signal("EURUSD_otc", "CALL", 90.0, _market(), is_recovery=True)
     assert b.decision == TradeDecision.BLOCK
+
+
+def test_assess_marginal_reduce() -> None:
+    rm = RiskManager()
+    rm.set_capital(10000.0)
+    # No-recovery con prob apenas sobre el umbral (90-93) -> REDUCE_SIZE x0.5.
+    a = rm.assess_signal("EURUSD_otc", "CALL", 91.0, _market(), is_recovery=False)
+    assert a.decision == TradeDecision.REDUCE_SIZE
+    assert a.size == 100.0                         # mitad de 200
 
 
 def test_assess_prob_fraccion_se_normaliza() -> None:
@@ -195,7 +204,7 @@ def _run_all() -> None:
              test_anti_manipulacion_gap, test_puede_operar_integrado,
              test_assess_allow_caso_feliz, test_assess_set_capital_afecta_sizing,
              test_assess_bloqueos, test_reduce_alias, test_get_current_session,
-             test_assess_recovery_reduce,
+             test_assess_recovery_only, test_assess_marginal_reduce,
              test_assess_prob_fraccion_se_normaliza,
              test_assess_respeta_circuit_breaker]
     for t in tests:
