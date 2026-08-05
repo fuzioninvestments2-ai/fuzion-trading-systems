@@ -1,0 +1,65 @@
+# docker-compose.yml — Fuzion, listo para produccion.
+#
+# Dos bots AISLADOS (cada uno su token, su SSID, su base de datos), tal como los
+# arranca src/main.py por perfil. Por eso son DOS servicios, no uno multiplexado:
+#   - fuzion-otc  : perfil OTC  (arranca por defecto).
+#   - fuzion-real : perfil REAL (bajo profile 'real'; no arranca salvo que se pida).
+#
+# Uso:
+#   docker compose up -d                 # solo OTC
+#   docker compose --profile real up -d  # OTC + REAL
+#
+# Las credenciales se leen de .env (NUNCA en git). La BD se persiste en volumenes
+# nombrados para no perder el historial al recrear el contenedor.
+
+services:
+  fuzion-otc:
+    build: .
+    image: fuzion-bot:latest          # reusa la misma imagen para ambos perfiles
+    container_name: fuzion-otc
+    command: ["OTC"]
+    env_file: .env
+    # Reinicio automatico (Regla 3: robustez). Si el proceso cae, Docker lo
+    # levanta; el cliente websocket ya reconecta por su cuenta dentro del proceso.
+    restart: unless-stopped
+    volumes:
+      - fuzion-otc-data:/app/data      # historial/senales (sqlite) del OTC
+    # Health check: el proceso Python debe seguir vivo. Ligero, sin red externa.
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "src.main"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"                # rota logs: no llenar el disco en prod
+        max-file: "5"
+
+  fuzion-real:
+    build: .
+    image: fuzion-bot:latest
+    container_name: fuzion-real
+    command: ["REAL"]
+    env_file: .env
+    restart: unless-stopped
+    # Solo arranca con --profile real (el mercado real opera en su horario).
+    profiles: ["real"]
+    volumes:
+      - fuzion-real-data:/app/data     # BD PROPIA del real (sin cruces con OTC)
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "src.main"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+volumes:
+  fuzion-otc-data:
+  fuzion-real-data:

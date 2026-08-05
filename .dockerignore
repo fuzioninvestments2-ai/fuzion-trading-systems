@@ -1,0 +1,32 @@
+# .dockerignore — mantiene la imagen liviana y SIN secretos.
+
+# SECRETOS: nunca hornear credenciales en la imagen. Se inyectan en runtime
+# via env_file (.env) en docker-compose.
+.env
+.env.*
+*.env
+ssid*.txt
+config/credentials.yaml
+
+# Estado mutable: la sqlite se persiste por VOLUMEN, no debe ir en la imagen.
+*.db
+*.sqlite
+*.sqlite3
+memoria/
+
+# Datos pesados de backtest/descarga (no se usan en el runtime del bot de
+# senales; se generan offline con DESCARGAR_HISTORIAL). Fuera para no inflar.
+datasets/
+*.csv.gz
+
+# Ruido de desarrollo.
+.git
+.gitignore
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+tests/
+scratchpad/
+*.bat
+*.md
