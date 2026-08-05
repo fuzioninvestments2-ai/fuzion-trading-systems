@@ -189,6 +189,40 @@ def test_is_in_recovery_mode() -> None:
     assert rm.is_in_recovery_mode("GBPUSD_otc") is False
 
 
+def test_set_capital_sin_reset_preserva_dia() -> None:
+    rm = RiskManager()
+    rm.set_capital(1000.0)
+    par = "EURUSD_otc"
+    rm.registrar_trade(par, -50.0)                 # abre recovery, trades_dia=1
+    # reset=False no debe borrar recovery ni contadores del dia.
+    rm.set_capital(9999.0, reset=False)
+    assert rm.is_in_recovery_mode(par) is True
+    assert rm.trades_dia == 1
+    # Con dia ya movido, la base NO se realinea (equity intacto).
+    assert rm.equity == 950.0
+    # En cambio, sin trades, reset=False si realinea al balance real.
+    rm2 = RiskManager()
+    rm2.set_capital(500.0, reset=False)
+    assert rm2.equity == 500.0 and rm2.position_size() == 10.0
+
+
+def test_assess_win_rate_gate() -> None:
+    rm = RiskManager()
+    rm.set_capital(10000.0)
+    # Calidad reciente por debajo del 60% -> BLOCK aunque prob y contexto sean sanos.
+    a = rm.assess_signal("EURUSD_otc", "CALL", 96.0, _market(), recent_win_rate=0.45)
+    assert a.decision == TradeDecision.BLOCK and "win-rate" in a.reason
+    # 45 en escala 0-100 se normaliza igual -> BLOCK.
+    b = rm.assess_signal("EURUSD_otc", "CALL", 96.0, _market(), recent_win_rate=45.0)
+    assert b.decision == TradeDecision.BLOCK
+    # Buen win-rate -> pasa (ALLOW).
+    c = rm.assess_signal("EURUSD_otc", "CALL", 96.0, _market(), recent_win_rate=0.70)
+    assert c.decision == TradeDecision.ALLOW
+    # None (sin muestra) -> no filtra por calidad.
+    d = rm.assess_signal("EURUSD_otc", "CALL", 96.0, _market(), recent_win_rate=None)
+    assert d.decision == TradeDecision.ALLOW
+
+
 def test_assess_marginal_reduce() -> None:
     rm = RiskManager()
     rm.set_capital(10000.0)
@@ -221,7 +255,8 @@ def _run_all() -> None:
              test_assess_allow_caso_feliz, test_assess_set_capital_afecta_sizing,
              test_assess_bloqueos, test_reduce_alias, test_get_current_session,
              test_assess_recovery_only, test_is_in_recovery_mode,
-             test_assess_marginal_reduce,
+             test_set_capital_sin_reset_preserva_dia,
+             test_assess_win_rate_gate, test_assess_marginal_reduce,
              test_assess_prob_fraccion_se_normaliza,
              test_assess_respeta_circuit_breaker]
     for t in tests:

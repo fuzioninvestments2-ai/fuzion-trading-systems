@@ -160,6 +160,7 @@ class RiskManager:
                  max_spread_pips: float = 3.0,
                  min_atr_pips: float = 3.0, max_atr_pips: float = 40.0,
                  min_dist_sr_pips: float = 8.0,
+                 min_win_rate: float = 0.60,
                  manipulation_guard: Optional[ManipulationGuard] = None) -> None:
         if capital <= 0:
             raise ValueError("capital debe ser > 0")
@@ -184,22 +185,37 @@ class RiskManager:
         self.min_atr_pips = float(min_atr_pips)           # por debajo: mercado muerto
         self.max_atr_pips = float(max_atr_pips)           # por encima: volatilidad extrema
         self.min_dist_sr_pips = float(min_dist_sr_pips)   # pegado a soporte/resistencia
+        self.min_win_rate = float(min_win_rate)           # calidad reciente del par (skill 05)
 
         # Composicion (Regla 1): reutiliza el guardian ya probado.
         self.guard = manipulation_guard or ManipulationGuard()
 
         self.reset_dia()
 
-    def set_capital(self, capital: float) -> None:
+    def set_capital(self, capital: float, reset: bool = True) -> None:
         """
-        Fija el capital de la cuenta y rebasa la linea del dia a ese valor.
-        PORQUE: el sizing (2%) y el drawdown se miden sobre el capital vigente;
-        se llama al arrancar (o al recargar la cuenta) antes de operar.
+        Fija el capital de la cuenta. PORQUE: el sizing (2%) y el drawdown se
+        miden sobre el capital vigente; se llama al arrancar o al recargar.
+
+        reset=True (por defecto): rebasa la linea del dia (equity/pico) al nuevo
+        capital y limpia contadores/recovery -> uso al ARRANCAR.
+        reset=False: solo actualiza el capital base y sincroniza el equity si aun
+        no hubo movimiento del dia -> uso para SINCRONIZAR el balance en vivo sin
+        borrar el estado del dia (recovery, tope por par) a mitad de sesion.
         """
         if capital <= 0:
             raise ValueError("capital debe ser > 0")
-        self.capital_inicial = float(capital)
-        self.reset_dia()
+        capital = float(capital)
+        if reset:
+            self.capital_inicial = capital
+            self.reset_dia()
+            return
+        # Sin reset: si el dia arranco limpio (sin trades), realinea la base al
+        # balance real; si ya hubo operaciones, no toca el estado en curso.
+        if self.trades_dia == 0:
+            self.capital_inicial = capital
+            self.equity = capital
+            self.peak_equity = capital
 
     # ------------------------------------------------------------------ estado
     def reset_dia(self) -> None:
@@ -339,7 +355,8 @@ class RiskManager:
 
     def assess_signal(self, pair: str, direction: str, probability: float,
                       market: MarketCondition,
-                      is_recovery: bool = False) -> RiskAssessment:
+                      is_recovery: bool = False,
+                      recent_win_rate: Optional[float] = None) -> RiskAssessment:
         """
         Veredicto de riesgo de una senal concreta, combinando el estado del dia
         (circuit breaker, tope por par) con el CONTEXTO de mercado (spread, ATR,
@@ -349,6 +366,11 @@ class RiskManager:
         martingala (no se dobla el tamano — eso esta prohibido); al reves, se
         exige mas probabilidad y se REDUCE el tamano. Es la disciplina que evita
         el pozo de "recuperar" arriesgando de mas.
+
+        `recent_win_rate`: acierto reciente del motor en este par (0-1 o 0-100),
+        que aporta el caller desde SignalTracker.win_rate_reciente. Si esta por
+        debajo de `min_win_rate` (60%, skill 05) -> BLOCK: no se opera un par
+        donde el motor viene fallando. None = sin muestra suficiente (no filtra).
         """
         prob = self._norm_prob(probability)
         det: Dict[str, object] = {"session": market.session, "atr_pips": market.atr_pips,
@@ -392,7 +414,15 @@ class RiskManager:
             return block(f"pegado a S/R ({market.distance_to_nearest_sr} < "
                          f"{self.min_dist_sr_pips} pips)")
 
-        # 5) Probabilidad del motor. En recovery se exige un plus (mas estricto).
+        # 5) Calidad reciente del motor en el par (skill 05). Se normaliza a 0-1.
+        if recent_win_rate is not None:
+            wr = float(recent_win_rate)
+            wr = wr / 100.0 if wr > 1.0 else wr
+            det["win_rate"] = round(wr, 3)
+            if wr < self.min_win_rate:
+                return block(f"win-rate reciente {wr:.0%} < {self.min_win_rate:.0%}")
+
+        # 6) Probabilidad del motor. En recovery se exige un plus (mas estricto).
         umbral = self.min_probability + (3.0 if is_recovery else 0.0)
         if prob < umbral:
             return block(f"probabilidad {prob:.1f}% < {umbral:.1f}% requerido")

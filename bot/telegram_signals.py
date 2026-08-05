@@ -543,6 +543,16 @@ def run(profile_name="OTC"):
             from bot.collector import Collector
             collector = Collector(ssid, service.repo, demo=True)
 
+    # Gestor de riesgo compartido (disciplina y proteccion): capital, drawdown,
+    # tope por par y RECOVERY por par. Se alimenta SOLO con el resultado REAL que
+    # el usuario reporta con los botones de la tarjeta (user performance); el
+    # acierto sintetico del motor va por otro lado (SignalTracker), no aqui.
+    from src.risk.manager import RiskManager
+    risk_manager = RiskManager()
+    # El balance real llega async; se sincroniza una sola vez (sin resetear el
+    # estado del dia en cada analisis).
+    _capital_sync = {"done": False}
+
     async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         modo = "PRECIOS REALES ✅" if service else "datos simulados (sin SSID)"
         text, rows = menu.entrada(update.effective_user.id)
@@ -639,6 +649,19 @@ def run(profile_name="OTC"):
         # funciona SIEMPRE (incluso tras reiniciar el bot, sin memoria previa).
         rows = [[("🔁 Analizar de nuevo", f"re:{asset_display}:{tf}")],
                 [("📊 Otro activo", "back:market"), ("🏠 Menú", "back:main")]]
+
+        # Botones de RESULTADO (user performance): solo si hay senal accionable
+        # (CALL/PUT). Al pulsarlos, el usuario reporta si gano/perdio y eso
+        # alimenta el gestor de riesgo (recovery/drawdown del par). El payout va
+        # en el callback para reconstruir el PnL al hacer clic.
+        direccion = (result.get("direccion") or "").upper()
+        if direccion in ("CALL", "PUT"):
+            if service and getattr(service, "balance", None) and not _capital_sync["done"]:
+                risk_manager.set_capital(float(service.balance), reset=False)
+                _capital_sync["done"] = True
+            from src.telegram.result_buttons import result_buttons_row
+            rows = rows + [result_buttons_row(code, result.get("payout") or 0)]
+
         path = None
         chart_df = result.get("chart")
         if chart_df is not None and len(chart_df) >= 5:
@@ -660,6 +683,19 @@ def run(profile_name="OTC"):
         query = update.callback_query
         await query.answer()
         uid = query.from_user.id
+
+        # Reporte de RESULTADO del usuario (botones de la tarjeta): actualiza el
+        # gestor de riesgo (recovery/drawdown del par) con la plata REAL.
+        if query.data.startswith("res:"):
+            from src.telegram.result_buttons import apply_user_result
+            res = apply_user_result(risk_manager, query.data)
+            if res:
+                estado = "ON" if risk_manager.is_in_recovery_mode(res["pair"]) else "OFF"
+                await query.message.reply_text(
+                    f"Registrado: {res['pair']} · {res['outcome']} · "
+                    f"PnL {res['pnl']:+.2f} (stake {res['stake']:.2f}) · "
+                    f"recovery {estado}")
+            return
 
         # (Botón viejo de historial en mensajes previos): redirige a la descarga
         # batch. El historial por Telegram es LENTO y se retiró.
