@@ -173,6 +173,22 @@ def test_assess_recovery_only() -> None:
     assert b.decision == TradeDecision.BLOCK
 
 
+def test_is_in_recovery_mode() -> None:
+    rm = RiskManager()
+    rm.set_capital(10000.0)
+    par = "EURUSD_otc"
+    assert rm.is_in_recovery_mode(par) is False       # sin historial
+    rm.registrar_trade(par, -50.0)                    # perdedora -> recovery ON
+    assert rm.is_in_recovery_mode(par) is True
+    rm.registrar_trade(par, 0.0)                      # empate/refund -> se mantiene
+    assert rm.is_in_recovery_mode(par) is True
+    rm.registrar_trade(par, +80.0)                    # ganadora -> limpia
+    assert rm.is_in_recovery_mode(par) is False
+    # Es POR par: otro par no se contamina.
+    rm.registrar_trade(par, -10.0)
+    assert rm.is_in_recovery_mode("GBPUSD_otc") is False
+
+
 def test_assess_marginal_reduce() -> None:
     rm = RiskManager()
     rm.set_capital(10000.0)
@@ -204,7 +220,8 @@ def _run_all() -> None:
              test_anti_manipulacion_gap, test_puede_operar_integrado,
              test_assess_allow_caso_feliz, test_assess_set_capital_afecta_sizing,
              test_assess_bloqueos, test_reduce_alias, test_get_current_session,
-             test_assess_recovery_only, test_assess_marginal_reduce,
+             test_assess_recovery_only, test_is_in_recovery_mode,
+             test_assess_marginal_reduce,
              test_assess_prob_fraccion_se_normaliza,
              test_assess_respeta_circuit_breaker]
     for t in tests:

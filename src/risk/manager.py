@@ -208,6 +208,10 @@ class RiskManager:
         self.peak_equity = self.capital_inicial          # pico del dia (drawdown)
         self.trades_por_par: Dict[str, int] = {}
         self.trades_dia = 0
+        # Recovery POR PAR: True tras una perdedora en ese par (la proxima senal
+        # del par es de recuperacion), se limpia con una ganadora. Lo lleva el
+        # propio gestor porque es quien ve los resultados en registrar_trade.
+        self.recovery_por_par: Dict[str, bool] = {}
 
     # ------------------------------------------------------ 1. position sizing
     def position_size(self, capital: Optional[float] = None) -> float:
@@ -312,6 +316,16 @@ class RiskManager:
 
         return True, "ok"
 
+    # ---------------------------------------------- modo recovery por par
+    def is_in_recovery_mode(self, pair: str) -> bool:
+        """
+        True si el par viene de una perdida sin ganadora que la limpie. La usa
+        emit_signals() para marcar la senal como recovery (mas exigente, menos
+        tamano). PORQUE: la recuperacion se decide por el HISTORIAL del par, no
+        por un estado externo suelto; el gestor ya lo tiene.
+        """
+        return self.recovery_por_par.get(pair, False)
+
     # ---------------------------------------------- evaluacion de senal (alto nivel)
     @staticmethod
     def _norm_prob(probability: float) -> float:
@@ -406,8 +420,17 @@ class RiskManager:
         Registra el resultado de una operacion (para backtest/disciplina del
         dia): actualiza equity, pico y el contador por par.
         """
-        self.equity += float(pnl)
+        pnl = float(pnl)
+        self.equity += pnl
         self.trades_dia += 1
         self.trades_por_par[par] = self.trades_por_par.get(par, 0) + 1
         if self.equity > self.peak_equity:
             self.peak_equity = self.equity
+
+        # Recovery por par: una perdedora abre el modo (proxima senal = recovery);
+        # una ganadora lo limpia. Un empate/refund (pnl==0) lo deja como estaba
+        # (no recupero la perdida, sigo en recuperacion).
+        if pnl < 0:
+            self.recovery_por_par[par] = True
+        elif pnl > 0:
+            self.recovery_por_par[par] = False
