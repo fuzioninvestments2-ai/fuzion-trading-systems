@@ -38,13 +38,38 @@ class TradeDecision(Enum):
     """
     Veredicto de riesgo sobre una senal. PORQUE: no es binario; a veces la senal
     es valida pero el contexto pide entrar con MENOS tamano en vez de bloquear.
-      - ALLOW : condiciones sanas, tamano completo.
-      - REDUCE: valida pero con reservas (recovery o contexto marginal) -> mitad.
-      - BLOCK : algun filtro de proteccion la rechaza; NO operar.
+      - ALLOW      : condiciones sanas, tamano completo.
+      - REDUCE_SIZE: valida pero con reservas (recovery/contexto marginal) -> mitad.
+      - BLOCK      : algun filtro de proteccion la rechaza; NO operar.
     """
     ALLOW = "ALLOW"
-    REDUCE = "REDUCE"
+    REDUCE_SIZE = "REDUCE_SIZE"
     BLOCK = "BLOCK"
+    # Alias retro-compat: `REDUCE` es lo mismo que `REDUCE_SIZE` (mismo valor ->
+    # el enum lo trata como alias, no como miembro nuevo).
+    REDUCE = "REDUCE_SIZE"
+
+
+def get_current_session(hora_utc: Optional[int] = None) -> str:
+    """
+    Sesion FX dominante segun la hora UTC (la de mayor liquidez activa en ese
+    tramo). PORQUE: la liquidez cambia el comportamiento del precio; el solape
+    Londres-NuevaYork es el mas liquido y las horas asiaticas, las mas flojas.
+    Solo informativo para OTC (precio sintetico 24/7), util de verdad en real.
+
+    hora_utc: 0-23; si es None se toma la hora UTC actual.
+    """
+    if hora_utc is None:
+        from datetime import datetime, timezone
+        hora_utc = datetime.now(timezone.utc).hour
+    h = int(hora_utc) % 24
+    if 12 <= h < 16:
+        return "Londres-NuevaYork"      # solape: maxima liquidez
+    if 7 <= h < 12:
+        return "Londres"
+    if 16 <= h < 21:
+        return "NuevaYork"
+    return "Asia"                       # 21-06 UTC: Tokio/Sidney, baja liquidez
 
 
 @dataclass(frozen=True)
@@ -360,7 +385,7 @@ class RiskManager:
         marginal = prob < (umbral + 3.0) or market.atr_pips > (0.8 * self.max_atr_pips)
         if is_recovery or marginal:
             razon = "recovery: media posicion" if is_recovery else "contexto marginal: media posicion"
-            return RiskAssessment(TradeDecision.REDUCE, razon, round(base_size / 2.0, 2),
+            return RiskAssessment(TradeDecision.REDUCE_SIZE, razon, round(base_size / 2.0, 2),
                                   prob, pair, d, is_recovery, det)
 
         return RiskAssessment(TradeDecision.ALLOW, "condiciones sanas", base_size,
