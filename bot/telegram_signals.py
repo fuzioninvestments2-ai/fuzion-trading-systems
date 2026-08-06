@@ -564,6 +564,10 @@ def run(profile_name="OTC"):
             logging.exception("No se pudo iniciar ResultsStore; analytics en memoria")
     system = FuzionTradingSystem(risk_manager=risk_manager, db=_results_db,
                                  tracker=_tracker)
+    # Calendario economico (filtro de noticias high-impact). Solo pesa en FX real;
+    # en OTC devuelve siempre False (se pasa is_otc del perfil).
+    from src.market.economic_calendar import EconomicCalendar
+    calendario = EconomicCalendar()
     # El balance real llega async; se sincroniza una sola vez (sin resetear el
     # estado del dia en cada analisis).
     _capital_sync = {"done": False}
@@ -716,12 +720,17 @@ def run(profile_name="OTC"):
                 if lv:
                     sr_p = _sr_pips(float(cdf["close"].iloc[-1]), lv, code)
 
+            # Noticia high-impact: solo bloquea en FX real (OTC -> is_otc=True -> False).
+            from datetime import datetime, timezone
+            hay_noticia = calendario.is_news_event(
+                code, datetime.now(timezone.utc), is_otc=profile.es_otc)
+
             market = MarketCondition(
                 spread_pips=(0.0 if profile.es_otc else None),  # OTC no tiene spread
                 atr_pips=atr_p,
                 distance_to_nearest_sr=sr_p,
                 session=get_current_session(),
-                is_news_event=False,           # OTC: no aplica
+                is_news_event=hay_noticia,
                 volume_anomaly=False,
                 gap_detected=False,
             )

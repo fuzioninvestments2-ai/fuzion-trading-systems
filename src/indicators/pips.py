@@ -17,12 +17,23 @@ Funciones puras (sin red): se prueban sin internet.
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from src.risk.manager import average_true_range
 
 # Codigos ISO de divisa que maneja el bot (para reconocer un par FX real).
 _CURRENCIES = {"USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF"}
+
+
+def currencies_of(pair: str) -> Optional[Tuple[str, str]]:
+    """
+    (base, cotizada) de un par FX, p. ej. 'EURUSD_otc' -> ('EUR', 'USD').
+    None si no es un par FX (cripto/accion/metal/indice).
+    """
+    p = _normalizar(pair)
+    if not _es_fx(p):
+        return None
+    return p[:3], p[3:]
 
 
 def _normalizar(pair: str) -> str:
