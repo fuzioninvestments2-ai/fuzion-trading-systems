@@ -25,14 +25,17 @@ import os
 import sys
 import time
 
-# Raiz de fuzion_fx (para 'from collector...', 'from core...').
+# Raiz del repo (para reutilizar bot/pocket_client.py, bot/pocket_probe.py). Se
+# agrega al FINAL: el repo tiene su propio core/ (del ML) que NO debe ganar.
 FUZION_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if FUZION_ROOT not in sys.path:
-    sys.path.insert(0, FUZION_ROOT)
-# Raiz del repo (para reutilizar bot/pocket_client.py, bot/pocket_probe.py).
 REPO_ROOT = os.path.dirname(FUZION_ROOT)
 if REPO_ROOT not in sys.path:
-    sys.path.insert(0, REPO_ROOT)
+    sys.path.append(REPO_ROOT)                # solo para 'bot.*'
+# fuzion_fx/ va PRIMERO: 'core'/'indicators' deben resolver a los de Fuzion FX,
+# no a los del proyecto ML de la raiz (que importa hmmlearn y no usamos aca).
+if FUZION_ROOT in sys.path:
+    sys.path.remove(FUZION_ROOT)
+sys.path.insert(0, FUZION_ROOT)
 
 from collector.aggregator import CandleAggregator          # noqa: E402
 from collector.candle_store import CandleStore             # noqa: E402
