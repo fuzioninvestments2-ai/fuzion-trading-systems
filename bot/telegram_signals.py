@@ -543,12 +543,14 @@ def run(profile_name="OTC"):
             from bot.collector import Collector
             collector = Collector(ssid, service.repo, demo=True)
 
-    # Gestor de riesgo compartido (disciplina y proteccion): capital, drawdown,
-    # tope por par y RECOVERY por par. Se alimenta SOLO con el resultado REAL que
-    # el usuario reporta con los botones de la tarjeta (user performance); el
-    # acierto sintetico del motor va por otro lado (SignalTracker), no aqui.
+    # Orquestador + gestor de riesgo compartidos. UNA sola via para el resultado
+    # del usuario: boton -> route_user_result -> system.on_user_reported_result,
+    # que toca el RiskManager solo si el usuario opero (stake>0) y siempre deja
+    # analytics. El acierto sintetico del motor va por otro lado (SignalTracker).
     from src.risk.manager import RiskManager
+    from src.core.trading_system import FuzionTradingSystem
     risk_manager = RiskManager()
+    system = FuzionTradingSystem(risk_manager=risk_manager)
     # El balance real llega async; se sincroniza una sola vez (sin resetear el
     # estado del dia en cada analisis).
     _capital_sync = {"done": False}
@@ -684,17 +686,21 @@ def run(profile_name="OTC"):
         await query.answer()
         uid = query.from_user.id
 
-        # Reporte de RESULTADO del usuario (botones de la tarjeta): actualiza el
-        # gestor de riesgo (recovery/drawdown del par) con la plata REAL.
+        # Reporte de RESULTADO del usuario (botones de la tarjeta): via UNICA por
+        # el orquestador, que decide riesgo (solo si opero) + analytics.
         if query.data.startswith("res:"):
-            from src.telegram.result_buttons import apply_user_result
-            res = apply_user_result(risk_manager, query.data)
+            from src.telegram.result_buttons import route_user_result
+            res = route_user_result(system, query.data)
             if res:
-                estado = "ON" if risk_manager.is_in_recovery_mode(res["pair"]) else "OFF"
-                await query.message.reply_text(
-                    f"Registrado: {res['pair']} · {res['outcome']} · "
-                    f"PnL {res['pnl']:+.2f} (stake {res['stake']:.2f}) · "
-                    f"recovery {estado}")
+                if res["traded"]:
+                    estado = "ON" if risk_manager.is_in_recovery_mode(res["pair"]) else "OFF"
+                    await query.message.reply_text(
+                        f"Registrado: {res['pair']} · {res['outcome']} · "
+                        f"PnL {res['pnl']:+.2f} (stake {res['stake']:.2f}) · "
+                        f"recovery {estado}")
+                else:
+                    await query.message.reply_text(
+                        f"Anotado: {res['pair']} · no entraste (solo estadística).")
             return
 
         # (Botón viejo de historial en mensajes previos): redirige a la descarga
