@@ -1,0 +1,56 @@
+# fuzion_fx/config/bots.yaml — Configuracion de los 4 bots Fuzion FX.
+# Cada bot: su timeframe, sus 22 pares, indicadores, riesgo, aprendizaje y su
+# sqlite propia. Los 4 comparten token y canal de Telegram (se resuelven de .env).
+bots:
+  f1_m1:
+    name: "FUZION FX 1M"
+    timeframe: "1m"
+    timeframe_seconds: 60
+    card_label: "1 min - M1"
+    pairs: [AUD/CAD, AUD/JPY, AUD/NZD, AUD/USD, CAD/JPY, CHF/JPY, EUR/AUD, EUR/CAD, EUR/CHF, EUR/GBP, EUR/JPY, EUR/USD, GBP/AUD, GBP/CAD, GBP/CHF, GBP/JPY, GBP/USD, NZD/JPY, NZD/USD, USD/CAD, USD/CHF, USD/JPY]
+    indicators: {ema_fast: 9, ema_slow: 21, rsi_period: 14, macd_fast: 12, macd_slow: 26, macd_signal: 9, bb_period: 20, bb_std: 2.0, atr_period: 14}
+    signal: {min_confirmations: 3, max_signals_per_hour: 10}
+    risk: {max_daily_trades_per_pair: 10, max_daily_loss_pct: 5.0, recovery_after_consecutive_losses: 3, news_buffer_minutes: 5, default_stake_pct: 1.0}
+    learning: {min_trades_for_setup_evaluation: 10, discard_setup_below_win_pct: 40, prioritize_setup_above_win_pct: 70}
+    db_path: "data/db/f1_memory.db"
+    log_level: "INFO"
+  f2_m2:
+    name: "FUZION FX 2M"
+    timeframe: "2m"
+    timeframe_seconds: 120
+    card_label: "2 min - M2"
+    pairs: [AUD/CAD, AUD/JPY, AUD/NZD, AUD/USD, CAD/JPY, CHF/JPY, EUR/AUD, EUR/CAD, EUR/CHF, EUR/GBP, EUR/JPY, EUR/USD, GBP/AUD, GBP/CAD, GBP/CHF, GBP/JPY, GBP/USD, NZD/JPY, NZD/USD, USD/CAD, USD/CHF, USD/JPY]
+    indicators: {ema_fast: 9, ema_slow: 21, rsi_period: 14, macd_fast: 12, macd_slow: 26, macd_signal: 9, bb_period: 20, bb_std: 2.0, atr_period: 14}
+    signal: {min_confirmations: 3, max_signals_per_hour: 8}
+    risk: {max_daily_trades_per_pair: 10, max_daily_loss_pct: 5.0, recovery_after_consecutive_losses: 3, news_buffer_minutes: 5, default_stake_pct: 1.0}
+    learning: {min_trades_for_setup_evaluation: 10, discard_setup_below_win_pct: 40, prioritize_setup_above_win_pct: 70}
+    db_path: "data/db/f2_memory.db"
+    log_level: "INFO"
+  f3_m3:
+    name: "FUZION FX 3M"
+    timeframe: "3m"
+    timeframe_seconds: 180
+    card_label: "3 min - M3"
+    pairs: [AUD/CAD, AUD/JPY, AUD/NZD, AUD/USD, CAD/JPY, CHF/JPY, EUR/AUD, EUR/CAD, EUR/CHF, EUR/GBP, EUR/JPY, EUR/USD, GBP/AUD, GBP/CAD, GBP/CHF, GBP/JPY, GBP/USD, NZD/JPY, NZD/USD, USD/CAD, USD/CHF, USD/JPY]
+    indicators: {ema_fast: 9, ema_slow: 21, rsi_period: 14, macd_fast: 12, macd_slow: 26, macd_signal: 9, bb_period: 20, bb_std: 2.0, atr_period: 14}
+    signal: {min_confirmations: 3, max_signals_per_hour: 6}
+    risk: {max_daily_trades_per_pair: 8, max_daily_loss_pct: 4.0, recovery_after_consecutive_losses: 2, news_buffer_minutes: 5, default_stake_pct: 1.0}
+    learning: {min_trades_for_setup_evaluation: 8, discard_setup_below_win_pct: 40, prioritize_setup_above_win_pct: 70}
+    db_path: "data/db/f3_memory.db"
+    log_level: "INFO"
+  f4_m5:
+    name: "FUZION FX 5M"
+    timeframe: "5m"
+    timeframe_seconds: 300
+    card_label: "5 min - M5"
+    pairs: [AUD/CAD, AUD/JPY, AUD/NZD, AUD/USD, CAD/JPY, CHF/JPY, EUR/AUD, EUR/CAD, EUR/CHF, EUR/GBP, EUR/JPY, EUR/USD, GBP/AUD, GBP/CAD, GBP/CHF, GBP/JPY, GBP/USD, NZD/JPY, NZD/USD, USD/CAD, USD/CHF, USD/JPY]
+    indicators: {ema_fast: 9, ema_slow: 21, rsi_period: 14, macd_fast: 12, macd_slow: 26, macd_signal: 9, bb_period: 20, bb_std: 2.0, atr_period: 14}
+    signal: {min_confirmations: 4, max_signals_per_hour: 5}
+    risk: {max_daily_trades_per_pair: 6, max_daily_loss_pct: 3.0, recovery_after_consecutive_losses: 2, news_buffer_minutes: 10, default_stake_pct: 1.0}
+    learning: {min_trades_for_setup_evaluation: 6, discard_setup_below_win_pct: 45, prioritize_setup_above_win_pct: 75}
+    db_path: "data/db/f4_memory.db"
+    log_level: "INFO"
+
+telegram:
+  bot_token: "${TELEGRAM_BOT_TOKEN}"
+  channel_id: "${TELEGRAM_CHANNEL_ID}"

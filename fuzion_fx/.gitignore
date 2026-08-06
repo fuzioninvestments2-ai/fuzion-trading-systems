@@ -1,0 +1,6 @@
+# Artefactos de runtime (no versionar)
+data/db/*.db
+logs/*.log
+logs/pids.json
+__pycache__/
+*.pyc
