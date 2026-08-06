@@ -67,10 +67,19 @@ class FuzionTradingSystem:
         # Registro de PERFORMANCE DE SENALES (auto + user) para analytics.
         self.signal_results: List[Dict[str, Any]] = []
 
-    def _persist(self, signal_id: str, pnl: float, source: str) -> None:
-        """Guarda en la db inyectada si expone save_signal_result; si no, no-op."""
-        if self.db is not None and hasattr(self.db, "save_signal_result"):
-            self.db.save_signal_result(signal_id, pnl, source=source)
+    def _persist(self, rec: Dict[str, Any]) -> None:
+        """
+        Guarda el registro en la db inyectada. Prefiere `save_result(rec)` (rico:
+        par, outcome, stake); si no, cae a `save_signal_result(signal_id, pnl,
+        source)` por compatibilidad. Si no hay db, no-op (solo memoria).
+        """
+        if self.db is None:
+            return
+        if hasattr(self.db, "save_result"):
+            self.db.save_result(rec)
+        elif hasattr(self.db, "save_signal_result"):
+            self.db.save_signal_result(rec["signal_id"], rec["pnl"],
+                                       source=rec["source"])
 
     def on_signal_expired(self, signal_id: str, entry_price: float,
                           expiry_price: float, direction: str) -> Dict[str, Any]:
@@ -82,7 +91,7 @@ class FuzionTradingSystem:
         rec: Dict[str, Any] = {"signal_id": signal_id, "outcome": outcome,
                                "pnl": pnl, "source": "auto"}
         self.signal_results.append(rec)
-        self._persist(signal_id, pnl, source="auto")
+        self._persist(rec)
         return rec
 
     def on_user_reported_result(self, signal_id: str, pair: str, user_won: bool,
@@ -108,5 +117,5 @@ class FuzionTradingSystem:
                                "pnl": float(user_pnl), "stake": float(user_stake),
                                "traded": traded, "source": "user"}
         self.signal_results.append(rec)
-        self._persist(signal_id, float(user_pnl), source="user")
+        self._persist(rec)
         return rec

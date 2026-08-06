@@ -550,7 +550,20 @@ def run(profile_name="OTC"):
     from src.risk.manager import RiskManager
     from src.core.trading_system import FuzionTradingSystem
     risk_manager = RiskManager()
-    system = FuzionTradingSystem(risk_manager=risk_manager)
+    # Persistencia del user-performance (sobrevive reinicios): reutiliza el sqlite
+    # del servicio. El tracker (signal-performance) tambien se inyecta para tener
+    # una sola vista de analytics. Sin servicio (sin SSID), queda solo en memoria.
+    _results_db = None
+    _tracker = None
+    if service is not None:
+        try:
+            from src.core.results_store import ResultsStore
+            _results_db = ResultsStore(service.repo)
+            _tracker = service.tracker
+        except Exception:
+            logging.exception("No se pudo iniciar ResultsStore; analytics en memoria")
+    system = FuzionTradingSystem(risk_manager=risk_manager, db=_results_db,
+                                 tracker=_tracker)
     # El balance real llega async; se sincroniza una sola vez (sin resetear el
     # estado del dia en cada analisis).
     _capital_sync = {"done": False}
