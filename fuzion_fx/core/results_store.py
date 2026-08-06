@@ -74,6 +74,19 @@ class ResultsStore:
                 (result, float(pnl), int(signal_id)))
             self.conn.commit()
 
+    def pending_older_than(self, cutoff_ts: int) -> List[Dict[str, Any]]:
+        """
+        Senales sin resolver cuya vela de entrada (ts) es <= cutoff_ts (ya
+        vencieron y su resultado se puede conocer). Para el feedback loop.
+        """
+        with self._lock:
+            rows = self.conn.execute(
+                """SELECT id, pair, timeframe, direction, price, ts
+                   FROM signals WHERE resolved=0 AND ts <= ?
+                   ORDER BY ts ASC""", (int(cutoff_ts),)).fetchall()
+        return [{"id": r[0], "pair": r[1], "timeframe": r[2], "direction": r[3],
+                 "price": r[4], "ts": r[5]} for r in rows]
+
     def setup_stats(self, setup_id: str) -> Dict[str, Any]:
         """{trades, wins, losses, win_pct} de un setup ya resuelto."""
         with self._lock:

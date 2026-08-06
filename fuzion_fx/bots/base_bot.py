@@ -27,8 +27,11 @@ from core.results_store import ResultsStore
 from core.risk_manager import RiskManager
 from core.signal_engine import SignalEngine, NEUTRAL
 from core.learning_engine import LearningEngine
-from data.price_feed import PriceFeed, StubPriceFeed
+from data.price_feed import PriceFeed, StubPriceFeed, CandleStoreFeed
 from telegram.notifier import TelegramNotifier
+
+# Base de velas COMPARTIDA que escribe el colector; los bots leen de aca.
+PO_CANDLES_DB = os.path.join(ROOT, "data", "db", "po_candles.db")
 
 
 class BaseBot:
@@ -49,7 +52,10 @@ class BaseBot:
         self.risk = RiskManager(cfg["risk"])
         self.engine = SignalEngine(cfg["indicators"], cfg["signal"])
         self.learning = LearningEngine(self.store, cfg["learning"])
-        self.feed = price_feed or StubPriceFeed()
+        # Feed real por defecto: lee po_candles.db del colector. Si el colector
+        # no arranco (archivo inexistente), CandleStoreFeed devuelve None y el
+        # bot simplemente no emite (seguro).
+        self.feed = price_feed or CandleStoreFeed(PO_CANDLES_DB)
 
         # Notifier: si hay token/canal, real; si no, None (modo dry-run: solo log).
         tg = cfg.get("telegram", {})
@@ -159,16 +165,61 @@ class BaseBot:
 
         return emitidas
 
+    # ------------------------------------------------- feedback loop (aprendizaje)
+    PAYOUT_ASUMIDO = 0.80          # payout tipico para el PnL sintetico de aprendizaje
+
+    def resolve_pending(self, now: Optional[float] = None) -> int:
+        """
+        Cierra el loop de aprendizaje: para cada senal ya vencida, lee el precio
+        al vencimiento (vela en po_candles) y decide win/loss. Actualiza el store
+        (que alimenta al LearningEngine) y el riesgo (recovery/circuit breaker
+        reaccionan al desempeno reciente de las senales). Devuelve cuantas resolvio.
+
+        PnL SINTETICO (senal, no dinero real del usuario): +stake*payout si acierta,
+        -stake si falla; sirve para que el bot mida su propio rendimiento y aprenda.
+        """
+        now = time.time() if now is None else now
+        if not hasattr(self.feed, "price_at"):
+            return 0
+        cutoff = now - self.timeframe_seconds        # solo las ya vencidas
+        n = 0
+        for s in self.store.pending_older_than(int(cutoff)):
+            expiry = int(s["ts"]) + self.timeframe_seconds
+            exit_price = self.feed.price_at(s["pair"], self.timeframe_seconds, expiry)
+            if exit_price is None:
+                continue                             # aun sin vela de vencimiento
+            entry = float(s["price"])
+            if exit_price == entry:
+                result, won = "tie", False
+            elif s["direction"] == "CALL":
+                won = exit_price > entry
+                result = "win" if won else "loss"
+            else:                                    # PUT
+                won = exit_price < entry
+                result = "win" if won else "loss"
+
+            stake = self.risk.position_size()
+            pnl = round(stake * self.PAYOUT_ASUMIDO, 2) if won else (
+                0.0 if result == "tie" else -stake)
+            self.store.resolve_signal(s["id"], result, pnl)
+            if result != "tie":
+                self.risk.register_result(s["pair"], pnl, won)
+            n += 1
+        if n:
+            self.log.info("Resueltas %d senales (feedback de aprendizaje)", n)
+        return n
+
     # ------------------------------------------------------------- loop
     def run(self) -> None:
-        """Loop principal: una pasada cada `timeframe_seconds`. Ctrl+C para parar."""
+        """Loop principal: resolver vencidas + una pasada, cada `timeframe_seconds`."""
         self._running = True
         self.log.info("%s arrancado (%d pares, cada %ds). Feed: %s | Telegram: %s",
                       self.name, len(self.pairs), self.timeframe_seconds,
                       type(self.feed).__name__, "ON" if self.notifier else "DRY-RUN")
         while self._running:
             try:
-                self.scan_once()
+                self.resolve_pending()       # aprende de las senales ya vencidas
+                self.scan_once()             # busca nuevas
             except Exception:
                 self.log.exception("Error en la pasada; el bot sigue vivo")
             time.sleep(self.timeframe_seconds)
