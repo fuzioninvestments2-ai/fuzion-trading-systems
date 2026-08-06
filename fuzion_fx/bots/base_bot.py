@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import time
 from typing import Any, Dict, List, Optional
 
@@ -69,11 +70,22 @@ class BaseBot:
         if not logger.handlers:
             logs_dir = os.path.join(ROOT, "logs")
             os.makedirs(logs_dir, exist_ok=True)
-            fh = logging.FileHandler(os.path.join(logs_dir, f"{self.id}.log"))
-            fh.setFormatter(logging.Formatter(
-                "%(asctime)s %(levelname)s %(name)s: %(message)s"))
+            fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+            # UTF-8 en el archivo: las tarjetas llevan emojis (⬆️/⬇️) que en
+            # Windows (consola cp1252) romperian el log. Con utf-8 no falla.
+            fh = logging.FileHandler(os.path.join(logs_dir, f"{self.id}.log"),
+                                     encoding="utf-8")
+            fh.setFormatter(fmt)
             logger.addHandler(fh)
-            logger.addHandler(logging.StreamHandler())
+            # Consola: se intenta reconfigurar a utf-8; si no se puede, se
+            # reemplazan los caracteres no imprimibles en vez de crashear.
+            sh = logging.StreamHandler()
+            try:
+                sh.stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+            sh.setFormatter(fmt)
+            logger.addHandler(sh)
         return logger
 
     # ------------------------------------------------------------- rate limit
