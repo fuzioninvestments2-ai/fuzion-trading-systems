@@ -670,15 +670,28 @@ def run(profile_name="OTC"):
             from src.risk.manager import MarketCondition, TradeDecision
             from src.risk.manager import get_current_session
             from src.telegram.result_buttons import result_buttons_row
+            from src.indicators.pips import atr_pips as _atr_pips
+            from src.indicators.pips import nearest_sr_distance_pips as _sr_pips
 
             # win-rate del par SOLO si hay muestra suficiente (si no, None = no filtra).
             wr = result.get("win_rate_real")
             wr = wr if (wr is not None and result.get("senales_reales", 0) >= 10) else None
 
+            # ATR y distancia a S/R en pips, desde las MISMAS velas de la tarjeta
+            # (si el par no es FX, pips devuelve None y esos filtros se saltean).
+            atr_p = None
+            sr_p = None
+            cdf = result.get("chart")
+            if cdf is not None and len(cdf) >= 5:
+                atr_p = _atr_pips(cdf["high"], cdf["low"], cdf["close"], code)
+                lv = result.get("levels")
+                if lv:
+                    sr_p = _sr_pips(float(cdf["close"].iloc[-1]), lv, code)
+
             market = MarketCondition(
                 spread_pips=(0.0 if profile.es_otc else None),  # OTC no tiene spread
-                atr_pips=None,                 # pendiente: conversion a pips
-                distance_to_nearest_sr=None,   # pendiente: distancia real a S/R
+                atr_pips=atr_p,
+                distance_to_nearest_sr=sr_p,
                 session=get_current_session(),
                 is_news_event=False,           # OTC: no aplica
                 volume_anomaly=False,
