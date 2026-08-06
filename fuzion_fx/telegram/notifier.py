@@ -53,7 +53,7 @@ class TelegramNotifier:
 
     def send_photo(self, image_path: str, caption: str = "",
                    parse_mode: str = "Markdown") -> bool:
-        """Envia una foto (grafico) con pie. Si falla, cae a texto."""
+        """Envia una foto (grafico) desde un ARCHIVO con pie. Si falla, cae a texto."""
         try:
             with open(image_path, "rb") as fh:
                 ok = self._post("sendPhoto",
@@ -66,3 +66,19 @@ class TelegramNotifier:
             log.warning("No se pudo abrir la imagen %s: %s", image_path, e)
         # Respaldo: al menos mandar el texto de la tarjeta.
         return self.send_text(caption, parse_mode)
+
+    def send(self, message: str, photo_buffer=None,
+             parse_mode: str = "Markdown") -> bool:
+        """
+        Entrada unica de la tarjeta: si viene `photo_buffer` (PNG en memoria, p.
+        ej. un grafico de matplotlib) manda foto+pie; si no, manda solo texto.
+        `photo_buffer` puede ser bytes o un file-like (BytesIO).
+        """
+        if photo_buffer is None:
+            return self.send_text(message, parse_mode)
+        ok = self._post("sendPhoto",
+                        {"chat_id": self.channel_id, "caption": message,
+                         "parse_mode": parse_mode},
+                        files={"photo": photo_buffer})
+        # Si el envio de la foto falla, al menos que llegue el texto.
+        return ok or self.send_text(message, parse_mode)
