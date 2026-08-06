@@ -676,8 +676,23 @@ def run(profile_name="OTC"):
         # spread OTC) van como None -> se saltean; se activaran al tener el dato.
         prob = result.get("probabilidad")
         if direccion and prob is not None:
+            # RESTAURACION DE ESTADO (una vez, al conocer el balance real): en vez
+            # de solo fijar el capital, reconstruye recovery/drawdown/tope del dia
+            # desde el store, reproduciendo los resultados operados de hoy. Sin
+            # esto, un reinicio borraria la proteccion y el usuario podria pasar
+            # el limite diario de perdida.
             if service and getattr(service, "balance", None) and not _capital_sync["done"]:
-                risk_manager.set_capital(float(service.balance), reset=False)
+                from datetime import datetime, timezone
+                dia_inicio = int(datetime.now(timezone.utc).replace(
+                    hour=0, minute=0, second=0, microsecond=0).timestamp())
+                try:
+                    n_rest = system.restore_state(since_ts=dia_inicio,
+                                                  current_balance=float(service.balance))
+                    if n_rest:
+                        logging.info("Estado de riesgo restaurado: %d trades del dia", n_rest)
+                except Exception:
+                    logging.exception("Fallo la restauracion; fijo capital simple")
+                    risk_manager.set_capital(float(service.balance), reset=False)
                 _capital_sync["done"] = True
 
             from src.risk.manager import MarketCondition, TradeDecision

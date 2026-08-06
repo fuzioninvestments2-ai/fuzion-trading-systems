@@ -19,6 +19,7 @@ conexion sqlite en memoria.
 
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, List, Optional
 
 
@@ -40,28 +41,54 @@ class ResultsStore:
                     pnl       REAL,
                     stake     REAL,
                     traded    INTEGER,    -- 1 si el usuario realmente opero
-                    source    TEXT        -- "user"
+                    source    TEXT,       -- "user"
+                    ts        INTEGER     -- epoch seg (para filtrar por dia)
                 )""")
             self.conn.execute("""CREATE INDEX IF NOT EXISTS idx_user_results_pair
                                  ON user_results (pair)""")
+            # Migracion: agrega `ts` si la tabla viene de una version anterior.
+            cols = [r[1] for r in self.conn.execute(
+                "PRAGMA table_info(user_results)").fetchall()]
+            if "ts" not in cols:
+                self.conn.execute("ALTER TABLE user_results ADD COLUMN ts INTEGER")
             self.conn.commit()
 
     def save_result(self, rec: Dict[str, Any]) -> Optional[int]:
         """
         Persiste un registro de resultado de usuario (el dict que arma
         FuzionTradingSystem.on_user_reported_result). Devuelve el id insertado.
+        `ts` se toma de rec si viene; si no, se sella con la hora actual.
         """
+        ts = int(rec["ts"]) if rec.get("ts") is not None else int(time.time())
         with self._lock:
             cur = self.conn.execute(
                 """INSERT INTO user_results
-                   (signal_id, pair, outcome, pnl, stake, traded, source)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   (signal_id, pair, outcome, pnl, stake, traded, source, ts)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (str(rec.get("signal_id", "")), rec.get("pair", ""),
                  rec.get("outcome", ""), float(rec.get("pnl", 0.0)),
                  float(rec.get("stake", 0.0)),
-                 1 if rec.get("traded") else 0, rec.get("source", "user")))
+                 1 if rec.get("traded") else 0, rec.get("source", "user"), ts))
             self.conn.commit()
             return cur.lastrowid
+
+    def traded_results_since(self, since_ts: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Resultados OPERADOS (traded=1) desde `since_ts` (epoch seg; None = todos),
+        en orden CRONOLOGICO (id asc = orden de insercion). Es lo que necesita la
+        restauracion para REPRODUCIR el dia por registrar_trade.
+        """
+        with self._lock:
+            if since_ts is None:
+                rows = self.conn.execute(
+                    """SELECT pair, pnl, outcome, ts FROM user_results
+                       WHERE traded=1 ORDER BY id ASC""").fetchall()
+            else:
+                rows = self.conn.execute(
+                    """SELECT pair, pnl, outcome, ts FROM user_results
+                       WHERE traded=1 AND ts >= ? ORDER BY id ASC""",
+                    (int(since_ts),)).fetchall()
+        return [{"pair": r[0], "pnl": r[1], "outcome": r[2], "ts": r[3]} for r in rows]
 
     def recent(self, pair: Optional[str] = None,
                limit: int = 50) -> List[Dict[str, Any]]:

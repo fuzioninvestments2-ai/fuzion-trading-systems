@@ -81,6 +81,46 @@ class FuzionTradingSystem:
             self.db.save_signal_result(rec["signal_id"], rec["pnl"],
                                        source=rec["source"])
 
+    def restore_state(self, since_ts: Optional[int] = None,
+                      current_balance: Optional[float] = None) -> int:
+        """
+        Reconstruye el estado de riesgo del DIA tras un reinicio (CRITICO en
+        produccion: sin esto, reiniciar borra recovery/drawdown/tope y el usuario
+        podria perder mas de lo permitido).
+
+        Lee del store los resultados OPERADOS del dia y los REPRODUCE por
+        registrar_trade en orden cronologico, que reconstruye de una: equity,
+        pico (drawdown), recovery por par y trades contados por par.
+
+        Evita DOBLE CONTEO del equity: el balance real del broker YA incluye el
+        PnL de hoy, asi que se rebasa la base al INICIO del dia
+        (balance_actual - pnl_de_hoy) y el replay vuelve a llevar el equity al
+        balance actual, con el pico correcto por el camino.
+
+        Devuelve cuantos resultados se reprodujeron.
+        """
+        if self.db is None or not hasattr(self.db, "traded_results_since"):
+            # Sin persistencia consultable: al menos alinea el capital si se dio.
+            if current_balance is not None:
+                self.risk_manager.set_capital(float(current_balance))
+            return 0
+
+        rows = self.db.traded_results_since(since_ts)
+        pnl_hoy = sum(float(r["pnl"]) for r in rows)
+
+        if current_balance is not None:
+            base = float(current_balance) - pnl_hoy
+            if base <= 0:                       # guarda ante datos inconsistentes
+                base = float(current_balance)
+            self.risk_manager.set_capital(base, reset=True)
+        else:
+            # Sin balance real: parte del capital ya fijado y solo reconstruye.
+            self.risk_manager.reset_dia()
+
+        for r in rows:
+            self.risk_manager.registrar_trade(r["pair"], float(r["pnl"]))
+        return len(rows)
+
     def on_signal_expired(self, signal_id: str, entry_price: float,
                           expiry_price: float, direction: str) -> Dict[str, Any]:
         """
