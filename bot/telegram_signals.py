@@ -652,17 +652,52 @@ def run(profile_name="OTC"):
         rows = [[("🔁 Analizar de nuevo", f"re:{asset_display}:{tf}")],
                 [("📊 Otro activo", "back:market"), ("🏠 Menú", "back:main")]]
 
-        # Botones de RESULTADO (user performance): solo si hay senal accionable
-        # (CALL/PUT). Al pulsarlos, el usuario reporta si gano/perdio y eso
-        # alimenta el gestor de riesgo (recovery/drawdown del par). El payout va
-        # en el callback para reconstruir el PnL al hacer clic.
-        direccion = (result.get("direccion") or "").upper()
-        if direccion in ("CALL", "PUT"):
+        # Direccion CRUDA: result["direccion"] viene DECORADA ("⬆️ UP (CALL)"),
+        # asi que se detecta por contenido, no por igualdad.
+        dtxt = (result.get("direccion") or "").upper()
+        direccion = "CALL" if "CALL" in dtxt else ("PUT" if "PUT" in dtxt else "")
+
+        # CAPA DE RIESGO sobre la senal accionable. Filtra/ajusta la tarjeta con
+        # assess_signal (probabilidad, win-rate del par, recovery, circuit breaker,
+        # tope por par). Los filtros de contexto sin dato fiable (ATR/S-R en pips,
+        # spread OTC) van como None -> se saltean; se activaran al tener el dato.
+        prob = result.get("probabilidad")
+        if direccion and prob is not None:
             if service and getattr(service, "balance", None) and not _capital_sync["done"]:
                 risk_manager.set_capital(float(service.balance), reset=False)
                 _capital_sync["done"] = True
+
+            from src.risk.manager import MarketCondition, TradeDecision
+            from src.risk.manager import get_current_session
             from src.telegram.result_buttons import result_buttons_row
-            rows = rows + [result_buttons_row(code, result.get("payout") or 0)]
+
+            # win-rate del par SOLO si hay muestra suficiente (si no, None = no filtra).
+            wr = result.get("win_rate_real")
+            wr = wr if (wr is not None and result.get("senales_reales", 0) >= 10) else None
+
+            market = MarketCondition(
+                spread_pips=(0.0 if profile.es_otc else None),  # OTC no tiene spread
+                atr_pips=None,                 # pendiente: conversion a pips
+                distance_to_nearest_sr=None,   # pendiente: distancia real a S/R
+                session=get_current_session(),
+                is_news_event=False,           # OTC: no aplica
+                volume_anomaly=False,
+                gap_detected=False,
+            )
+            assessment = risk_manager.assess_signal(
+                pair=code, direction=direccion, probability=prob,
+                market=market, is_recovery=risk_manager.is_in_recovery_mode(code),
+                recent_win_rate=wr)
+
+            if assessment.decision == TradeDecision.BLOCK:
+                # El riesgo veta la entrada: se avisa y NO se ofrecen botones de
+                # resultado (no hubo operacion recomendada).
+                text += f"\n\n🛑 *Riesgo bloquea:* {assessment.reason}"
+            else:
+                if assessment.decision != TradeDecision.ALLOW:
+                    text += (f"\n\n⚠️ *Tamaño reducido* ({assessment.decision.value}): "
+                             f"${assessment.size:.2f} — {assessment.reason}")
+                rows = rows + [result_buttons_row(code, result.get("payout") or 0)]
 
         path = None
         chart_df = result.get("chart")

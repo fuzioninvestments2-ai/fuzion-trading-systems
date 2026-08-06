@@ -206,6 +206,20 @@ def test_set_capital_sin_reset_preserva_dia() -> None:
     assert rm2.equity == 500.0 and rm2.position_size() == 10.0
 
 
+def test_assess_contexto_none_se_saltea() -> None:
+    rm = RiskManager()
+    rm.set_capital(10000.0)
+    # Sin ATR/spread/S-R (None) esos filtros no bloquean; decide prob + resto.
+    m = MarketCondition(spread_pips=None, atr_pips=None, distance_to_nearest_sr=None,
+                        session="Londres", is_news_event=False,
+                        volume_anomaly=False, gap_detected=False)
+    a = rm.assess_signal("EURUSD_otc", "CALL", 96.0, m)
+    assert a.decision == TradeDecision.ALLOW
+    # Pero un flag duro (gap) SIGUE bloqueando aunque los numericos sean None.
+    m2 = MarketCondition(None, None, None, "Londres", False, False, True)
+    assert rm.assess_signal("EURUSD_otc", "CALL", 96.0, m2).decision == TradeDecision.BLOCK
+
+
 def test_assess_win_rate_gate() -> None:
     rm = RiskManager()
     rm.set_capital(10000.0)
@@ -256,6 +270,7 @@ def _run_all() -> None:
              test_assess_bloqueos, test_reduce_alias, test_get_current_session,
              test_assess_recovery_only, test_is_in_recovery_mode,
              test_set_capital_sin_reset_preserva_dia,
+             test_assess_contexto_none_se_saltea,
              test_assess_win_rate_gate, test_assess_marginal_reduce,
              test_assess_prob_fraccion_se_normaliza,
              test_assess_respeta_circuit_breaker]

@@ -83,9 +83,10 @@ class MarketCondition:
     flags). Es entrada de `assess_signal`; el modulo no la calcula (la aporta el
     servicio que ya mide spread, ATR y S/R).
     """
-    spread_pips: float                     # coste de entrada; ancho = mala ejecucion
-    atr_pips: float                        # volatilidad real reciente
-    distance_to_nearest_sr: float          # distancia al soporte/resistencia mas cercano
+    # Numericos: None = dato no disponible -> ese filtro se saltea (no bloquea).
+    spread_pips: Optional[float]           # coste de entrada; ancho = mala ejecucion
+    atr_pips: Optional[float]              # volatilidad real reciente
+    distance_to_nearest_sr: Optional[float]  # distancia al soporte/resistencia mas cercano
     session: str = ""                      # "Londres"/"NuevaYork"/"Asia"... informativo
     is_news_event: bool = False            # noticia de alto impacto en curso
     volume_anomaly: bool = False           # volumen anomalo (posible manipulacion)
@@ -403,14 +404,18 @@ class RiskManager:
         if market.volume_anomaly:
             return block("volumen anomalo (posible manipulacion)")
 
-        # 4) Calidad de ejecucion / mercado.
-        if market.spread_pips > self.max_spread_pips:
+        # 4) Calidad de ejecucion / mercado. Cada filtro se SALTEA si su dato no
+        #    esta disponible (None): mejor no filtrar que filtrar con un valor
+        #    inventado. Asi el cableo puede activar cada uno cuando tenga el dato.
+        if market.spread_pips is not None and market.spread_pips > self.max_spread_pips:
             return block(f"spread {market.spread_pips} > {self.max_spread_pips} pips")
-        if market.atr_pips < self.min_atr_pips:
-            return block(f"ATR {market.atr_pips} < {self.min_atr_pips} pips (mercado muerto)")
-        if market.atr_pips > self.max_atr_pips:
-            return block(f"ATR {market.atr_pips} > {self.max_atr_pips} pips (volatilidad extrema)")
-        if market.distance_to_nearest_sr < self.min_dist_sr_pips:
+        if market.atr_pips is not None:
+            if market.atr_pips < self.min_atr_pips:
+                return block(f"ATR {market.atr_pips} < {self.min_atr_pips} pips (mercado muerto)")
+            if market.atr_pips > self.max_atr_pips:
+                return block(f"ATR {market.atr_pips} > {self.max_atr_pips} pips (volatilidad extrema)")
+        if (market.distance_to_nearest_sr is not None
+                and market.distance_to_nearest_sr < self.min_dist_sr_pips):
             return block(f"pegado a S/R ({market.distance_to_nearest_sr} < "
                          f"{self.min_dist_sr_pips} pips)")
 
@@ -436,7 +441,9 @@ class RiskManager:
                                   round(base_size * 0.75, 2), prob, pair, d, is_recovery, det)
 
         # Contexto marginal (prob apenas sobre el umbral o ATR alto) -> x0.5.
-        marginal = prob < (umbral + 3.0) or market.atr_pips > (0.8 * self.max_atr_pips)
+        atr_alto = (market.atr_pips is not None
+                    and market.atr_pips > (0.8 * self.max_atr_pips))
+        marginal = prob < (umbral + 3.0) or atr_alto
         if marginal:
             return RiskAssessment(TradeDecision.REDUCE_SIZE, "contexto marginal: media posicion",
                                   round(base_size * 0.5, 2), prob, pair, d, is_recovery, det)
