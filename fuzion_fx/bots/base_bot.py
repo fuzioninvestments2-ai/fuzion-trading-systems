@@ -280,10 +280,35 @@ class BaseBot:
             self.store.resolve_signal(s["id"], result, pnl)
             if result != "tie":
                 self.risk.register_result(s["pair"], pnl, won)
+
+            # RESULTADO a Telegram: cuando vence la senal, avisa WIN/LOSS. En una
+            # perdida, en vez de doblar (martingala, prohibido y peligroso), el par
+            # entra en RECUPERACION: la proxima senal sera mas estricta y menor.
+            self._notificar_resultado(s, entry, exit_price, result)
             n += 1
         if n:
             self.log.info("Resueltas %d senales (feedback de aprendizaje)", n)
         return n
+
+    def _notificar_resultado(self, s: Dict[str, Any], entry: float,
+                             exit_price: float, result: str) -> None:
+        """Manda la tarjeta de RESULTADO (WIN/LOSS/EMPATE) al Telegram del bot."""
+        icono = {"win": "✅ WIN", "loss": "❌ LOSS", "tie": "➖ EMPATE"}[result]
+        pair = s["pair"]
+        txt = (f"🏁 *{self.name}* · *{pair}* ({self.card_label})\n"
+               f"Resultado: *{icono}*\n"
+               f"Direccion: {s['direction']}\n"
+               f"Entrada: {entry:.5f}  →  Cierre: {exit_price:.5f}")
+        if result == "loss":
+            en_recup = self.risk.in_recovery(pair)
+            txt += ("\n🔁 *Correccion:* el par entra en RECUPERACION — la proxima "
+                    "senal sera mas estricta y de MENOR tamano (no se dobla). "
+                    f"{'Recuperacion ACTIVA.' if en_recup else ''}")
+        txt += "\n⚠️ Demo · resultado educativo · el acierto no esta garantizado"
+        if self.notifier:
+            self.notifier.send_text(txt)
+        else:
+            self.log.info("[DRY-RUN resultado] %s", txt.replace("\n", " | "))
 
     # ------------------------------------------------------------- loop
     def run(self) -> None:
