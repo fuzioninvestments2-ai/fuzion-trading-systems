@@ -57,12 +57,16 @@ class BaseBot:
         # bot simplemente no emite (seguro).
         self.feed = price_feed or CandleStoreFeed(PO_CANDLES_DB)
 
-        # Notifier: si hay token/canal, real; si no, None (modo dry-run: solo log).
+        # Notifier: cada bot manda por SU token (telegram_token del bot) para que
+        # cada tiempo llegue a su propio bot de Telegram; si el bot no define uno,
+        # cae al token comun (telegram.bot_token). Mismo canal/chat para todos.
         tg = cfg.get("telegram", {})
+        token = cfg.get("telegram_token") or tg.get("bot_token")
+        canal = tg.get("channel_id")
         if notifier is not None:
             self.notifier = notifier
-        elif tg.get("bot_token") and tg.get("channel_id"):
-            self.notifier = TelegramNotifier(tg["bot_token"], tg["channel_id"])
+        elif token and canal:
+            self.notifier = TelegramNotifier(token, canal)
         else:
             self.notifier = None
 
