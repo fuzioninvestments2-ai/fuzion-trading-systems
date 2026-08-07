@@ -1,8 +1,9 @@
 """
 scripts/test_telegram.py (fuzion_fx)
 ====================================
-Manda UN mensaje de prueba al canal/chat configurado, para confirmar que el
-token y el TELEGRAM_CHANNEL_ID del .env funcionan (el ultimo eslabon).
+Manda un mensaje de prueba por CADA uno de los 4 bots (con su propio token) al
+chat configurado. Sirve para confirmar que los 4 tokens y el TELEGRAM_CHANNEL_ID
+del .env funcionan: deberian llegar 4 mensajes, uno a cada bot (F1..F).
 
     python fuzion_fx/scripts/test_telegram.py
 """
@@ -16,30 +17,40 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))     # fuzion_
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from core.config import get_bot_config                     # noqa: E402
+from core.config import bot_ids, get_bot_config           # noqa: E402
 from telegram.notifier import TelegramNotifier             # noqa: E402
 
 
 def main() -> None:
-    tg = get_bot_config("f1_m1")["telegram"]
-    token = tg.get("bot_token", "")
-    canal = tg.get("channel_id", "")
-    if not token or not canal:
-        print("Falta TELEGRAM_BOT_TOKEN o TELEGRAM_CHANNEL_ID en el .env.")
-        print(f"  token: {'OK' if token else 'FALTA'} | canal: {canal or 'FALTA'}")
-        return
+    algun_error = False
+    for bid in bot_ids():
+        cfg = get_bot_config(bid)
+        tg = cfg.get("telegram", {})
+        token = cfg.get("telegram_token") or tg.get("bot_token")
+        canal = tg.get("channel_id")
+        nombre = cfg.get("name", bid)
 
-    print(f"Enviando mensaje de prueba al chat {canal}...")
-    notif = TelegramNotifier(token, canal)
-    ok = notif.send_text(
-        "*FUZION FX* — prueba de conexion ✅\n"
-        "Si ves este mensaje, Telegram esta bien configurado. "
-        "Las senales de los 4 bots llegaran aca.")
-    if ok:
-        print("ENVIADO. Revisa tu Telegram: deberia estar el mensaje.")
+        if not token or not canal:
+            print(f"[{bid}] FALTA token o canal  (token: {'OK' if token else 'FALTA'}"
+                  f" | canal: {canal or 'FALTA'})")
+            algun_error = True
+            continue
+
+        notif = TelegramNotifier(token, canal)
+        ok = notif.send_text(
+            f"*{nombre}* — prueba de conexion ✅\n"
+            f"Este bot ({cfg.get('card_label', bid)}) esta configurado y listo.")
+        estado = "ENVIADO" if ok else "FALLO"
+        if not ok:
+            algun_error = True
+        print(f"[{bid}] {nombre} -> {estado}")
+
+    print("---")
+    if algun_error:
+        print("Algun bot no pudo enviar. Revisa su token en el .env y que le hayas "
+              "dado /start a ese bot en Telegram.")
     else:
-        print("NO se pudo enviar. Revisa que el token sea correcto y que el bot "
-              "pueda escribir al chat (que le hayas dado /start al bot).")
+        print("LISTO: revisa Telegram, deberian estar los 4 mensajes (F1..F).")
 
 
 if __name__ == "__main__":
