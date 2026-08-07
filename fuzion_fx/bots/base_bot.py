@@ -29,6 +29,8 @@ from core.signal_engine import SignalEngine, NEUTRAL
 from core.learning_engine import LearningEngine
 from data.price_feed import PriceFeed, StubPriceFeed, CandleStoreFeed
 from telegram.notifier import TelegramNotifier
+from telegram.chart import render_candles
+from indicators.pips import pip_size
 
 # Base de velas COMPARTIDA que escribe el colector; los bots leen de aca.
 PO_CANDLES_DB = os.path.join(ROOT, "data", "db", "po_candles.db")
@@ -71,6 +73,10 @@ class BaseBot:
             self.notifier = None
 
         self._emitted_ts: List[float] = []     # timestamps de emisiones (rate limit)
+        # Anti-duplicado: ultima direccion avisada por par. Se avisa SOLO cuando
+        # cambia (una alerta por setup nuevo), no en cada pasada.
+        self._last_dir: Dict[str, str] = {}
+        self.payout_pct = 85                   # pago asumido (PO no lo expone aca)
         self._running = False
         self.log = self._setup_logger(cfg.get("log_level", "INFO"))
 
@@ -105,18 +111,69 @@ class BaseBot:
         self._emitted_ts = [t for t in self._emitted_ts if t >= limite]
         return len(self._emitted_ts) < self.max_signals_per_hour
 
-    # ------------------------------------------------------------- tarjeta
+    # ------------------------------------------------------------- sesion / tz
+    @staticmethod
+    def _sesion_fx(hora_utc: int) -> str:
+        """Sesion FX dominante por hora UTC (solape Londres-NuevaYork = top)."""
+        h = int(hora_utc) % 24
+        if 12 <= h < 16:
+            return "Londres-NuevaYork"
+        if 7 <= h < 12:
+            return "Londres"
+        if 16 <= h < 21:
+            return "NuevaYork"
+        return "Asia"
+
+    # ------------------------------------------------------------- tarjeta rica
     def build_card(self, pair: str, result: Dict[str, Any]) -> str:
-        """Tarjeta de senal para Telegram (texto Markdown)."""
-        flecha = "⬆️ CALL" if result["signal"] == "CALL" else "⬇️ PUT"
-        conf = result["confirmations"]
+        """
+        Tarjeta como la del bot anterior: divisa, direccion (arriba/abajo), hora
+        de entrada y vencimiento, sesion, pago, confirmaciones, acierto reciente
+        y aviso demo. Los tiempos van en hora LOCAL de la PC.
+        """
+        from datetime import datetime, timezone
+
+        ahora = datetime.now().astimezone()          # local, con tz
+        off = ahora.utcoffset()
+        horas_off = int(off.total_seconds() // 3600) if off else 0
+        # Entrada = proximo borde de vela; vence = entrada + timeframe.
+        seg = self.timeframe_seconds
+        epoch = int(ahora.timestamp())
+        entrada_ep = epoch - (epoch % seg) + seg
+        entrada = datetime.fromtimestamp(entrada_ep).astimezone()
+        vence = datetime.fromtimestamp(entrada_ep + seg).astimezone()
+
+        es_call = result["signal"] == "CALL"
+        flecha = "🟩 CALL (poner ARRIBA)" if es_call else "🟥 PUT (poner ABAJO)"
+        divisa = pair.replace("/", "")
+        sesion = self._sesion_fx(datetime.now(timezone.utc).hour)
         indic = ", ".join(result["confirming"])
         prioridad = " ⭐" if self.learning.is_prioritized(result["setup_id"]) else ""
-        return (f"*{self.name}*  ({self.card_label}){prioridad}\n"
-                f"Par: *{pair}*\n"
-                f"Senal: *{flecha}*\n"
-                f"Confirmaciones: {conf} ({indic})\n"
-                f"Precio: {result['price']:.5f}")
+
+        # ATR en pips (volatilidad reciente real).
+        ps = pip_size(pair)
+        atr_pips = round(result["atr"] / ps, 1) if ps else 0.0
+
+        # Acierto reciente del setup (aprendizaje). Honesto: solo con muestra.
+        st = self.store.setup_stats(result["setup_id"])
+        if st["trades"] >= 1:
+            acierto = f"{st['win_pct']:.0f}%  ({st['trades']} señales medidas)"
+        else:
+            acierto = "sin muestra aún (recién aprende)"
+
+        return (
+            f"🤖 *{self.name}*{prioridad}\n"
+            f"🌐 Zona Horaria: UTC{horas_off:+d}:00\n"
+            f"📊 DIVISA: *{divisa}*\n"
+            f"{flecha}\n"
+            f"⏰ HORA DE ENTRADA: *{entrada.strftime('%H:%M')}*\n"
+            f"⌛ VENCE: {vence.strftime('%H:%M')}  ({self.card_label})\n"
+            f"🌍 Mercado: {sesion}\n"
+            f"💰 Pago del activo: {self.payout_pct}%\n"
+            f"🎯 Confirmaciones: {result['confirmations']} ({indic})\n"
+            f"📈 Acierto reciente: {acierto}\n"
+            f"📊 Volatilidad (ATR): {atr_pips} pips\n"
+            f"⚠️ Demo · señal educativa · el acierto no está garantizado")
 
     # ------------------------------------------------------------- una pasada
     def scan_once(self, now: Optional[float] = None) -> List[Dict[str, Any]]:
@@ -139,6 +196,13 @@ class BaseBot:
 
             result = self.engine.analyze(candles)
             if result["signal"] == NEUTRAL:
+                # Sin senal: se resetea el par para que una nueva CALL/PUT avise.
+                self._last_dir[pair] = None
+                continue
+
+            # ANTI-DUPLICADO: avisar SOLO si la direccion cambio respecto al ultimo
+            # aviso del par (una alerta por setup nuevo, no cada minuto).
+            if self._last_dir.get(pair) == result["signal"]:
                 continue
 
             ok, motivo = self.risk.can_trade(pair)
@@ -150,7 +214,7 @@ class BaseBot:
                 self.log.debug("Aprendizaje descarta setup %s", result["setup_id"])
                 continue
 
-            # Emitir: persistir + notificar + contar para el rate limit.
+            # Emitir: persistir + notificar (tarjeta + grafico) + contadores.
             rec = {"ts": int(now), "pair": pair, "timeframe": self.timeframe,
                    "direction": result["signal"], "setup_id": result["setup_id"],
                    "confirmations": result["confirmations"],
@@ -159,9 +223,17 @@ class BaseBot:
             rec["id"] = sid
             card = self.build_card(pair, result)
             if self.notifier:
-                self.notifier.send_text(card)
+                # Grafico de velas del par como foto; si falla, va solo texto.
+                try:
+                    img = render_candles(candles, f"{self.name} · {pair} · {self.card_label}",
+                                         result["signal"])
+                except Exception:
+                    img = None
+                self.notifier.send(card, photo_buffer=img)
             else:
                 self.log.info("[DRY-RUN sin token] %s", card.replace("\n", " | "))
+
+            self._last_dir[pair] = result["signal"]
             self._emitted_ts.append(now)
             emitidas.append(rec)
             self.log.info("Senal emitida: %s %s (setup %s)", pair,
