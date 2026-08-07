@@ -75,12 +75,16 @@ class _FakeEngine:
     def analyze(self, candles):
         # El primer par consultado dispara CALL; los demas NEUTRAL.
         self.n += 1
-        if self.n == 1:
+        # CALL en la 1a (scan) y la 2a (pre-filtro) llamada del primer par; luego
+        # NEUTRAL. Asi el pre-filtro confirma y se emite una sola senal.
+        if self.n <= 2:
             return {"signal": CALL, "confirmations": 3, "votes": {},
                     "confirming": ["ema", "macd", "rsi"],
-                    "setup_id": "CALL|ema,macd,rsi", "atr": 0.001, "price": 1.10}
+                    "setup_id": "CALL|ema,macd,rsi", "atr": 0.001, "price": 1.10,
+                    "readings": {"rsi": 25.0, "macd_hist": 0.0001}}
         return {"signal": "NEUTRAL", "confirmations": 0, "votes": {},
-                "confirming": [], "setup_id": None, "atr": 0.0, "price": 1.10}
+                "confirming": [], "setup_id": None, "atr": 0.0, "price": 1.10,
+                "readings": {"rsi": 50.0, "macd_hist": 0.0}}
 
 
 def _candles():
@@ -98,6 +102,9 @@ def test_base_bot_emite_y_persiste() -> None:
     feed = InMemoryPriceFeed()
     st = ResultsStore(":memory:")
     bot = BaseBot("f1_m1", price_feed=feed, store=st)   # sin notifier -> dry-run
+    bot.pairs = ["AUD/CAD"]                              # un solo par para el test
+    bot.prefilter_seconds = 0                           # sin espera real
+    bot._schedule_enabled = False                       # sin timers de fondo
     for p in bot.pairs:
         feed.set_candles(p, _candles())
     bot.engine = _FakeEngine(bot.pairs[0])              # fuerza un CALL controlado

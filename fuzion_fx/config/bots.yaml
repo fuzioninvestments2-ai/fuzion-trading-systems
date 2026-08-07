@@ -12,6 +12,7 @@ bots:
     signal: {min_confirmations: 3, max_signals_per_hour: 10}
     risk: {max_daily_trades_per_pair: 10, max_daily_loss_pct: 5.0, recovery_after_consecutive_losses: 3, news_buffer_minutes: 5, default_stake_pct: 1.0}
     learning: {min_trades_for_setup_evaluation: 10, discard_setup_below_win_pct: 40, prioritize_setup_above_win_pct: 70}
+    checkpoint_offset: 20
     telegram_token: "${TELEGRAM_BOT_TOKEN}"
     db_path: "data/db/f1_memory.db"
     log_level: "INFO"
@@ -25,6 +26,7 @@ bots:
     signal: {min_confirmations: 3, max_signals_per_hour: 8}
     risk: {max_daily_trades_per_pair: 10, max_daily_loss_pct: 5.0, recovery_after_consecutive_losses: 3, news_buffer_minutes: 5, default_stake_pct: 1.0}
     learning: {min_trades_for_setup_evaluation: 10, discard_setup_below_win_pct: 40, prioritize_setup_above_win_pct: 70}
+    checkpoint_offset: 30
     telegram_token: "${TELEGRAM_BOT_TOKEN_2M}"
     db_path: "data/db/f2_memory.db"
     log_level: "INFO"
@@ -38,6 +40,7 @@ bots:
     signal: {min_confirmations: 3, max_signals_per_hour: 6}
     risk: {max_daily_trades_per_pair: 8, max_daily_loss_pct: 4.0, recovery_after_consecutive_losses: 2, news_buffer_minutes: 5, default_stake_pct: 1.0}
     learning: {min_trades_for_setup_evaluation: 8, discard_setup_below_win_pct: 40, prioritize_setup_above_win_pct: 70}
+    checkpoint_offset: 30
     telegram_token: "${TELEGRAM_BOT_TOKEN_3M}"
     db_path: "data/db/f3_memory.db"
     log_level: "INFO"
@@ -51,6 +54,7 @@ bots:
     signal: {min_confirmations: 4, max_signals_per_hour: 5}
     risk: {max_daily_trades_per_pair: 6, max_daily_loss_pct: 3.0, recovery_after_consecutive_losses: 2, news_buffer_minutes: 10, default_stake_pct: 1.0}
     learning: {min_trades_for_setup_evaluation: 6, discard_setup_below_win_pct: 45, prioritize_setup_above_win_pct: 75}
+    checkpoint_offset: 30
     telegram_token: "${TELEGRAM_BOT_TOKEN_5M}"
     db_path: "data/db/f4_memory.db"
     log_level: "INFO"

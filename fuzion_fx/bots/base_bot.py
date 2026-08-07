@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
@@ -77,6 +78,15 @@ class BaseBot:
         # cambia (una alerta por setup nuevo), no en cada pasada.
         self._last_dir: Dict[str, str] = {}
         self.payout_pct = 85                   # pago asumido (PO no lo expone aca)
+
+        # Sistema de Checkpoint Cuantico:
+        # - prefilter: recalcula 10s despues; emite SOLO si coincide (menos falsas).
+        # - checkpoint: X seg antes del cierre revisa si la direccion se dio vuelta;
+        #   si cambio, manda una ALERTA de autocorreccion (informa, no opera).
+        self.checkpoint_offset = int(cfg.get("checkpoint_offset", 20))
+        self.prefilter_seconds = 10
+        self._schedule_enabled = True          # los tests lo apagan
+        self._timers: List[threading.Timer] = []
         self._running = False
         self.log = self._setup_logger(cfg.get("log_level", "INFO"))
 
@@ -214,6 +224,15 @@ class BaseBot:
                 self.log.debug("Aprendizaje descarta setup %s", result["setup_id"])
                 continue
 
+            # PRE-FILTRO: recalcular tras `prefilter_seconds`; emitir SOLO si la
+            # direccion se mantiene (descarta setups que se dan vuelta al toque).
+            confirmado = self._prefiltro(pair, result["signal"])
+            if confirmado is None or confirmado["signal"] != result["signal"]:
+                self.log.info("Pre-filtro descarta %s %s (cambio en %ds)",
+                              pair, result["signal"], self.prefilter_seconds)
+                continue
+            result = confirmado                # usar la lectura fresca confirmada
+
             # Emitir: persistir + notificar (tarjeta + grafico) + contadores.
             rec = {"ts": int(now), "pair": pair, "timeframe": self.timeframe,
                    "direction": result["signal"], "setup_id": result["setup_id"],
@@ -239,7 +258,83 @@ class BaseBot:
             self.log.info("Senal emitida: %s %s (setup %s)", pair,
                           result["signal"], result["setup_id"])
 
+            # CHECKPOINT: agendar revision X seg antes del cierre de la vela.
+            expiry = int(now) - (int(now) % self.timeframe_seconds) + self.timeframe_seconds
+            self._schedule_checkpoint(pair, result["signal"], expiry, result, now)
+
         return emitidas
+
+    # ---------------------------------------------- Checkpoint Cuantico
+    def _prefiltro(self, pair: str, direccion: str) -> Optional[Dict[str, Any]]:
+        """
+        Espera `prefilter_seconds` y recalcula con datos frescos. Devuelve el
+        nuevo `analyze` (para reusarlo) o None si no hay datos. El caller compara
+        la direccion: si cambio, no emite.
+        """
+        if self.prefilter_seconds > 0:
+            time.sleep(self.prefilter_seconds)
+        candles = self.feed.get_candles(pair, self.timeframe_seconds)
+        if not candles or len(candles.get("close", [])) < 2:
+            return None
+        return self.engine.analyze(candles)
+
+    def _schedule_checkpoint(self, pair: str, direccion: str, expiry_ts: int,
+                             orig: Dict[str, Any], ts_emitida: float) -> None:
+        """Agenda el checkpoint en expiry - checkpoint_offset (timer en background)."""
+        if not self._schedule_enabled:
+            return
+        delay = expiry_ts - self.checkpoint_offset - time.time()
+        if delay <= 0:
+            return                             # ya no da tiempo; se omite
+        t = threading.Timer(delay, self._run_checkpoint,
+                            args=(pair, direccion, orig, ts_emitida))
+        t.daemon = True
+        t.start()
+        self._timers.append(t)
+
+    def _run_checkpoint(self, pair: str, direccion_orig: str,
+                        orig: Dict[str, Any], ts_emitida: float) -> Optional[str]:
+        """
+        Recalcula con los datos mas frescos. Si la direccion se dio vuelta, manda
+        una ALERTA de autocorreccion. Devuelve el texto de la alerta (o None).
+        """
+        candles = self.feed.get_candles(pair, self.timeframe_seconds)
+        if not candles or len(candles.get("close", [])) < 2:
+            return None
+        nuevo = self.engine.analyze(candles)
+        nueva_dir = nuevo["signal"]
+        # Misma direccion (o sin senal) -> no se hace nada.
+        if nueva_dir == NEUTRAL or nueva_dir == direccion_orig:
+            return None
+
+        segs = int(time.time() - ts_emitida)
+        cambios = self._describir_cambios(orig, nuevo)
+        alerta = (f"*AUTOCORRECCION* · {self.name}\n"
+                  f"Par: *{pair}*\n"
+                  f"Señal original: *{direccion_orig}*  →  detectado ahora: *{nueva_dir}*\n"
+                  f"Emitida hace {segs}s\n"
+                  f"Cambios: {cambios}\n"
+                  f"_Alerta informativa. El bot no opera por vos._")
+        if self.notifier:
+            self.notifier.send_alert(alerta)
+        else:
+            self.log.info("[DRY-RUN alerta] %s", alerta.replace("\n", " | "))
+        return alerta
+
+    @staticmethod
+    def _describir_cambios(orig: Dict[str, Any], nuevo: Dict[str, Any]) -> str:
+        """Describe que indicadores se movieron (ej: 'RSI cruzo de 65 a 35')."""
+        partes = []
+        o = orig.get("readings", {})
+        n = nuevo.get("readings", {})
+        if "rsi" in o and "rsi" in n and abs(o["rsi"] - n["rsi"]) >= 5:
+            partes.append(f"RSI cruzó de {o['rsi']:.0f} a {n['rsi']:.0f}")
+        # Votos de indicadores que cambiaron de signo.
+        ov, nv = orig.get("votes", {}), nuevo.get("votes", {})
+        for k in ov:
+            if ov[k] != nv.get(k):
+                partes.append(f"{k} se dio vuelta")
+        return "; ".join(partes) or "el balance de indicadores se invirtió"
 
     # ------------------------------------------------- feedback loop (aprendizaje)
     PAYOUT_ASUMIDO = 0.80          # payout tipico para el PnL sintetico de aprendizaje

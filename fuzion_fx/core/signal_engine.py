@@ -85,6 +85,11 @@ class SignalEngine:
             signal, confirming = NEUTRAL, []
 
         setup_id = f"{signal}|{','.join(confirming)}" if signal != NEUTRAL else None
+        # Lecturas CRUDAS de indicadores (para el checkpoint: "RSI cruzo de X a Y").
+        i = self.ind
+        _, _, hist = _macd(close, i["macd_fast"], i["macd_slow"], i["macd_signal"])
+        readings = {"rsi": round(_rsi(close, i["rsi_period"]), 1),
+                    "macd_hist": round(hist, 6)}
         return {
             "signal": signal,
             "confirmations": len(confirming),
@@ -93,4 +98,5 @@ class SignalEngine:
             "setup_id": setup_id,
             "atr": _atr(high, low, close, self.ind["atr_period"]),
             "price": close[-1],
+            "readings": readings,
         }

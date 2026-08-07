@@ -51,6 +51,10 @@ class TelegramNotifier:
         return self._post("sendMessage", {
             "chat_id": self.channel_id, "text": text, "parse_mode": parse_mode})
 
+    def send_alert(self, text: str, parse_mode: str = "Markdown") -> bool:
+        """Alerta (auto-correccion). Igual que send_text, con marca visual."""
+        return self.send_text(f"🚨 {text}", parse_mode)
+
     def send_photo(self, image_path: str, caption: str = "",
                    parse_mode: str = "Markdown") -> bool:
         """Envia una foto (grafico) desde un ARCHIVO con pie. Si falla, cae a texto."""
