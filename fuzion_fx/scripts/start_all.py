@@ -27,12 +27,17 @@ PROCESOS += [(b, os.path.join(ROOT, "bots", f"{b}.py")) for b in BOTS]
 
 def main() -> None:
     os.makedirs(os.path.join(ROOT, "logs"), exist_ok=True)
+
+    # En Windows, lanzar DESACOPLADO de la consola: asi los bots siguen vivos
+    # aunque cierres la ventana de PowerShell. Su salida va a su propio log.
+    kwargs = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+    if os.name == "nt":
+        kwargs["creationflags"] = (subprocess.DETACHED_PROCESS
+                                   | subprocess.CREATE_NEW_PROCESS_GROUP)
+
     pids = {}
     for nombre, script in PROCESOS:
-        # Proceso hijo independiente; su salida va a su propio log.
-        proc = subprocess.Popen([sys.executable, script],
-                                stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL)
+        proc = subprocess.Popen([sys.executable, script], **kwargs)
         pids[nombre] = proc.pid
         print(f"[start] {nombre} -> PID {proc.pid}")
 
