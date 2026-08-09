@@ -5,14 +5,18 @@ Formateo de las tarjetas de Telegram: SEÑAL y RESULTADO. Una sola pieza que arm
 el texto (Regla 1: el bot no duplica formato). Emojis Unicode nativos (no
 imagenes), texto en español (LATAM), hora 24h HH:MM, precios FX a 5 decimales.
 
+DATOS POR PAR: el acierto reciente y la estrella salen del historial POR PAR
+(el bot los provee via `par_stats(par)`), no por setup. Cada divisa lleva su
+propio win-rate: si EURUSD gana y NZDUSD pierde, no se mezclan.
+
 Recibe diccionarios con los datos ya calculados (el bot los provee); esta clase
 solo FORMATEA y aplica las reglas de visualizacion (estrella, "sin muestra",
-color por direccion, sesion). Es pura y se testea sin red.
+color por direccion, mercado). Es pura y se testea sin red.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 
 class SignalCardFormatter:
@@ -23,7 +27,7 @@ class SignalCardFormatter:
     }
     ICONS_RESULT = {"win": "✅ WIN", "loss": "❌ LOSS", "tie": "➖ EMPATE"}
 
-    # Reglas de la estrella y de la muestra.
+    # Reglas de la estrella y de la muestra (POR PAR).
     STAR_MIN_WIN_PCT = 80.0
     STAR_MIN_MEASURED = 10
     MIN_MEASURED_SHOW = 5          # por debajo: "sin muestra aún"
@@ -31,7 +35,10 @@ class SignalCardFormatter:
     # ------------------------------------------------------------- helpers
     @staticmethod
     def session_from_utc_hour(hour: int) -> str:
-        """Mercado dominante por hora UTC: Europe / America / Asia."""
+        """Mercado dominante por hora UTC: Europe / America / Asia.
+
+        Fallback: solo se usa si el bot no manda `mercado` explicito.
+        """
         h = int(hour) % 24
         if 7 <= h < 13:
             return "Europe"
@@ -39,65 +46,79 @@ class SignalCardFormatter:
             return "America"
         return "Asia"
 
-    def _star(self, win_pct: Optional[float], measured: int) -> bool:
-        """Estrella SOLO con acierto >= 80% y >= 10 señales medidas."""
-        return (win_pct is not None
-                and win_pct >= self.STAR_MIN_WIN_PCT
-                and measured >= self.STAR_MIN_MEASURED)
+    def _star(self, acierto_pct: Optional[float], n_muestras: int) -> bool:
+        """Estrella SOLO con acierto >= 80% y >= 10 señales medidas (por par)."""
+        return (acierto_pct is not None
+                and acierto_pct >= self.STAR_MIN_WIN_PCT
+                and n_muestras >= self.STAR_MIN_MEASURED)
 
-    def _acierto(self, win_pct: Optional[float], measured: int) -> str:
-        """Linea de acierto reciente; 'sin muestra' si N < 5."""
-        if win_pct is None or measured < self.MIN_MEASURED_SHOW:
+    def _acierto(self, acierto_pct: Optional[float], n_muestras: int) -> str:
+        """Linea de acierto reciente (por par); 'sin muestra' si N < 5."""
+        if acierto_pct is None or n_muestras < self.MIN_MEASURED_SHOW:
             return "sin muestra aún (recién aprende)"
-        return f"{win_pct:.0f}%  ({measured} señales medidas)"
+        return f"{acierto_pct:.0f}%  ({n_muestras} señales medidas)"
 
     # ------------------------------------------------------------- señal
     def format_signal(self, d: Dict[str, Any]) -> str:
         """
-        Tarjeta de SEÑAL. `d` espera:
-          bot_name, pair, direction (CALL/PUT), card_label, entry_time,
-          expiry_time, tz_offset (int), session|utc_hour, payout_pct,
-          confirmations, indicators (list), win_pct (float|None), measured (int),
-          atr_pips (float).
+        Tarjeta de SEÑAL. `d` espera (POR PAR):
+          par, direccion (CALL/PUT), hora_entrada, hora_vencimiento, mercado
+          (Asia/Europe/America), payout, confirmaciones (lista de indicadores),
+          acierto_pct (float|None), n_muestras (int), atr (float, en pips).
+        Opcionales de presentacion:
+          bot_name (de bots.yaml), card_label (ej. "1M"), tz_offset (int).
         """
-        direccion = str(d["direction"]).upper()
+        acierto_pct = d.get("acierto_pct")
+        n_muestras = int(d.get("n_muestras", 0))
+
+        direccion = str(d["direccion"]).upper()
         arrow = self.ARROWS.get(direccion, direccion)
-        estrella = " ⭐" if self._star(d.get("win_pct"), int(d.get("measured", 0))) else ""
-        indic = ", ".join(d.get("indicators", []))
-        acierto = self._acierto(d.get("win_pct"), int(d.get("measured", 0)))
-        sesion = d.get("session") or self.session_from_utc_hour(d.get("utc_hour", 0))
+        estrella = " ⭐" if self._star(acierto_pct, n_muestras) else ""
+        indic = ", ".join(d.get("confirmaciones", []))
+        acierto = self._acierto(acierto_pct, n_muestras)
+        # Mercado explicito del bot; si no viene, se deriva de la hora UTC.
+        mercado = d.get("mercado") or self.session_from_utc_hour(d.get("utc_hour", 0))
         off = int(d.get("tz_offset", 0))
-        pair_txt = str(d["pair"]).replace("/", "")
+        pair_txt = str(d["par"]).replace("/", "")
+        bot_name = d.get("bot_name", "FUZION FX")
+        card_label = d.get("card_label", "")
+        label_txt = f"  ({card_label})" if card_label else ""
 
         return (
-            f"🤖 *{d['bot_name']}*{estrella}\n"
+            f"🤖 *{bot_name}*{estrella}\n"
             f"🌐 Zona Horaria: UTC{off:+d}:00\n"
             f"📊 DIVISA: *{pair_txt}*\n"
             f"{arrow}\n"
-            f"⏰ HORA DE ENTRADA: *{d['entry_time']}*\n"
-            f"⌛ VENCE: {d['expiry_time']}  ({d['card_label']})\n"
-            f"🌍 Mercado: {sesion}\n"
-            f"💰 Pago del activo: {int(d.get('payout_pct', 85))}%\n"
-            f"🎯 Confirmaciones: {int(d['confirmations'])} ({indic})\n"
+            f"⏰ HORA DE ENTRADA: *{d['hora_entrada']}*\n"
+            f"⌛ VENCE: {d['hora_vencimiento']}{label_txt}\n"
+            f"🌍 Mercado: {mercado}\n"
+            f"💰 Pago del activo: {int(d.get('payout', 85))}%\n"
+            f"🎯 Confirmaciones: {len(d.get('confirmaciones', []))} ({indic})\n"
             f"📈 Acierto reciente: {acierto}\n"
-            f"📊 Volatilidad (ATR): {d.get('atr_pips', 0.0)} pips\n"
+            f"📊 Volatilidad (ATR): {d.get('atr', 0.0)} pips\n"
             f"⚠️ Demo · señal educativa · el acierto no está garantizado")
 
     # ------------------------------------------------------------- resultado
     def format_result(self, d: Dict[str, Any]) -> str:
         """
         Tarjeta de RESULTADO. `d` espera:
-          bot_name, pair, card_label, result (win/loss/tie), direction,
-          entry (float), exit (float). En LOSS se agrega la nota de recuperacion.
+          par, direccion, resultado (win/loss/tie), entrada (float),
+          cierre (float), modo_recuperacion (bool).
+        Opcionales de presentacion: bot_name, card_label.
+        La nota de recuperacion se agrega SOLO si modo_recuperacion es True.
         """
-        icono = self.ICONS_RESULT.get(d["result"], d["result"])
+        icono = self.ICONS_RESULT.get(d["resultado"], d["resultado"])
+        bot_name = d.get("bot_name", "FUZION FX")
+        card_label = d.get("card_label", "")
+        label_txt = f" ({card_label})" if card_label else ""
+
         txt = (
-            f"🏁 *{d['bot_name']}* · *{d['pair']}* ({d['card_label']})\n"
+            f"🏁 *{bot_name}* · *{d['par']}*{label_txt}\n"
             f"Resultado: *{icono}*\n"
-            f"Direccion: {d['direction']}\n"
-            f"Entrada: {float(d['entry']):.5f}  →  Cierre: {float(d['exit']):.5f}\n"
+            f"Direccion: {d['direccion']}\n"
+            f"Entrada: {float(d['entrada']):.5f}  →  Cierre: {float(d['cierre']):.5f}\n"
             f"⚠️ Demo · resultado educativo · el acierto no esta garantizado")
-        if d["result"] == "loss":
+        if d.get("modo_recuperacion"):
             txt += ("\n🔁 Correccion: el par entra en RECUPERACION — la proxima "
                     "senal sera mas estricta y de MENOR tamano (no se dobla).")
         return txt

@@ -2,7 +2,8 @@
 tests/test_result_card.py (fuzion_fx)
 =====================================
 Valida SignalCardFormatter.format_result: iconos WIN/LOSS/EMPATE, nota de
-recuperacion SOLO en LOSS, precios FX a 5 decimales y disclaimer. Puro, SIN red.
+recuperacion SOLO si modo_recuperacion=True (booleano explicito del bot),
+precios FX a 5 decimales y disclaimer. Puro, SIN red.
 """
 
 from __future__ import annotations
@@ -18,43 +19,57 @@ from telegram.signal_formatter import SignalCardFormatter    # noqa: E402
 
 
 def _base(**over):
-    d = {"bot_name": "Fuzion F1 (1M)", "pair": "EUR/USD", "card_label": "1M",
-         "result": "win", "direction": "CALL", "entry": 1.10345, "exit": 1.10410}
+    d = {"bot_name": "Fuzion FX 1M", "par": "EUR/USD", "card_label": "1M",
+         "resultado": "win", "direccion": "CALL", "entrada": 1.10345,
+         "cierre": 1.10410, "modo_recuperacion": False}
     d.update(over)
     return d
 
 
 def test_icono_win() -> None:
     fmt = SignalCardFormatter()
-    txt = fmt.format_result(_base(result="win"))
+    txt = fmt.format_result(_base(resultado="win"))
     assert "✅ WIN" in txt
 
 
-def test_icono_loss_con_recuperacion() -> None:
+def test_icono_loss() -> None:
     fmt = SignalCardFormatter()
-    txt = fmt.format_result(_base(result="loss"))
+    txt = fmt.format_result(_base(resultado="loss"))
     assert "❌ LOSS" in txt
-    # La nota de recuperacion aparece SOLO en LOSS.
-    assert "RECUPERACION" in txt
-    assert "no se dobla" in txt
 
 
 def test_icono_empate() -> None:
     fmt = SignalCardFormatter()
-    txt = fmt.format_result(_base(result="tie"))
+    txt = fmt.format_result(_base(resultado="tie"))
     assert "➖ EMPATE" in txt
 
 
-def test_win_no_lleva_recuperacion() -> None:
+def test_recuperacion_solo_con_flag() -> None:
     fmt = SignalCardFormatter()
-    txt = fmt.format_result(_base(result="win"))
+    # La nota depende del booleano explicito, no de que sea LOSS.
+    con = fmt.format_result(_base(resultado="loss", modo_recuperacion=True))
+    assert "RECUPERACION" in con
+    assert "no se dobla" in con
+
+
+def test_loss_sin_flag_no_lleva_recuperacion() -> None:
+    fmt = SignalCardFormatter()
+    # LOSS pero el par NO entra en recuperacion -> sin nota.
+    txt = fmt.format_result(_base(resultado="loss", modo_recuperacion=False))
+    assert "RECUPERACION" not in txt
+
+
+def test_win_no_lleva_recuperacion() -> None:
+    # Caso normal: WIN no entra en recuperacion (el bot no marca el flag).
+    fmt = SignalCardFormatter()
+    txt = fmt.format_result(_base(resultado="win", modo_recuperacion=False))
     assert "RECUPERACION" not in txt
 
 
 def test_precios_cinco_decimales() -> None:
     fmt = SignalCardFormatter()
     # Entra un precio con menos decimales -> se muestra a 5.
-    txt = fmt.format_result(_base(entry=1.1, exit=1.10009))
+    txt = fmt.format_result(_base(entrada=1.1, cierre=1.10009))
     assert "1.10000" in txt
     assert "1.10009" in txt
 
@@ -66,7 +81,9 @@ def test_disclaimer_resultado() -> None:
 
 
 def _run_all() -> None:
-    tests = [test_icono_win, test_icono_loss_con_recuperacion, test_icono_empate,
+    tests = [test_icono_win, test_icono_loss, test_icono_empate,
+             test_recuperacion_solo_con_flag,
+             test_loss_sin_flag_no_lleva_recuperacion,
              test_win_no_lleva_recuperacion, test_precios_cinco_decimales,
              test_disclaimer_resultado]
     for t in tests:
