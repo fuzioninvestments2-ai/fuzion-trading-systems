@@ -379,19 +379,26 @@ class BaseBot:
 
     def _notificar_resultado(self, s: Dict[str, Any], entry: float,
                              exit_price: float, result: str) -> None:
-        """Manda la tarjeta de RESULTADO (WIN/LOSS/EMPATE) al Telegram del bot."""
-        icono = {"win": "✅ WIN", "loss": "❌ LOSS", "tie": "➖ EMPATE"}[result]
+        """Manda la tarjeta de RESULTADO (WIN/LOSS/EMPATE) al Telegram del bot.
+
+        El par va CON barra en la tarjeta de resultado (GBP/AUD). La nota de
+        recuperacion se agrega SOLO en perdida y si el RiskManager marca al par
+        en recuperacion (in_recovery); nunca en WIN. En vez de doblar (martingala,
+        prohibido), la proxima senal del par sera mas estricta y de menor tamano.
+        """
         pair = s["pair"]
-        txt = (f"🏁 *{self.name}* · *{pair}* ({self.card_label})\n"
-               f"Resultado: *{icono}*\n"
-               f"Direccion: {s['direction']}\n"
-               f"Entrada: {entry:.5f}  →  Cierre: {exit_price:.5f}")
-        if result == "loss":
-            en_recup = self.risk.in_recovery(pair)
-            txt += ("\n🔁 *Correccion:* el par entra en RECUPERACION — la proxima "
-                    "senal sera mas estricta y de MENOR tamano (no se dobla). "
-                    f"{'Recuperacion ACTIVA.' if en_recup else ''}")
-        txt += "\n⚠️ Demo · resultado educativo · el acierto no esta garantizado"
+        modo_recuperacion = (result == "loss" and self.risk.in_recovery(pair))
+        d = {
+            "bot_name": self.name,
+            "card_label": self.card_label or self.name,
+            "par": pair,                       # con barra (GBP/AUD)
+            "direccion": s["direction"],
+            "resultado": result,
+            "entrada": entry,
+            "cierre": exit_price,
+            "modo_recuperacion": modo_recuperacion,
+        }
+        txt = self.formatter.format_result(d)
         if self.notifier:
             self.notifier.send_text(txt)
         else:
