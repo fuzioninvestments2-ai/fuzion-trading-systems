@@ -79,9 +79,12 @@ class BaseBot:
         self.formatter = SignalCardFormatter()
 
         self._emitted_ts: List[float] = []     # timestamps de emisiones (rate limit)
-        # Anti-duplicado: ultima direccion avisada por par. Se avisa SOLO cuando
-        # cambia (una alerta por setup nuevo), no en cada pasada.
+        # Anti-duplicado (re-armado): ultima direccion avisada por par y CUANDO se
+        # aviso. En direccion opuesta se avisa al toque; en la misma direccion se
+        # re-avisa solo cuando la senal anterior ya vencio (paso un ciclo del
+        # timeframe). Asi una tendencia con varias CALL validas no se silencia.
         self._last_dir: Dict[str, str] = {}
+        self._last_emit_ts: Dict[str, float] = {}
         self.payout_pct = 85                   # pago asumido (PO no lo expone aca)
 
         # Sistema de Checkpoint Cuantico:
@@ -202,10 +205,13 @@ class BaseBot:
                 self._last_dir[pair] = None
                 continue
 
-            # ANTI-DUPLICADO: avisar SOLO si la direccion cambio respecto al ultimo
-            # aviso del par (una alerta por setup nuevo, no cada minuto).
+            # ANTI-DUPLICADO (re-armado): direccion OPUESTA -> avisa al toque;
+            # MISMA direccion -> re-avisa solo si la senal anterior YA vencio (paso
+            # un ciclo del timeframe). Evita repetir la misma senal dentro del
+            # mismo minuto, pero no se pierde una tendencia con varias CALL seguidas.
             if self._last_dir.get(pair) == result["signal"]:
-                continue
+                if now - self._last_emit_ts.get(pair, 0.0) < self.timeframe_seconds:
+                    continue
 
             ok, motivo = self.risk.can_trade(pair)
             if not ok:
@@ -245,6 +251,7 @@ class BaseBot:
                 self.log.info("[DRY-RUN sin token] %s", card.replace("\n", " | "))
 
             self._last_dir[pair] = result["signal"]
+            self._last_emit_ts[pair] = now         # para el re-armado por vencimiento
             self._emitted_ts.append(now)
             emitidas.append(rec)
             self.log.info("Senal emitida: %s %s (setup %s)", pair,
