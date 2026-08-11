@@ -28,7 +28,9 @@ def test_config_bots() -> None:
     assert config.bot_ids() == ["f1_m1", "f2_m2", "f3_m3", "f4_m5"]
     b = config.get_bot_config("f4_m5")
     assert b["timeframe_seconds"] == 300
-    assert b["signal"]["min_confirmations"] == 4
+    # 3, no 4: con solo 4 indicadores votantes (2 tendencia + 2 reversion), exigir
+    # 4 es una contradiccion estructural y el 5M nunca emitia. Ver diagnostico.
+    assert b["signal"]["min_confirmations"] == 3
     assert len(b["pairs"]) == 22
     assert os.path.isabs(b["db_path"])
 

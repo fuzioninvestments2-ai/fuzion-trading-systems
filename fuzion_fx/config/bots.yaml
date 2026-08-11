@@ -51,7 +51,11 @@ bots:
     card_label: "5 min - M5"
     pairs: [AUD/CAD, AUD/JPY, AUD/NZD, AUD/USD, CAD/JPY, CHF/JPY, EUR/AUD, EUR/CAD, EUR/CHF, EUR/GBP, EUR/JPY, EUR/USD, GBP/AUD, GBP/CAD, GBP/CHF, GBP/JPY, GBP/USD, NZD/JPY, NZD/USD, USD/CAD, USD/CHF, USD/JPY]
     indicators: {ema_fast: 9, ema_slow: 21, rsi_period: 14, macd_fast: 12, macd_slow: 26, macd_signal: 9, bb_period: 20, bb_std: 2.0, atr_period: 14}
-    signal: {min_confirmations: 4, max_signals_per_hour: 5}
+    # min_confirmations 3 (no 4): el motor tiene SOLO 4 indicadores votantes y 2
+    # son de tendencia (ema, macd) y 2 de reversion (rsi, bb), que se oponen en
+    # los extremos; exigir 4 es una contradiccion estructural -> el 5M no emitia
+    # NUNCA (mudo desde 7/8). Con 3 emite como 2M/3M. Ver diagnostico_5m_2026-08-11.md.
+    signal: {min_confirmations: 3, max_signals_per_hour: 5}
     risk: {max_daily_trades_per_pair: 6, max_daily_loss_pct: 3.0, recovery_after_consecutive_losses: 2, news_buffer_minutes: 10, default_stake_pct: 1.0}
     learning: {min_trades_for_setup_evaluation: 6, discard_setup_below_win_pct: 45, prioritize_setup_above_win_pct: 75}
     checkpoint_offset: 30
