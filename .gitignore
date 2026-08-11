@@ -71,3 +71,6 @@ dashboards/estado.json
 
 # Estado de descarga (runtime)
 datasets/real/download_status.json
+
+# Resumenes diarios generados en runtime (no versionar)
+fuzion_fx/resumenes/
