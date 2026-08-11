@@ -68,10 +68,34 @@ def test_engine_real_plano_es_neutral() -> None:
     assert r["signal"] == NEUTRAL
 
 
+def _serie_rsi_intermedio():
+    # Oscilante con leve sesgo bajista -> RSI ~35 (ni <30 ni >70): zona donde el
+    # default 30/70 NO vota pero un umbral 45/55 SI. Sirve para probar que el
+    # umbral RSI es configurable.
+    base = 1.10 + np.cumsum(np.array([-0.0002, 0.0001] * 20))
+    c = list(base)
+    return {"open": c, "high": c, "low": c, "close": c}
+
+
+def test_rsi_default_no_vota_en_zona_intermedia() -> None:
+    # Con 30/70 (default), RSI ~35 esta dentro de banda -> voto 0.
+    eng = SignalEngine(_IND, {"min_confirmations": 3})
+    assert eng._votos(_serie_rsi_intermedio())["rsi"] == 0
+
+
+def test_rsi_umbral_configurable_vota_call() -> None:
+    # Con oversold=45, ese mismo RSI ~35 (<45) SI vota CALL (+1).
+    ind = {**_IND, "rsi_oversold": 45, "rsi_overbought": 55}
+    eng = SignalEngine(ind, {"min_confirmations": 3})
+    assert eng._votos(_serie_rsi_intermedio())["rsi"] == 1
+
+
 def _run_all() -> None:
     tests = [test_call_con_3_confirmaciones, test_put_todos,
              test_neutral_por_empate, test_neutral_por_pocas_confirmaciones,
-             test_engine_real_plano_es_neutral]
+             test_engine_real_plano_es_neutral,
+             test_rsi_default_no_vota_en_zona_intermedia,
+             test_rsi_umbral_configurable_vota_call]
     for t in tests:
         t()
         print(f"  OK  {t.__name__}")

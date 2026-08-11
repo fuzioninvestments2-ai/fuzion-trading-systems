@@ -46,9 +46,15 @@ class SignalEngine:
         ef, es = calculate_ema_pair(close, i["ema_fast"], i["ema_slow"])
         votos["ema"] = 1 if ef > es else (-1 if ef < es else 0)
 
-        # RSI: sobreventa -> CALL, sobrecompra -> PUT.
+        # RSI: sobreventa -> CALL, sobrecompra -> PUT. Umbrales configurables:
+        # 30/70 (default) solo votan en extremos (RSI vota ~9% de las velas ->
+        # el motor casi nunca junta 3 confirmaciones). Acercarlos a 45/55 hace
+        # que RSI aporte voto direccional mas seguido; el valor final lo fija la
+        # calibracion por backtest sobre el historial real (no a ojo).
+        ov = float(i.get("rsi_oversold", 30))
+        ob = float(i.get("rsi_overbought", 70))
         r = _rsi(close, i["rsi_period"])
-        votos["rsi"] = 1 if r < 30 else (-1 if r > 70 else 0)
+        votos["rsi"] = 1 if r < ov else (-1 if r > ob else 0)
 
         # MACD: histograma positivo -> impulso alcista.
         _, _, hist = _macd(close, i["macd_fast"], i["macd_slow"], i["macd_signal"])
