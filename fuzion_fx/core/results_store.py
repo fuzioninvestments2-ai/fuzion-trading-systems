@@ -117,6 +117,42 @@ class ResultsStore:
         return {"trades": trades, "wins": wins,
                 "win_pct": round(100.0 * wins / trades, 1) if trades else 0.0}
 
+    def signals_in_range(self, start_ts: int, end_ts: int) -> List[Dict[str, Any]]:
+        """Senales EMITIDAS con ts en [start_ts, end_ts) (para el resumen diario)."""
+        with self._lock:
+            rows = self.conn.execute(
+                """SELECT ts, pair, direction, resolved, result, pnl
+                   FROM signals WHERE ts >= ? AND ts < ? ORDER BY ts ASC""",
+                (int(start_ts), int(end_ts))).fetchall()
+        return [{"ts": r[0], "pair": r[1], "direction": r[2], "resolved": r[3],
+                 "result": r[4], "pnl": r[5]} for r in rows]
+
+    def trailing_losses(self, pair: str) -> int:
+        """
+        Perdidas CONSECUTIVAS al final del historial resuelto del par. Sirve para
+        derivar el modo recuperacion desde la DB (el estado en memoria del
+        RiskManager no lo ve un proceso separado como el scheduler del resumen).
+        Una ganadora corta la racha (igual que RiskManager.register_result).
+        """
+        with self._lock:
+            rows = self.conn.execute(
+                """SELECT result FROM signals
+                   WHERE pair=? AND resolved=1 AND result IN ('win','loss')
+                   ORDER BY ts DESC, id DESC""", (pair,)).fetchall()
+        n = 0
+        for (r,) in rows:
+            if r == "loss":
+                n += 1
+            else:
+                break                              # una ganadora corta la racha
+        return n
+
+    def emitted_count(self) -> int:
+        """Total de senales emitidas de toda la historia (acumulado)."""
+        with self._lock:
+            row = self.conn.execute("SELECT COUNT(*) FROM signals").fetchone()
+        return int(row[0])
+
     def close(self) -> None:
         with self._lock:
             self.conn.close()
