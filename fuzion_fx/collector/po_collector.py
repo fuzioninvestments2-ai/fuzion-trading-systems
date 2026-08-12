@@ -111,10 +111,24 @@ class PocketOptionCollector:
         from bot.payout import parse_assets
         por_simbolo = parse_assets(payload)          # {symbol: payout%}
         ahora = int(time.time())
+        guardados = 0
+        no_match = []
         for simbolo, pago in por_simbolo.items():
             pair = self._code2pair.get(str(simbolo).upper())
             if pair is not None:
                 self.store.upsert_payout(pair, float(pago), ahora)
+                guardados += 1
+            else:
+                no_match.append(str(simbolo))
+        # Observabilidad: si PO manda activos pero NINGUNO matchea nuestros pares,
+        # los bots quedan sin pago -> con require=True no emiten. El log lo delata
+        # (ej.: mercado real con simbolos que no esperamos). Muestra una muestra de
+        # los no reconocidos para ajustar el mapeo si hace falta.
+        if por_simbolo:
+            muestra = ", ".join(no_match[:8])
+            log.info("updateAssets: %d activos, %d pagos guardados (mercado=%s). "
+                     "Sin match: %d%s", len(por_simbolo), guardados, self.mercado,
+                     len(no_match), f" (ej.: {muestra})" if no_match else "")
 
     def _on_history(self, payload) -> None:
         """
