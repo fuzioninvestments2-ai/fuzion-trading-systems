@@ -31,25 +31,57 @@ PROCESOS = [(s["nombre"], s["script"]) for s in SERVICIOS]
 SCRIPT_DE = POR_NOMBRE                              # nombre -> servicio (con args)
 
 
+_PY_CACHE = None
+
+
+def _tiene_deps(exe: str) -> bool:
+    """True si ese python puede importar yaml (proxy de 'tiene las dependencias')."""
+    try:
+        r = subprocess.run([exe, "-c", "import yaml"], capture_output=True,
+                           timeout=15)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
 def _python_exe() -> str:
     """
-    Python con el que lanzar los servicios. PREFIERE el 'python' del PATH: es el
-    que el usuario usa a mano y el que tiene las dependencias instaladas (PyYAML,
-    numpy, etc.). El vigilante puede correr bajo OTRO python (el 'pythonw' que
-    resuelve el .vbs) que NO tenga esas libs -> los servicios crasheaban con
-    'ModuleNotFoundError: yaml'. Fallbacks: python.exe junto a pythonw, o
-    sys.executable. DETACHED_PROCESS igual los deja sin ventana.
+    Devuelve el Python REAL que tiene las dependencias (PyYAML, numpy, ...), por
+    RUTA COMPLETA, evitando el Python "de la Microsoft Store" (WindowsApps), que es
+    un alias sin librerias y hacia crashear los servicios ('ModuleNotFoundError:
+    yaml') o abrir ventanas. Busca candidatos y elige el primero que importe yaml.
+    Cachea el resultado (no re-chequear en cada relanzamiento).
     """
+    global _PY_CACHE
+    if _PY_CACHE:
+        return _PY_CACHE
+    import glob
     import shutil
-    por_path = shutil.which("python")
-    if por_path:
-        return por_path
-    exe = sys.executable or "python"
-    if os.name == "nt" and os.path.basename(exe).lower() == "pythonw.exe":
-        cand = os.path.join(os.path.dirname(exe), "python.exe")
-        if os.path.isfile(cand):
-            return cand
-    return exe
+
+    def _no_store(p):
+        return p and "windowsapps" not in p.lower()
+
+    cands = []
+    exe = sys.executable or ""
+    if _no_store(exe):
+        cands.append(exe)
+        if os.name == "nt" and os.path.basename(exe).lower() == "pythonw.exe":
+            cands.append(os.path.join(os.path.dirname(exe), "python.exe"))
+    if os.name == "nt":
+        for patron in (r"%LocalAppData%\Programs\Python\Python*\python.exe",
+                       r"%ProgramFiles%\Python*\python.exe",
+                       r"%ProgramFiles(x86)%\Python*\python.exe"):
+            cands += sorted(glob.glob(os.path.expandvars(patron)), reverse=True)
+    w = shutil.which("python")
+    if _no_store(w):
+        cands.append(w)
+
+    for c in cands:
+        if c and os.path.isfile(c) and _tiene_deps(c):
+            _PY_CACHE = c
+            return c
+    _PY_CACHE = exe or "python"                # ultimo recurso
+    return _PY_CACHE
 
 
 def _kwargs(salida) -> dict:

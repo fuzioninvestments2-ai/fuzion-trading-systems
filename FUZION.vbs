@@ -15,5 +15,7 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 Set sh  = CreateObject("WScript.Shell")
 proj = fso.GetParentFolderName(WScript.ScriptFullName)
 sh.CurrentDirectory = proj
-' pythonw = sin ventana. El Centro de Control hace el resto (update + arranque + app).
+' pythonw = sin ventana (no parpadea). El Centro de Control BUSCA solo el Python
+' real que tiene las librerias (Python314) para lanzar los servicios, evitando el
+' Python "de la Store" (WindowsApps) que no las tiene.
 sh.Run "pythonw """ & proj & "\fuzion_fx\scripts\centro.py""", 0, False
