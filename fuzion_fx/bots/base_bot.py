@@ -28,6 +28,7 @@ from core.results_store import ResultsStore
 from core.risk_manager import RiskManager
 from core.signal_engine import SignalEngine, NEUTRAL
 from core.learning_engine import LearningEngine
+from core import news_guard
 from data.price_feed import PriceFeed, StubPriceFeed, CandleStoreFeed
 from telegram.notifier import TelegramNotifier
 from telegram.signal_formatter import SignalCardFormatter
@@ -36,6 +37,8 @@ from indicators.pips import pip_size
 
 # Base de velas COMPARTIDA que escribe el colector; los bots leen de aca.
 PO_CANDLES_DB = os.path.join(ROOT, "data", "db", "po_candles.db")
+# Calendario de noticias (bloqueo por evento de alto impacto). Editable en caliente.
+NEWS_PATH = os.path.join(ROOT, "config", "news.json")
 
 
 class BaseBot:
@@ -224,6 +227,8 @@ class BaseBot:
         """
         now = time.time() if now is None else now
         emitidas: List[Dict[str, Any]] = []
+        # Noticias: se releen cada pasada (el archivo se puede editar en caliente).
+        eventos = news_guard.cargar_eventos(NEWS_PATH)
 
         for pair in self.pairs:
             if not self._rate_ok(now):
@@ -248,6 +253,15 @@ class BaseBot:
             if self._last_dir.get(pair) == result["signal"]:
                 if now - self._last_emit_ts.get(pair, 0.0) < self.timeframe_seconds:
                     continue
+
+            # BLOQUEO POR NOTICIAS: en la ventana de una noticia de alto impacto no
+            # se opera (precio erratico, spread alto). Ventana = news_buffer_minutes.
+            bloqueo, evento = news_guard.en_bloqueo(
+                now, eventos, self.risk.news_buffer_minutes, pair)
+            if bloqueo:
+                self.log.info("Noticia bloquea %s: %s (±%d min)", pair,
+                              evento["titulo"], self.risk.news_buffer_minutes)
+                continue
 
             # FILTRO DE PAGO: solo emitir si el activo paga >= min_pct (72%). Es
             # exigencia del usuario: un pago bajo destruye la ventaja aunque el

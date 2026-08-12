@@ -1,0 +1,5 @@
+{
+  "_formato": "eventos[]: {cuando: ISO-8601 UTC (con Z), impacto: alto|medio|bajo, titulo, monedas:[USD,EUR,...]}. Solo 'alto' bloquea. Sin 'monedas' = bloqueo global. La ventana es news_buffer_minutes de cada bot (bots.yaml).",
+  "_ejemplo": {"cuando": "2026-08-12T12:30:00Z", "impacto": "alto", "titulo": "US CPI", "monedas": ["USD"]},
+  "eventos": []
+}
