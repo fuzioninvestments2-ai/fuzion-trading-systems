@@ -74,3 +74,8 @@ datasets/real/download_status.json
 
 # Resumenes diarios generados en runtime (no versionar)
 fuzion_fx/resumenes/
+
+# SQLite WAL/shared-memory (transitorios, no versionar)
+*.db-wal
+*.db-shm
+*.db-journal
