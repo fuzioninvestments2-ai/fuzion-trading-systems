@@ -35,6 +35,32 @@ def test_po_code_otc_vs_real() -> None:
     assert _po_code("EUR/USD", "real") == "EURUSD"
 
 
+def test_match_pair_robusto_por_formato() -> None:
+    """El matcheo reconoce el par venga como venga y respeta el mercado."""
+    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    tmp.close()
+    try:
+        col = _colector(tmp.name)
+        # Cualquier formato del MISMO mercado configurado mapea al par (CAD/JPY es
+        # uno de los 22 pares del bot).
+        if col.mercado == "real":
+            assert col._match_pair("CADJPY") == "CAD/JPY"
+            assert col._match_pair("cad/jpy") == "CAD/JPY"
+            assert col._match_pair("CAD-JPY") == "CAD/JPY"
+            # En real se IGNORA el simbolo OTC (otra serie de precio).
+            assert col._match_pair("CADJPY_otc") is None
+        else:
+            assert col._match_pair("CADJPY_otc") == "CAD/JPY"
+            assert col._match_pair("CADJPY") is None      # otc ignora el real
+        # Par que no es nuestro -> None.
+        assert col._match_pair("XAUUSD") is None
+        assert col._match_pair("") is None
+        assert col._match_pair(None) is None
+        col.store.close()
+    finally:
+        os.unlink(tmp.name)
+
+
 def test_tick_mapea_al_par() -> None:
     """Un tick del activo que envia PO (segun el mercado configurado) mapea a
     'EUR/USD'. Se deriva el codigo del mercado real del colector para no depender
@@ -106,6 +132,7 @@ def test_on_history_ignora_asset_desconocido() -> None:
 
 def _run_all() -> None:
     tests = [test_po_code_otc_vs_real,
+             test_match_pair_robusto_por_formato,
              test_tick_mapea_al_par,
              test_on_history_guarda_ohlc_real,
              test_on_history_ignora_timeframe_no_usado,

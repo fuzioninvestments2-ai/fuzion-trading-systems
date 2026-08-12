@@ -85,12 +85,10 @@ class PocketOptionCollector:
         self.agg = CandleAggregator(TIMEFRAMES)
         self.mercado = _mercado()
         self.pares = _pares()
-        # Lookup inverso: PO envia el activo (ej. 'EURUSD_otc') en ticks, historial
-        # y payouts. Se normaliza a MAYUSCULAS ('EURUSD_OTC') para matchear sin
-        # importar el casing con que venga. Al ENVIAR (set_asset) se usa el codigo
-        # con '_otc' en minuscula (formato que PO espera).
-        self._code2pair = {_po_code(p, self.mercado).upper(): p
-                           for p in self.pares}
+        # Mapa por CODIGO COMPACTO (solo letras): 'CADCHF' -> 'CAD/CHF'. Se usa para
+        # matchear cualquier formato que mande PO (ticks, historial, updateAssets)
+        # sin depender del separador ni del casing (ver _match_pair).
+        self._base2pair = {p.replace("/", "").upper(): p for p in self.pares}
 
         # Cliente PO reutilizado (bot/pocket_client.py). demo=True: solo lectura.
         # on_history: PO manda el OHLC REAL al suscribir/pedir historial -> se
@@ -100,6 +98,31 @@ class PocketOptionCollector:
                                          on_history=self._on_history,
                                          on_assets=self._on_assets, demo=True,
                                          logger=logging.getLogger("pocket_client"))
+
+    def _match_pair(self, simbolo) -> "str | None":
+        """
+        Mapea un simbolo de PO (de ticks, historial o updateAssets) a NUESTRO par,
+        robusto al formato: acepta 'CADCHF', 'cadchf', 'CAD/CHF', 'CADCHF_otc'.
+        Respeta el mercado configurado: en 'real' IGNORA los simbolos OTC y en 'otc'
+        ignora los reales (no se cruzan las dos series de precio). Devuelve el par
+        legible ('CAD/CHF') o None si no es uno de los nuestros / mercado que no va.
+        PORQUE: si el matcheo dependia del formato exacto y PO mandaba otro, el pago
+        no se guardaba y con require=True el bot no emitia aunque el par pagara 85%.
+        """
+        if simbolo is None:
+            return None
+        # Compactar a solo letras+OTC (sin separadores ni casing).
+        compact = (str(simbolo).strip().upper()
+                   .replace("/", "").replace("-", "").replace(" ", "")
+                   .replace("_", ""))
+        if not compact:
+            return None
+        es_otc = compact.endswith("OTC")
+        base = compact[:-3] if es_otc else compact
+        # real ignora OTC; otc ignora real.
+        if es_otc != (self.mercado == "otc"):
+            return None
+        return self._base2pair.get(base)
 
     def _on_assets(self, payload) -> None:
         """
@@ -114,7 +137,7 @@ class PocketOptionCollector:
         guardados = 0
         no_match = []
         for simbolo, pago in por_simbolo.items():
-            pair = self._code2pair.get(str(simbolo).upper())
+            pair = self._match_pair(simbolo)
             if pair is not None:
                 self.store.upsert_payout(pair, float(pago), ahora)
                 guardados += 1
@@ -143,8 +166,7 @@ class PocketOptionCollector:
         tf = int(parsed["period"] or 0)
         if tf not in TIMEFRAMES:
             return                                 # periodo que no analiza ningun bot
-        code = str(parsed.get("asset") or "").upper()
-        pair = self._code2pair.get(code)
+        pair = self._match_pair(parsed.get("asset"))
         if pair is None:
             return
         for (ts, o, h, l, c, vol) in parsed["velas"]:
@@ -152,7 +174,7 @@ class PocketOptionCollector:
 
     def _on_tick(self, asset: str, ts: int, price: float) -> None:
         """Cada precio nuevo: agrega en velas y persiste las que cierran + la viva."""
-        pair = self._code2pair.get(str(asset).upper())
+        pair = self._match_pair(asset)
         if pair is None:
             return
         cerradas = self.agg.add_tick(pair, int(ts), float(price))
