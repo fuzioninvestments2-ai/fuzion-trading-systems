@@ -181,14 +181,17 @@ def candles_json(pair: str, tf: int, n: int = 90,
     db = db_candles or DB_CANDLES
     if not os.path.exists(db):
         return {}
-    from collector.candle_store import CandleStore
-    store = CandleStore(db)
     try:
-        c = (store.get_real_candles(pair, int(tf), int(n))
-             or store.get_candles(pair, int(tf), int(n)))
-    finally:
-        store.close()
-    return c or {}
+        from collector.candle_store import CandleStore
+        store = CandleStore(db)
+        try:
+            c = (store.get_real_candles(pair, int(tf), int(n))
+                 or store.get_candles(pair, int(tf), int(n)))
+        finally:
+            store.close()
+        return c or {}
+    except Exception:
+        return {}                              # nunca romper el endpoint del grafico
 
 
 def analisis(pair: str, tf: int, n: int = 90,
@@ -203,29 +206,34 @@ def analisis(pair: str, tf: int, n: int = 90,
              "periodos": {}}
     if not c or len(c.get("close", [])) < 2:
         return vacio
-    from core.config import get_bot_config
-    from core.signal_engine import SignalEngine
-    from indicators.ema import ema_series
-    cfg = get_bot_config(TF_BOT.get(int(tf), "f4_m5"))
-    ind = cfg["indicators"]
-    close = c["close"]
-
-    def _limpia(arr):
-        return [None if (x != x) else round(float(x), 6) for x in arr]
-
-    ef = _limpia(ema_series(close, int(ind["ema_fast"])))
-    es = _limpia(ema_series(close, int(ind["ema_slow"])))
     try:
-        res = SignalEngine(ind, cfg["signal"]).analyze(c)
-        an = {"signal": res["signal"], "confirmations": res["confirmations"],
-              "votes": res.get("votes", {}), "readings": res.get("readings", {}),
-              "confirming": res.get("confirming", [])}
+        from core.config import get_bot_config
+        from core.signal_engine import SignalEngine
+        from indicators.ema import ema_series
+        cfg = get_bot_config(TF_BOT.get(int(tf), "f4_m5"))
+        ind = cfg["indicators"]
+        close = c["close"]
+
+        def _limpia(arr):
+            return [None if (x != x) else round(float(x), 6) for x in arr]
+
+        ef = _limpia(ema_series(close, int(ind["ema_fast"])))
+        es = _limpia(ema_series(close, int(ind["ema_slow"])))
+        try:
+            res = SignalEngine(ind, cfg["signal"]).analyze(c)
+            an = {"signal": res["signal"], "confirmations": res["confirmations"],
+                  "votes": res.get("votes", {}), "readings": res.get("readings", {}),
+                  "confirming": res.get("confirming", [])}
+        except Exception:
+            an = None
+        return {"candles": c, "ema_fast": ef, "ema_slow": es, "analisis": an,
+                "periodos": {"ema_fast": int(ind["ema_fast"]),
+                             "ema_slow": int(ind["ema_slow"]),
+                             "rsi": int(ind["rsi_period"])}}
     except Exception:
-        an = None
-    return {"candles": c, "ema_fast": ef, "ema_slow": es, "analisis": an,
-            "periodos": {"ema_fast": int(ind["ema_fast"]),
-                         "ema_slow": int(ind["ema_slow"]),
-                         "rsi": int(ind["rsi_period"])}}
+        # Aun con error del motor, devolver las velas para que el grafico dibuje.
+        return {"candles": c, "ema_fast": [], "ema_slow": [], "analisis": None,
+                "periodos": {}}
 
 
 def escaner(tf: int, now_ts: Optional[float] = None,
@@ -287,9 +295,17 @@ def escaner_matriz(now_ts: Optional[float] = None,
     decidir manual. Reusa escaner(tf) por cada timeframe.
     """
     tfs = [60, 120, 180, 300]
-    por_tf = {tf: {r["pair"]: r for r in escaner(tf, now_ts, db_candles)}
-              for tf in tfs}
-    pares = [p for _, _, _ in []] or list(next(iter(por_tf.values())).keys())
+    try:
+        por_tf = {tf: {r["pair"]: r for r in escaner(tf, now_ts, db_candles)}
+                  for tf in tfs}
+    except Exception:
+        por_tf = {tf: {} for tf in tfs}
+    # Los pares salen del registro (robusto aunque el escaner venga vacio).
+    try:
+        from core.config import get_bot_config
+        pares = get_bot_config("f1_m1")["pairs"]
+    except Exception:
+        pares = list(next(iter(por_tf.values()), {}).keys())
     filas = []
     for pair in pares:
         celdas = {}
