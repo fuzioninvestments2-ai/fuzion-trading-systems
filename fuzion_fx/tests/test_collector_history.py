@@ -20,7 +20,7 @@ _REPO_ROOT = os.path.dirname(_RAIZ)
 if _REPO_ROOT not in sys.path:
     sys.path.append(_REPO_ROOT)
 
-from collector.po_collector import PocketOptionCollector      # noqa: E402
+from collector.po_collector import PocketOptionCollector, _po_code   # noqa: E402
 
 
 def _colector(db_path: str) -> PocketOptionCollector:
@@ -28,12 +28,37 @@ def _colector(db_path: str) -> PocketOptionCollector:
     return PocketOptionCollector('42["auth",{"session":"x"}]', db_path=db_path)
 
 
+def test_po_code_otc_vs_real() -> None:
+    # OTC (lo que opera el usuario): sufijo _otc en minuscula. Real: sin sufijo.
+    assert _po_code("EUR/USD", "otc") == "EURUSD_otc"
+    assert _po_code("GBP/JPY", "otc") == "GBPJPY_otc"
+    assert _po_code("EUR/USD", "real") == "EURUSD"
+
+
+def test_tick_otc_mapea_al_par() -> None:
+    """Un tick del activo OTC (EURUSD_otc, como lo envia PO) mapea a 'EUR/USD'."""
+    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    tmp.close()
+    try:
+        col = _colector(tmp.name)
+        assert col.mercado == "otc"                # default del proyecto
+        # PO envia el asset con _otc en minuscula; el lookup lo normaliza.
+        col._on_tick("EURUSD_otc", 60, 1.2345)
+        velas = col.store.get_candles("EUR/USD", 60)
+        assert velas is not None and velas["close"][-1] == 1.2345
+        col.store.close()
+    finally:
+        os.unlink(tmp.name)
+
+
 def test_on_history_guarda_ohlc_real() -> None:
     tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
     tmp.close()
     try:
         col = _colector(tmp.name)
-        payload = {"asset": "EURUSD", "period": 300, "candles": [
+        # PO envia el activo OTC (EURUSD_otc): es el que opera el usuario. El
+        # colector lo mapea al par legible 'EUR/USD' en candles_real.
+        payload = {"asset": "EURUSD_otc", "period": 300, "candles": [
             {"time": 300, "open": 1.10, "high": 1.12, "low": 1.09, "close": 1.11,
              "volume": 4},
             {"time": 600, "open": 1.11, "high": 1.13, "low": 1.10, "close": 1.125,
@@ -54,7 +79,7 @@ def test_on_history_ignora_timeframe_no_usado() -> None:
     try:
         col = _colector(tmp.name)
         # period 900 no lo analiza ningun bot -> no se guarda.
-        col._on_history({"asset": "EURUSD", "period": 900, "candles": [
+        col._on_history({"asset": "EURUSD_otc", "period": 900, "candles": [
             {"time": 900, "open": 1, "high": 1, "low": 1, "close": 1}]})
         assert col.store.get_real_candles("EUR/USD", 900) is None
         col.store.close()
@@ -77,7 +102,9 @@ def test_on_history_ignora_asset_desconocido() -> None:
 
 
 def _run_all() -> None:
-    tests = [test_on_history_guarda_ohlc_real,
+    tests = [test_po_code_otc_vs_real,
+             test_tick_otc_mapea_al_par,
+             test_on_history_guarda_ohlc_real,
              test_on_history_ignora_timeframe_no_usado,
              test_on_history_ignora_asset_desconocido]
     for t in tests:

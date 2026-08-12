@@ -2,6 +2,14 @@
 # Cada bot: su timeframe, sus 22 pares, indicadores, riesgo, aprendizaje y su
 # sqlite propia. Los 4 comparten token y canal de Telegram (se resuelven de .env).
 
+# MERCADO que se opera en Pocket Option. "otc" = activos sinteticos de PO
+# (EURUSD_otc), que es lo que opera el usuario 24/7; "real" = mercado real
+# (EURUSD). CRITICO: el precio OTC y el real son SERIES DISTINTAS. Si el colector
+# se suscribe al activo equivocado, los niveles y el win/loss no coinciden con lo
+# que el usuario ve en PO. Los pares se listan sin sufijo; el colector agrega
+# "_otc" segun este valor.
+market: otc
+
 # Filtro de PAGO (payout) real de Pocket Option, aplicado a los 4 bots. El usuario
 # opera la banda 72%-92%: emite solo si el pago del activo esta en ese rango.
 # require=true: si el colector aun no recibio el pago del par, NO se emite (mejor

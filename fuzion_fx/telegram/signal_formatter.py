@@ -79,7 +79,11 @@ class SignalCardFormatter:
         # Mercado explicito del bot; si no viene, se deriva de la hora UTC.
         mercado = d.get("mercado") or self.session_from_utc_hour(d.get("utc_hour", 0))
         off = int(d.get("tz_offset", 0))
+        # OTC != real: mostrar el sufijo para que el usuario abra el MISMO activo en
+        # PO (el analisis y la liquidacion son sobre el OTC sintetico).
         pair_txt = str(d["par"]).replace("/", "")
+        if d.get("es_otc"):
+            pair_txt = f"{pair_txt} OTC"
         bot_name = d.get("bot_name", "FUZION FX")
         card_label = d.get("card_label", "")
         label_txt = f"  ({card_label})" if card_label else ""
@@ -111,9 +115,10 @@ class SignalCardFormatter:
         bot_name = d.get("bot_name", "FUZION FX")
         card_label = d.get("card_label", "")
         label_txt = f" ({card_label})" if card_label else ""
+        par_txt = f"{d['par']} OTC" if d.get("es_otc") else str(d["par"])
 
         txt = (
-            f"🏁 *{bot_name}* · *{d['par']}*{label_txt}\n"
+            f"🏁 *{bot_name}* · *{par_txt}*{label_txt}\n"
             f"Resultado: *{icono}*\n"
             f"Direccion: {d['direccion']}\n"
             f"Entrada: {float(d['entrada']):.5f}  →  Cierre: {float(d['cierre']):.5f}\n"

@@ -42,27 +42,43 @@ class ResultsStore:
                     confirmations INTEGER,
                     price         REAL,
                     atr           REAL,
+                    entry_ts      INTEGER,     -- borde de vela que OPERA el humano
                     resolved      INTEGER DEFAULT 0,
                     result        TEXT,        -- win / loss / tie / NULL
                     pnl           REAL DEFAULT 0
                 )""")
             self.conn.execute("""CREATE INDEX IF NOT EXISTS idx_signals_setup
                                  ON signals (setup_id, resolved)""")
+            # Migracion: agregar entry_ts a bases viejas (sin la columna). Guarda el
+            # MISMO borde de entrada que la tarjeta le anuncia al humano, para que la
+            # liquidacion use EXACTAMENTE esa vela (antes se recalculaba desde ts y
+            # podia caer en otra vela -> win/loss y horarios cruzados).
+            cols = {r[1] for r in self.conn.execute(
+                "PRAGMA table_info(signals)").fetchall()}
+            if "entry_ts" not in cols:
+                self.conn.execute("ALTER TABLE signals ADD COLUMN entry_ts INTEGER")
             self.conn.commit()
 
     def save_signal(self, rec: Dict[str, Any]) -> int:
-        """Guarda una senal emitida (pendiente de resultado). Devuelve su id."""
+        """Guarda una senal emitida (pendiente de resultado). Devuelve su id.
+
+        entry_ts = borde de vela que el humano opera (el que anuncia la tarjeta).
+        Se persiste para liquidar contra ESA vela exacta. Si el bot no lo provee,
+        None (la liquidacion cae al calculo legado desde ts).
+        """
         ts = int(rec.get("ts") or time.time())
+        entry_ts = rec.get("entry_ts")
+        entry_ts = int(entry_ts) if entry_ts is not None else None
         with self._lock:
             cur = self.conn.execute(
                 """INSERT INTO signals
                    (ts, pair, timeframe, direction, setup_id, confirmations,
-                    price, atr)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    price, atr, entry_ts)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (ts, rec.get("pair", ""), rec.get("timeframe", ""),
                  rec.get("direction", ""), rec.get("setup_id"),
                  int(rec.get("confirmations", 0)), float(rec.get("price", 0.0)),
-                 float(rec.get("atr", 0.0))))
+                 float(rec.get("atr", 0.0)), entry_ts))
             self.conn.commit()
             return cur.lastrowid
 
@@ -81,11 +97,11 @@ class ResultsStore:
         """
         with self._lock:
             rows = self.conn.execute(
-                """SELECT id, pair, timeframe, direction, price, ts
+                """SELECT id, pair, timeframe, direction, price, ts, entry_ts
                    FROM signals WHERE resolved=0 AND ts <= ?
                    ORDER BY ts ASC""", (int(cutoff_ts),)).fetchall()
         return [{"id": r[0], "pair": r[1], "timeframe": r[2], "direction": r[3],
-                 "price": r[4], "ts": r[5]} for r in rows]
+                 "price": r[4], "ts": r[5], "entry_ts": r[6]} for r in rows]
 
     def setup_stats(self, setup_id: str) -> Dict[str, Any]:
         """{trades, wins, losses, win_pct} de un setup ya resuelto."""

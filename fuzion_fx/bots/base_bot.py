@@ -23,7 +23,7 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 
-from core.config import get_bot_config, ROOT
+from core.config import get_bot_config, load_config, ROOT
 from core.results_store import ResultsStore
 from core.risk_manager import RiskManager
 from core.signal_engine import SignalEngine, NEUTRAL
@@ -55,6 +55,13 @@ class BaseBot:
         self.timeframe_seconds = int(cfg["timeframe_seconds"])
         self.card_label = cfg["card_label"]
         self.max_signals_per_hour = int(cfg["signal"].get("max_signals_per_hour", 10))
+        # Mercado operado (otc/real): el colector se suscribe a ese activo y la
+        # tarjeta lo muestra, para que el usuario opere el MISMO (OTC != real: son
+        # series de precio distintas). Se lee del top-level 'market' del yaml.
+        try:
+            self.mercado = str(load_config().get("market", "otc")).lower()
+        except Exception:
+            self.mercado = "otc"
 
         # store inyectable (tests usan ':memory:'); por defecto, la sqlite del bot.
         self.store = store or ResultsStore(cfg["db_path"])
@@ -169,24 +176,31 @@ class BaseBot:
 
     # ------------------------------------------------------------- tarjeta rica
     def build_card(self, pair: str, result: Dict[str, Any],
-                   payout: Optional[float] = None) -> str:
+                   payout: Optional[float] = None,
+                   entry_ts: Optional[int] = None) -> str:
         """
         Arma el dict de datos POR PAR y delega el formato en SignalCardFormatter.
         El bot solo calcula (tiempos, ATR en pips, acierto por par); el formato
         (estrella, colores, mercado, disclaimer) vive en el formatter (Regla 1).
         Los tiempos van en hora LOCAL de la PC.
+
+        entry_ts: borde de vela de entrada (epoch seg) YA calculado al emitir. Es
+        el MISMO que se guarda y se liquida, para que la hora anunciada y la vela
+        operada sean identicas. Si no se pasa, se calcula aca (compatibilidad).
         """
         from datetime import datetime, timezone
 
         ahora = datetime.now().astimezone()          # local, con tz
         off = ahora.utcoffset()
         horas_off = int(off.total_seconds() // 3600) if off else 0
-        # Entrada = proximo borde de vela; vence = entrada + timeframe.
+        # Entrada = borde de vela ya fijado al emitir; vence = entrada + timeframe.
         seg = self.timeframe_seconds
-        epoch = int(ahora.timestamp())
-        entrada_ep = epoch - (epoch % seg) + seg
-        entrada = datetime.fromtimestamp(entrada_ep).astimezone()
-        vence = datetime.fromtimestamp(entrada_ep + seg).astimezone()
+        if entry_ts is None:
+            epoch = int(ahora.timestamp())
+            entry_ts = epoch - (epoch % seg) + seg
+        entry_ts = int(entry_ts)
+        entrada = datetime.fromtimestamp(entry_ts).astimezone()
+        vence = datetime.fromtimestamp(entry_ts + seg).astimezone()
 
         # ATR en pips (volatilidad reciente real).
         ps = pip_size(pair)
@@ -205,6 +219,7 @@ class BaseBot:
             "bot_name": self.name,
             "card_label": etiqueta,
             "par": pair,
+            "es_otc": self.mercado == "otc",     # muestra "OTC" -> operar el activo correcto
             "direccion": result["signal"],
             "hora_entrada": entrada.strftime("%H:%M"),
             "hora_vencimiento": vence.strftime("%H:%M"),
@@ -296,14 +311,27 @@ class BaseBot:
                 continue
             result = confirmado                # usar la lectura fresca confirmada
 
+            # Borde de entrada = proximo borde de vela DESDE EL INSTANTE DE EMISION
+            # (tras el pre-filtro de 10s, que es cuando el humano recibe la tarjeta y
+            # entra). Se calcula UNA sola vez, se guarda y lo usan TANTO la tarjeta
+            # como la liquidacion -> operan EXACTAMENTE la misma vela. Antes la
+            # tarjeta lo derivaba de datetime.now() y resolve_pending lo recalculaba
+            # desde ts (inicio del escaneo, ~10s+ antes): si un borde caia en el
+            # medio, anunciaba una vela y liquidaba otra (horarios y win/loss
+            # cruzados, justo lo que se veia mal).
+            emitido = time.time()
+            tf = self.timeframe_seconds
+            entry_border = int(emitido) - (int(emitido) % tf) + tf
+
             # Emitir: persistir + notificar (tarjeta + grafico) + contadores.
-            rec = {"ts": int(now), "pair": pair, "timeframe": self.timeframe,
+            rec = {"ts": int(emitido), "pair": pair, "timeframe": self.timeframe,
                    "direction": result["signal"], "setup_id": result["setup_id"],
                    "confirmations": result["confirmations"],
-                   "price": result["price"], "atr": result["atr"]}
+                   "price": result["price"], "atr": result["atr"],
+                   "entry_ts": entry_border}
             sid = self.store.save_signal(rec)
             rec["id"] = sid
-            card = self.build_card(pair, result, payout=pago)
+            card = self.build_card(pair, result, payout=pago, entry_ts=entry_border)
             if self.notifier:
                 # Grafico coordinado con la senal (velas frescas + direccion + entrada).
                 img = None
@@ -336,9 +364,10 @@ class BaseBot:
             self.log.info("Senal emitida: %s %s (setup %s)", pair,
                           result["signal"], result["setup_id"])
 
-            # CHECKPOINT: agendar revision X seg antes del cierre de la vela.
-            expiry = int(now) - (int(now) % self.timeframe_seconds) + self.timeframe_seconds
-            self._schedule_checkpoint(pair, result["signal"], expiry, result, now)
+            # CHECKPOINT: agendar revision X seg antes del CIERRE de la vela operada
+            # (entry_border..entry_border+tf), la misma que se liquida.
+            expiry = entry_border + tf
+            self._schedule_checkpoint(pair, result["signal"], expiry, result, emitido)
 
         return emitidas
 
@@ -449,10 +478,13 @@ class BaseBot:
         nulas = 0
         for s in self.store.pending_older_than(int(cutoff)):
             ts = int(s["ts"])
-            # Borde de entrada = proximo multiplo de tf tras la deteccion (misma
-            # formula que la tarjeta en build_card). La vela operada abre ahi y
-            # vence en borde+tf.
-            entry_border = ts - (ts % tf) + tf
+            # Borde de entrada = el que se FIJO y guardo al emitir (entry_ts): la
+            # tarjeta anuncio ESE borde y la vela operada abre ahi y vence en
+            # borde+tf. Se liquida contra la MISMA vela que vio el humano. Fallback
+            # legado (senales viejas sin entry_ts): recalcular desde ts.
+            entry_border = s.get("entry_ts")
+            entry_border = int(entry_border) if entry_border is not None else (
+                ts - (ts % tf) + tf)
             expiry = entry_border + tf
             vela = real_candle_at(s["pair"], tf, entry_border)
             if vela is None:
@@ -509,6 +541,7 @@ class BaseBot:
             "bot_name": self.name,
             "card_label": self.card_label or self.name,
             "par": pair,                       # con barra (GBP/AUD)
+            "es_otc": self.mercado == "otc",
             "direccion": s["direction"],
             "resultado": result,
             "entrada": entry,

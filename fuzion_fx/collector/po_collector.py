@@ -40,7 +40,7 @@ sys.path.insert(0, FUZION_ROOT)
 from collector.aggregator import CandleAggregator          # noqa: E402
 from collector.candle_store import CandleStore             # noqa: E402
 from collector.po_history import parse_history             # noqa: E402
-from core.config import get_bot_config, ROOT               # noqa: E402
+from core.config import get_bot_config, load_config, ROOT  # noqa: E402
 
 TIMEFRAMES = [60, 120, 180, 300]                            # M1, M2, M3, M5
 SEGUNDOS_POR_PAR = 8                                        # ventana de escucha por par
@@ -49,9 +49,29 @@ DB_PATH = os.path.join(ROOT, "data", "db", "po_candles.db")
 log = logging.getLogger("po_collector")
 
 
-def _po_code(pair: str) -> str:
-    """'EUR/USD' -> 'EURUSD' (codigo de activo FX real en Pocket Option)."""
-    return pair.replace("/", "").upper()
+def _mercado() -> str:
+    """
+    'otc' (activos sinteticos de PO, lo que opera el usuario) o 'real'. Se lee de
+    config/bots.yaml (clave 'market'); default 'otc'. PORQUE: el precio OTC y el
+    real son series DISTINTAS; suscribirse al activo equivocado hacia que los
+    niveles y el win/loss no coincidieran con lo que el usuario ve en PO.
+    """
+    try:
+        return str(load_config().get("market", "otc")).lower()
+    except Exception:
+        return "otc"
+
+
+def _po_code(pair: str, mercado: str = "otc") -> str:
+    """
+    'EUR/USD' -> codigo de activo en Pocket Option segun el mercado:
+      - OTC (lo que opera el usuario): 'EURUSD_otc' (precio SINTETICO de PO).
+      - real: 'EURUSD' (mercado real).
+    El sufijo '_otc' va EN MINUSCULA: asi lo nombra PO al enviarlo y al recibir
+    changeSymbol/subfor. El casing se normaliza al hacer el lookup inverso.
+    """
+    base = pair.replace("/", "").upper()
+    return f"{base}_otc" if mercado == "otc" else base
 
 
 def _pares() -> list:
@@ -63,8 +83,14 @@ class PocketOptionCollector:
     def __init__(self, ssid: str, db_path: str = DB_PATH) -> None:
         self.store = CandleStore(db_path)
         self.agg = CandleAggregator(TIMEFRAMES)
+        self.mercado = _mercado()
         self.pares = _pares()
-        self._code2pair = {_po_code(p): p for p in self.pares}
+        # Lookup inverso: PO envia el activo (ej. 'EURUSD_otc') en ticks, historial
+        # y payouts. Se normaliza a MAYUSCULAS ('EURUSD_OTC') para matchear sin
+        # importar el casing con que venga. Al ENVIAR (set_asset) se usa el codigo
+        # con '_otc' en minuscula (formato que PO espera).
+        self._code2pair = {_po_code(p, self.mercado).upper(): p
+                           for p in self.pares}
 
         # Cliente PO reutilizado (bot/pocket_client.py). demo=True: solo lectura.
         # on_history: PO manda el OHLC REAL al suscribir/pedir historial -> se
@@ -134,7 +160,7 @@ class PocketOptionCollector:
             for pair in self.pares:
                 if self.client._stopped:
                     break
-                code = _po_code(pair)
+                code = _po_code(pair, self.mercado)
                 try:
                     # set_asset(60): ticks vivos + historial real M1. request_history:
                     # el OHLC real de los tf largos (120/180/300), que si no PO no
@@ -147,12 +173,12 @@ class PocketOptionCollector:
                 await asyncio.sleep(SEGUNDOS_POR_PAR)
 
     async def run(self) -> None:
-        log.info("Colector arrancado: %d pares, tf=%s, db=%s",
-                 len(self.pares), TIMEFRAMES, self.store.db_path)
+        log.info("Colector arrancado: %d pares, mercado=%s, tf=%s, db=%s",
+                 len(self.pares), self.mercado, TIMEFRAMES, self.store.db_path)
         # run() del cliente mantiene la conexion (reconecta solo); en paralelo
         # rotamos los pares. Ambas corren en el mismo loop (async, no hilos).
         await asyncio.gather(
-            self.client.run(asset=_po_code(self.pares[0]), period=60),
+            self.client.run(asset=_po_code(self.pares[0], self.mercado), period=60),
             self._rotar_pares(),
         )
 

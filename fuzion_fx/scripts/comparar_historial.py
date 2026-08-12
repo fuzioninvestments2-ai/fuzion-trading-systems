@@ -92,7 +92,16 @@ def _col_close(candles: Optional[Dict[str, List[float]]]) -> List[Tuple[int, flo
 
 
 def _po_code(pair: str) -> str:
-    return pair.replace("/", "").upper()
+    """Codigo de activo PO segun el mercado operado (config 'market'). OTC por
+    default (EURUSD_otc): la comparacion debe ser contra el MISMO activo que opera
+    el usuario y que guarda el colector, no el mercado real."""
+    base = pair.replace("/", "").upper()
+    try:
+        from core.config import load_config
+        mercado = str(load_config().get("market", "otc")).lower()
+    except Exception:
+        mercado = "otc"
+    return f"{base}_otc" if mercado == "otc" else base
 
 
 # --------------------------------------------------------------- captura en vivo

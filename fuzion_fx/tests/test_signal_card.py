@@ -103,6 +103,14 @@ def test_divisa_sin_barra() -> None:
     assert "EUR/USD" not in txt
 
 
+def test_divisa_otc_muestra_sufijo() -> None:
+    # Con es_otc la tarjeta muestra "EURUSD OTC": el usuario debe abrir el MISMO
+    # activo OTC en PO (el analisis y la liquidacion son sobre el OTC sintetico).
+    fmt = SignalCardFormatter()
+    txt = fmt.format_signal(_base(par="EUR/USD", es_otc=True))
+    assert "DIVISA: *EURUSD OTC*" in txt
+
+
 def test_bot_name_de_yaml() -> None:
     fmt = SignalCardFormatter()
     txt = fmt.format_signal(_base(bot_name="Fuzion FX 1M"))
@@ -128,6 +136,7 @@ def _run_all() -> None:
              test_acierto_por_par_no_se_mezcla, test_flecha_call_verde,
              test_flecha_put_roja, test_mercado_explicito,
              test_mercado_por_hora_utc_fallback, test_divisa_sin_barra,
+             test_divisa_otc_muestra_sufijo,
              test_bot_name_de_yaml, test_confirmaciones_cuenta_por_lista,
              test_zona_horaria_y_disclaimer]
     for t in tests:

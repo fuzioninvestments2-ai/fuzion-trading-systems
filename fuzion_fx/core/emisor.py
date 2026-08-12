@@ -24,9 +24,10 @@ TF_BOT = {60: "f1_m1", 120: "f2_m2", 180: "f3_m3", 300: "f4_m5"}
 
 def build_card_manual(pair: str, tf: int, direccion: str, nota: str = "",
                       payout: Optional[float] = None,
-                      now: Optional[float] = None) -> str:
+                      now: Optional[float] = None, es_otc: bool = False) -> str:
     """Tarjeta de senal MANUAL (Markdown) coherente con la del bot. Entrada = el
-    proximo borde de vela; vence = entrada + tf."""
+    proximo borde de vela; vence = entrada + tf. es_otc muestra el sufijo OTC para
+    que el afiliado opere el MISMO activo (igual que las tarjetas automaticas)."""
     now = time.time() if now is None else now
     tf = int(tf)
     seg = tf
@@ -37,8 +38,9 @@ def build_card_manual(pair: str, tf: int, direccion: str, nota: str = "",
     flecha = "🟩 CALL (poner ARRIBA)" if d == "CALL" else "🟥 PUT (poner ABAJO)"
     pago = f"\n💰 Pago del activo: {int(payout)}%" if payout is not None else ""
     extra = f"\n📝 {nota}" if nota else ""
+    par_txt = f"{pair} OTC" if es_otc else pair
     return (f"🤖 *FUZION FX — Señal (asesoría)*\n"
-            f"📊 *{pair}*\n{flecha}\n"
+            f"📊 *{par_txt}*\n{flecha}\n"
             f"⏰ HORA DE ENTRADA: *{entrada}*\n"
             f"⌛ VENCE: {vence}  ({TF_LABEL.get(tf, str(tf) + 's')})"
             f"{pago}{extra}\n"
@@ -52,12 +54,17 @@ def enviar_senal_manual(pair: str, tf: int, direccion: str, nota: str = "",
     temporalidad. Devuelve {ok, enviados, card}. ok=False si falta token/canal
     (no revienta). El envio real es best-effort (reintentos del notifier).
     """
+    # Card por defecto (sin OTC) para que el except SIEMPRE tenga algo que devolver
+    # aunque falle load_config; dentro del try se reconstruye con el mercado real.
     card = build_card_manual(pair, tf, direccion, nota, payout)
     try:
         from core.config import load_config
         from telegram.notifier import TelegramNotifier
         from core import afiliados
-        tg = load_config().get("telegram", {})
+        cfg = load_config()
+        es_otc = str(cfg.get("market", "otc")).lower() == "otc"
+        card = build_card_manual(pair, tf, direccion, nota, payout, es_otc=es_otc)
+        tg = cfg.get("telegram", {})
         token, canal = tg.get("bot_token"), tg.get("channel_id")
         if not (token and canal):
             return {"ok": False, "enviados": 0, "card": card,
