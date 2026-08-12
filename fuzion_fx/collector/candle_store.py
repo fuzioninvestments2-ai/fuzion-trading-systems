@@ -47,6 +47,22 @@ class CandleStore:
                 volume  REAL DEFAULT 0,
                 PRIMARY KEY (pair, tf, ts)
             )""")
+        # candles_real: velas OHLC REALES que PO envia por on_history (fuente de
+        # verdad). Tabla SEPARADA de `candles` (ticks ralos, backup) para que el
+        # OHLC real sea identificable y priorizable en la lectura de senales y en
+        # la resolucion. Misma forma y PRIMARY KEY (se reescribe al reenviarse).
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS candles_real (
+                pair    TEXT,
+                tf      INTEGER,
+                ts      INTEGER,
+                open    REAL,
+                high    REAL,
+                low     REAL,
+                close   REAL,
+                volume  REAL DEFAULT 0,
+                PRIMARY KEY (pair, tf, ts)
+            )""")
         self.conn.commit()
 
     def upsert_candle(self, pair: str, tf: int, ts: int, o: float, h: float,
@@ -62,15 +78,29 @@ class CandleStore:
              float(volume)))
         self.conn.commit()
 
-    def get_candles(self, pair: str, tf: int,
-                    count: int = 200) -> Optional[Dict[str, List[float]]]:
+    def upsert_real_candle(self, pair: str, tf: int, ts: int, o: float, h: float,
+                           l: float, c: float, volume: float = 0.0) -> None:
         """
-        Ultimas `count` velas del par+tf en orden CRONOLOGICO
-        {open,high,low,close,volume}. None si no hay ninguna.
+        Inserta o actualiza una vela REAL (OHLC de PO por on_history). A diferencia
+        del tick, aca se reescribe TODO (incluido open): PO reenvia la vela ya
+        cerrada y su version mas reciente es la buena.
         """
+        self.conn.execute(
+            """INSERT INTO candles_real (pair, tf, ts, open, high, low, close, volume)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(pair, tf, ts) DO UPDATE SET
+                 open=excluded.open, high=excluded.high, low=excluded.low,
+                 close=excluded.close, volume=excluded.volume""",
+            (pair, int(tf), int(ts), float(o), float(h), float(l), float(c),
+             float(volume)))
+        self.conn.commit()
+
+    def _get_candles(self, tabla: str, pair: str, tf: int,
+                     count: int) -> Optional[Dict[str, List[float]]]:
+        """Lectura comun de velas (tabla `candles` o `candles_real`)."""
         rows = self.conn.execute(
-            """SELECT ts, open, high, low, close, volume FROM candles
-               WHERE pair=? AND tf=? ORDER BY ts DESC LIMIT ?""",
+            f"""SELECT ts, open, high, low, close, volume FROM {tabla}
+                WHERE pair=? AND tf=? ORDER BY ts DESC LIMIT ?""",
             (pair, int(tf), int(count))).fetchall()
         if not rows:
             return None
@@ -84,11 +114,35 @@ class CandleStore:
             "volume": [r[5] for r in rows],
         }
 
+    def get_candles(self, pair: str, tf: int,
+                    count: int = 200) -> Optional[Dict[str, List[float]]]:
+        """Ultimas `count` velas de TICKS (backup) del par+tf. None si no hay."""
+        return self._get_candles("candles", pair, int(tf), int(count))
+
+    def get_real_candles(self, pair: str, tf: int,
+                         count: int = 200) -> Optional[Dict[str, List[float]]]:
+        """Ultimas `count` velas REALES (fuente de verdad) del par+tf. None si no hay."""
+        return self._get_candles("candles_real", pair, int(tf), int(count))
+
     def price_at(self, pair: str, tf: int, ts: int) -> Optional[float]:
-        """Cierre de la primera vela con ts >= al pedido (para resolver senales)."""
+        """Cierre de la primera vela (tick) con ts >= al pedido. Backup/legado."""
         row = self.conn.execute(
             """SELECT close FROM candles WHERE pair=? AND tf=? AND ts >= ?
                ORDER BY ts ASC LIMIT 1""", (pair, int(tf), int(ts))).fetchone()
+        return float(row[0]) if row else None
+
+    def price_at_real(self, pair: str, tf: int, ts: int) -> Optional[float]:
+        """
+        Cierre de la vela REAL cuyo bucket CONTIENE `ts` (para resolver contra el
+        precio real de PO al vencimiento). bucket = ts - (ts % tf), misma
+        convencion que el aggregator. None si no hay esa vela real (no se
+        interpola ni se busca una lejana: sin dato real -> lo maneja el caller).
+        """
+        tf = int(tf)
+        bucket = int(ts) - (int(ts) % tf) if tf > 0 else int(ts)
+        row = self.conn.execute(
+            """SELECT close FROM candles_real WHERE pair=? AND tf=? AND ts=?
+               LIMIT 1""", (pair, tf, bucket)).fetchone()
         return float(row[0]) if row else None
 
     def close(self) -> None:

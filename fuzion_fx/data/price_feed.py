@@ -91,15 +91,33 @@ class CandleStoreFeed(PriceFeed):
 
     def get_candles(self, pair: str, timeframe_seconds: int,
                     count: int = 200) -> Optional[Dict[str, List[float]]]:
+        """
+        Velas para el analisis. PRIORIZA el OHLC real de PO (candles_real, fuente
+        de verdad); solo cae a los ticks ralos (candles) como backup cuando aun no
+        hay velas reales de ese par+tf. Asi las senales se calculan sobre el precio
+        real, no sobre el tick viciado.
+        """
         store = self._get_store()
         if store is None:
             return None
-        return store.get_candles(pair, int(timeframe_seconds), count)
+        tf = int(timeframe_seconds)
+        real = store.get_real_candles(pair, tf, count)
+        if real and len(real.get("close", [])) >= 2:
+            return real
+        return store.get_candles(pair, tf, count)
 
     def price_at(self, pair: str, timeframe_seconds: int,
                  ts: int) -> Optional[float]:
-        """Cierre al vencimiento (para resolver senales). None si no hay dato."""
+        """Cierre al vencimiento sobre TICKS (backup/legado). Ver price_at_real."""
         store = self._get_store()
         if store is None:
             return None
         return store.price_at(pair, int(timeframe_seconds), int(ts))
+
+    def price_at_real(self, pair: str, timeframe_seconds: int,
+                      ts: int) -> Optional[float]:
+        """Cierre REAL de PO en la vela que contiene `ts`. None si no hay dato real."""
+        store = self._get_store()
+        if store is None:
+            return None
+        return store.price_at_real(pair, int(timeframe_seconds), int(ts))

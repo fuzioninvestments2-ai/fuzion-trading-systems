@@ -39,6 +39,7 @@ sys.path.insert(0, FUZION_ROOT)
 
 from collector.aggregator import CandleAggregator          # noqa: E402
 from collector.candle_store import CandleStore             # noqa: E402
+from collector.po_history import parse_history             # noqa: E402
 from core.config import get_bot_config, ROOT               # noqa: E402
 
 TIMEFRAMES = [60, 120, 180, 300]                            # M1, M2, M3, M5
@@ -66,9 +67,32 @@ class PocketOptionCollector:
         self._code2pair = {_po_code(p): p for p in self.pares}
 
         # Cliente PO reutilizado (bot/pocket_client.py). demo=True: solo lectura.
+        # on_history: PO manda el OHLC REAL al suscribir/pedir historial -> se
+        # guarda como fuente de verdad (candles_real), aparte de los ticks ralos.
         from bot.pocket_client import PocketOptionClient
-        self.client = PocketOptionClient(ssid, on_tick=self._on_tick, demo=True,
+        self.client = PocketOptionClient(ssid, on_tick=self._on_tick,
+                                         on_history=self._on_history, demo=True,
                                          logger=logging.getLogger("pocket_client"))
+
+    def _on_history(self, payload) -> None:
+        """
+        Historial de PO (updateHistoryNewFast / loadHistoryPeriod): son las velas
+        REALES que dibuja la plataforma. Se guardan en candles_real SOLO para los
+        timeframes que usan los bots (60/120/180/300). El parseo vive en
+        collector/po_history.py (compartido con la herramienta de comparacion).
+        """
+        parsed = parse_history(payload)
+        if not parsed:
+            return
+        tf = int(parsed["period"] or 0)
+        if tf not in TIMEFRAMES:
+            return                                 # periodo que no analiza ningun bot
+        code = str(parsed.get("asset") or "").upper()
+        pair = self._code2pair.get(code)
+        if pair is None:
+            return
+        for (ts, o, h, l, c, vol) in parsed["velas"]:
+            self.store.upsert_real_candle(pair, tf, ts, o, h, l, c, vol)
 
     def _on_tick(self, asset: str, ts: int, price: float) -> None:
         """Cada precio nuevo: agrega en velas y persiste las que cierran + la viva."""
@@ -94,8 +118,14 @@ class PocketOptionCollector:
             for pair in self.pares:
                 if self.client._stopped:
                     break
+                code = _po_code(pair)
                 try:
-                    await self.client.set_asset(_po_code(pair), period=60)
+                    # set_asset(60): ticks vivos + historial real M1. request_history:
+                    # el OHLC real de los tf largos (120/180/300), que si no PO no
+                    # manda (solo emite historial del periodo suscripto). Termina en
+                    # 60 para seguir recibiendo ticks M1. Tiempos a afinar en vivo.
+                    await self.client.set_asset(code, period=60)
+                    await self.client.request_history(code, [120, 180, 300])
                 except Exception:
                     log.exception("No se pudo cambiar a %s", pair)
                 await asyncio.sleep(SEGUNDOS_POR_PAR)
