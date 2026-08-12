@@ -124,9 +124,41 @@ def test_cadena_bloquea_por_pago_fuera_de_banda() -> None:
         os.unlink(tmp.name)
 
 
+def test_tarjeta_salud_refleja_estado() -> None:
+    """La tarjeta de salud dice, en claro, si busca o que lo frena."""
+    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    tmp.close()
+    try:
+        col = PocketOptionCollector('42["auth",{"session":"x"}]', db_path=tmp.name)
+        tf = 60
+        code = _po_code("EUR/USD", col.mercado)
+        bot = BaseBot("f1_m1", price_feed=CandleStoreFeed(tmp.name),
+                      store=ResultsStore(":memory:"))
+        bot.pairs = ["EUR/USD"]
+        bot.timeframe_seconds = tf
+
+        # Sin nada aun: sin datos.
+        e0 = bot.estado_operativo()
+        assert e0["con_datos"] == 0 and e0["en_banda"] == []
+        assert "Sin velas" in bot._tarjeta_salud("arranque")
+
+        # Con pago en banda + velas: operativo.
+        col._on_assets(_payload_assets(code, 85))
+        col._on_history(_payload_history(
+            code, tf, 60_000_000, [1.1000 + 0.00006 * i for i in range(40)]))
+        e1 = bot.estado_operativo()
+        assert e1["con_datos"] == 1
+        assert any(p == "EUR/USD" for p, _ in e1["en_banda"])
+        assert "Operativo" in bot._tarjeta_salud("latido (1h)")
+        col.store.close()
+    finally:
+        os.unlink(tmp.name)
+
+
 def _run_all() -> None:
     tests = [test_cadena_completa_emite_y_resuelve,
-             test_cadena_bloquea_por_pago_fuera_de_banda]
+             test_cadena_bloquea_por_pago_fuera_de_banda,
+             test_tarjeta_salud_refleja_estado]
     for t in tests:
         t()
         print(f"  OK  {t.__name__}")

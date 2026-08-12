@@ -554,20 +554,96 @@ class BaseBot:
         else:
             self.log.info("[DRY-RUN resultado] %s", txt.replace("\n", " | "))
 
+    # ------------------------------------------------- salud / latido (visibilidad)
+    def estado_operativo(self, now: Optional[float] = None) -> Dict[str, Any]:
+        """
+        Radiografia RAPIDA de por que emite o no AHORA: cuantos pares tienen velas
+        para analizar y cuantos tienen pago dentro de la banda. Es lo que necesita
+        el usuario para saber si el freno es el colector (sin velas), el pago (0 en
+        banda) o el motor (hay datos y pago pero no hubo setup). Solo lee.
+        """
+        now = time.time() if now is None else now
+        con_datos = 0
+        en_banda: List = []
+        for pair in self.pairs:
+            try:
+                c = self.feed.get_candles(pair, self.timeframe_seconds)
+                if c and len(c.get("close", [])) >= 2:
+                    con_datos += 1
+                p = self._payout_de(pair)
+                if p is not None and self.payout_min <= p <= self.payout_max:
+                    en_banda.append((pair, p))
+            except Exception:
+                continue
+        emitidas_hora = len([t for t in self._emitted_ts if t >= now - 3600.0])
+        return {"pares": len(self.pairs), "con_datos": con_datos,
+                "en_banda": en_banda, "emitidas_hora": emitidas_hora}
+
+    def _tarjeta_salud(self, prefijo: str, now: Optional[float] = None) -> str:
+        """Tarjeta de estado para Telegram: dice si busca o QUE lo frena, en claro."""
+        e = self.estado_operativo(now)
+        n_banda = len(e["en_banda"])
+        if e["con_datos"] == 0:
+            diag = ("⏳ Sin velas aún: el colector está cargando o el mercado está "
+                    "cerrado. En cuanto lleguen velas, analizo.")
+        elif n_banda == 0:
+            diag = (f"🚫 Ningún par con pago {int(self.payout_min)}-"
+                    f"{int(self.payout_max)}% ahora mismo. No emito hasta que haya "
+                    f"(el pago sube en horario activo).")
+        else:
+            muestra = ", ".join(f"{p} {int(v)}%" for p, v in sorted(
+                e["en_banda"], key=lambda x: -x[1])[:6])
+            diag = (f"✅ Operativo: {n_banda} pares con buen pago ({muestra}). "
+                    f"Buscando setups.")
+        return (f"🩺 *{self.name}* — {prefijo}\n"
+                f"Pares: {e['pares']} · con datos: {e['con_datos']} · "
+                f"pago {int(self.payout_min)}-{int(self.payout_max)}%: {n_banda}\n"
+                f"Señales última hora: {e['emitidas_hora']}\n"
+                f"{diag}")
+
+    def _notificar_salud(self, prefijo: str, now: Optional[float] = None) -> None:
+        """Manda la tarjeta de salud al Telegram del dueño (si está activo)."""
+        txt = self._tarjeta_salud(prefijo, now)
+        if self.notifier and control.telegram_activo(self.id):
+            try:
+                self.notifier.send_alert(txt)
+            except Exception:
+                self.log.warning("No se pudo enviar la tarjeta de salud")
+        else:
+            self.log.info("[DRY-RUN salud] %s", txt.replace("\n", " | "))
+
     # ------------------------------------------------------------- loop
     def run(self) -> None:
-        """Loop principal: resolver vencidas + una pasada, cada `timeframe_seconds`."""
+        """
+        Loop principal: resolver vencidas + una pasada. Escanea MÁS SEGUIDO que el
+        timeframe (cada `scan_interval`, tope 30s) para más análisis y reacción; el
+        anti-duplicado evita repetir la misma señal dentro del ciclo. Manda una
+        tarjeta de SALUD al arrancar y un latido cada hora (visibilidad: el usuario
+        ve al toque si busca o qué lo frena, sin mirar logs).
+        """
         self._running = True
-        self.log.info("%s arrancado (%d pares, cada %ds). Feed: %s | Telegram: %s",
-                      self.name, len(self.pairs), self.timeframe_seconds,
-                      type(self.feed).__name__, "ON" if self.notifier else "DRY-RUN")
+        # Cadencia de escaneo: mas energia = revisar seguido. No baja de 15s para no
+        # golpear el feed, ni pasa del timeframe (para M1 igual conviene 30s).
+        intervalo = int(getattr(self, "scan_interval",
+                                min(self.timeframe_seconds, 30)) or 30)
+        intervalo = max(15, intervalo)
+        self.log.info("%s arrancado (%d pares, escaneo cada %ds, tf %ds). Feed: %s | "
+                      "Telegram: %s", self.name, len(self.pairs), intervalo,
+                      self.timeframe_seconds, type(self.feed).__name__,
+                      "ON" if self.notifier else "DRY-RUN")
+        self._notificar_salud("arranque")          # el bot avisa que está vivo
+        ultimo_latido = time.time()
         while self._running:
             try:
                 self.resolve_pending()       # aprende de las senales ya vencidas
                 self.scan_once()             # busca nuevas
+                # Latido cada hora: sigue vivo + estado (aunque esté callado).
+                if time.time() - ultimo_latido >= 3600:
+                    self._notificar_salud("latido (1h)")
+                    ultimo_latido = time.time()
             except Exception:
                 self.log.exception("Error en la pasada; el bot sigue vivo")
-            time.sleep(self.timeframe_seconds)
+            time.sleep(intervalo)
 
     def stop(self) -> None:
         self._running = False
