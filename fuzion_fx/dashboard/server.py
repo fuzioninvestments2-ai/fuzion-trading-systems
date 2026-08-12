@@ -96,6 +96,37 @@ def ejecutar_accion(accion: str, params: dict) -> dict:
             return {"ok": False, "error": "bot desconocido"}
         control.set_telegram(bot, bool(params.get("valor", True)))
         return {"ok": True, "bot": bot, "valor": bool(params.get("valor", True))}
+    if accion.startswith("afiliado") or accion == "cobro":
+        from core import afiliados
+        if accion == "afiliado_alta":
+            tfs = params.get("timeframes", []) or []
+            aid = afiliados.alta(str(params.get("nombre", "")).strip() or "afiliado",
+                                 str(params.get("chat_id", "")).strip(),
+                                 [str(t) for t in tfs],
+                                 float(params.get("fee", 0) or 0))
+            return {"ok": True, "id": aid}
+        if accion == "afiliado_pago":
+            v = afiliados.marcar_pagado(int(params.get("id", 0)))
+            return {"ok": v is not None, "vence": v}
+        if accion == "afiliado_baja":
+            afiliados.baja(int(params.get("id", 0)))
+            return {"ok": True}
+        if accion == "afiliado_tf":
+            afiliados.set_timeframes(int(params.get("id", 0)),
+                                     [str(t) for t in params.get("timeframes", [])])
+            return {"ok": True}
+        if accion == "cobro":
+            afiliados.set_cobro(str(params.get("wallet", "")),
+                                float(params.get("precio", 0) or 0),
+                                str(params.get("moneda", "USDT")))
+            return {"ok": True}
+    if accion == "enviar_senal":
+        from core import emisor
+        pago = params.get("payout")
+        return emisor.enviar_senal_manual(
+            str(params.get("pair", "")), int(params.get("tf", 180) or 180),
+            str(params.get("direccion", "CALL")), str(params.get("nota", "")),
+            float(pago) if pago not in (None, "") else None)
     if accion == "escanear":
         return {"ok": True}
     return {"ok": False, "error": "accion desconocida"}
@@ -140,6 +171,16 @@ class Handler(BaseHTTPRequestHandler):
             body = json.dumps(panel_data.resumen_general()).encode("utf-8")
             self._send(200, body, "application/json; charset=utf-8")
             return
+        if ruta.path == "/api/analisis":
+            q = parse_qs(ruta.query)
+            pair = q.get("pair", ["EUR/USD"])[0]
+            try:
+                tf = int(q.get("tf", ["180"])[0])
+            except ValueError:
+                tf = 180
+            body = json.dumps(panel_data.analisis(pair, tf, 90)).encode("utf-8")
+            self._send(200, body, "application/json; charset=utf-8")
+            return
         if ruta.path == "/api/candles":
             q = parse_qs(ruta.query)
             pair = q.get("pair", ["EUR/USD"])[0]
@@ -148,6 +189,10 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 tf = 180
             body = json.dumps(panel_data.candles_json(pair, tf, 90)).encode("utf-8")
+            self._send(200, body, "application/json; charset=utf-8")
+            return
+        if ruta.path == "/api/afiliados":
+            body = json.dumps(panel_data.afiliados_panel()).encode("utf-8")
             self._send(200, body, "application/json; charset=utf-8")
             return
         if ruta.path == "/api/reporte":
@@ -159,6 +204,10 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 lim = 200
             body = json.dumps(panel_data.reporte_ordenes(bot, res, lim)).encode("utf-8")
+            self._send(200, body, "application/json; charset=utf-8")
+            return
+        if ruta.path == "/api/matriz":
+            body = json.dumps(panel_data.escaner_matriz()).encode("utf-8")
             self._send(200, body, "application/json; charset=utf-8")
             return
         if ruta.path == "/api/escaner":

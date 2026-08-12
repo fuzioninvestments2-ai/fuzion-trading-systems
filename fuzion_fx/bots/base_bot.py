@@ -30,6 +30,7 @@ from core.signal_engine import SignalEngine, NEUTRAL
 from core.learning_engine import LearningEngine
 from core import news_guard
 from core import control
+from core import afiliados
 from data.price_feed import PriceFeed, StubPriceFeed, CandleStoreFeed
 from telegram.notifier import TelegramNotifier
 from telegram.signal_formatter import SignalCardFormatter
@@ -303,11 +304,9 @@ class BaseBot:
             sid = self.store.save_signal(rec)
             rec["id"] = sid
             card = self.build_card(pair, result, payout=pago)
-            if self.notifier and control.telegram_activo(self.id):
-                # Grafico de velas del par como foto; si falla, va solo texto.
-                # Se REFRESCAN las velas (las de arriba son de antes del pre-filtro,
-                # ~10s viejas): asi el grafico coordina con la senal confirmada, y
-                # se le pasa direccion + precio de entrada para marcarlos.
+            if self.notifier:
+                # Grafico coordinado con la senal (velas frescas + direccion + entrada).
+                img = None
                 try:
                     velas_grafico = self.feed.get_candles(pair, self.timeframe_seconds) or candles
                     img = render_candles(
@@ -315,7 +314,18 @@ class BaseBot:
                         result["signal"], entry_price=result["price"])
                 except Exception:
                     img = None
-                self.notifier.send(card, photo_buffer=img)
+                # 1) Al DUENO: respeta su toggle de Telegram por temporalidad.
+                if control.telegram_activo(self.id):
+                    self.notifier.send(card, photo_buffer=img)
+                # 2) A los AFILIADOS activos suscriptos a esta temporalidad. En bytes
+                #    (no BytesIO) para reenviar la misma foto a muchos sin consumirla.
+                img_bytes = img.getvalue() if img is not None else None
+                for a in afiliados.destinatarios_para(self.id):
+                    try:
+                        self.notifier.enviar_a(a["chat_id"], card, photo=img_bytes)
+                    except Exception:
+                        self.log.warning("No se pudo enviar a afiliado %s",
+                                         a.get("nombre"))
             else:
                 self.log.info("[DRY-RUN sin token] %s", card.replace("\n", " | "))
 

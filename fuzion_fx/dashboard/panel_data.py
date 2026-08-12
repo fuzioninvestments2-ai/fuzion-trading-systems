@@ -131,6 +131,13 @@ def reporte_ordenes(bot: Optional[str] = None, resultado: Optional[str] = None,
         "win_pct": round(100.0 * wins / (wins + losses), 1) if (wins + losses) else None}}
 
 
+def afiliados_panel(now_ts: Optional[float] = None) -> Dict[str, Any]:
+    """Datos de la seccion Afiliados: lista + resumen + config de cobro."""
+    from core import afiliados
+    return {"afiliados": afiliados.listar(now_ts), "resumen": afiliados.resumen(now_ts),
+            "cobro": afiliados.leer_cobro()}
+
+
 def estado_procesos() -> List[Dict[str, Any]]:
     """Procesos (colector + bots + resumen) y si estan vivos. Sin dependencias."""
     try:
@@ -184,6 +191,43 @@ def candles_json(pair: str, tf: int, n: int = 90,
     return c or {}
 
 
+def analisis(pair: str, tf: int, n: int = 90,
+             db_candles: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Velas REALES + series de EMA (rapida/lenta) para dibujar sobre el grafico, y
+    el veredicto del motor (voto de cada indicador + lecturas) para que el trader
+    ANALICE y de el visto bueno. NaN de warmup -> null (para el JSON).
+    """
+    c = candles_json(pair, tf, n, db_candles)
+    vacio = {"candles": {}, "ema_fast": [], "ema_slow": [], "analisis": None,
+             "periodos": {}}
+    if not c or len(c.get("close", [])) < 2:
+        return vacio
+    from core.config import get_bot_config
+    from core.signal_engine import SignalEngine
+    from indicators.ema import ema_series
+    cfg = get_bot_config(TF_BOT.get(int(tf), "f4_m5"))
+    ind = cfg["indicators"]
+    close = c["close"]
+
+    def _limpia(arr):
+        return [None if (x != x) else round(float(x), 6) for x in arr]
+
+    ef = _limpia(ema_series(close, int(ind["ema_fast"])))
+    es = _limpia(ema_series(close, int(ind["ema_slow"])))
+    try:
+        res = SignalEngine(ind, cfg["signal"]).analyze(c)
+        an = {"signal": res["signal"], "confirmations": res["confirmations"],
+              "votes": res.get("votes", {}), "readings": res.get("readings", {}),
+              "confirming": res.get("confirming", [])}
+    except Exception:
+        an = None
+    return {"candles": c, "ema_fast": ef, "ema_slow": es, "analisis": an,
+            "periodos": {"ema_fast": int(ind["ema_fast"]),
+                         "ema_slow": int(ind["ema_slow"]),
+                         "rsi": int(ind["rsi_period"])}}
+
+
 def escaner(tf: int, now_ts: Optional[float] = None,
             db_candles: Optional[str] = None,
             news_path: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -233,6 +277,40 @@ def escaner(tf: int, now_ts: Optional[float] = None,
     filas.sort(key=lambda f: (_RANK_ESTADO.get(f["estado"], 9),
                               -f["confirmations"], -(f["payout"] or 0)))
     return filas
+
+
+def escaner_matriz(now_ts: Optional[float] = None,
+                   db_candles: Optional[str] = None) -> Dict[str, Any]:
+    """
+    ESCANER de las 4 temporalidades a la vez: por cada par, su estado/senal en
+    1M/2M/3M/5M. Para verlo TODO de un vistazo (matriz par x temporalidad) y
+    decidir manual. Reusa escaner(tf) por cada timeframe.
+    """
+    tfs = [60, 120, 180, 300]
+    por_tf = {tf: {r["pair"]: r for r in escaner(tf, now_ts, db_candles)}
+              for tf in tfs}
+    pares = [p for _, _, _ in []] or list(next(iter(por_tf.values())).keys())
+    filas = []
+    for pair in pares:
+        celdas = {}
+        listos = 0
+        for tf in tfs:
+            r = por_tf[tf].get(pair, {})
+            celdas[tf] = {"estado": r.get("estado", "sin datos"),
+                          "signal": r.get("signal", "NEUTRAL"),
+                          "confirmations": r.get("confirmations", 0),
+                          "pasa_pago": r.get("pasa_pago", False),
+                          "bloqueo": r.get("bloqueo", False)}
+            if celdas[tf]["estado"] == "LISTO":
+                listos += 1
+        filas.append({"pair": pair, "listos": listos, "celdas": celdas,
+                      "payout": next((por_tf[tf].get(pair, {}).get("payout")
+                                      for tf in tfs
+                                      if por_tf[tf].get(pair, {}).get("payout") is not None),
+                                     None)})
+    filas.sort(key=lambda f: -f["listos"])
+    total_listos = sum(f["listos"] for f in filas)
+    return {"timeframes": tfs, "filas": filas, "total_listos": total_listos}
 
 
 def resumen_general(now_ts: Optional[float] = None) -> Dict[str, Any]:

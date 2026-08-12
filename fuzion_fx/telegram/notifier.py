@@ -71,6 +71,22 @@ class TelegramNotifier:
         # Respaldo: al menos mandar el texto de la tarjeta.
         return self.send_text(caption, parse_mode)
 
+    def enviar_a(self, chat_id: str, message: str, photo=None,
+                 parse_mode: str = "Markdown") -> bool:
+        """
+        Manda la MISMA tarjeta a OTRO chat (un afiliado), con el mismo token. Para
+        difundir a varios: `photo` en BYTES (no BytesIO), asi se puede reenviar a
+        muchos sin que se consuma el puntero. Si falla la foto, cae a texto.
+        """
+        if photo is None:
+            return self._post("sendMessage", {
+                "chat_id": chat_id, "text": message, "parse_mode": parse_mode})
+        ok = self._post("sendPhoto",
+                        {"chat_id": chat_id, "caption": message,
+                         "parse_mode": parse_mode}, files={"photo": photo})
+        return ok or self._post("sendMessage", {
+            "chat_id": chat_id, "text": message, "parse_mode": parse_mode})
+
     def send(self, message: str, photo_buffer=None,
              parse_mode: str = "Markdown") -> bool:
         """
