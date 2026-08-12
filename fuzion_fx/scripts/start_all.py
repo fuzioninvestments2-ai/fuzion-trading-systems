@@ -33,11 +33,17 @@ SCRIPT_DE = POR_NOMBRE                              # nombre -> servicio (con ar
 
 def _python_exe() -> str:
     """
-    Ejecutable python.exe (NO pythonw.exe) para lanzar los servicios. El vigilante
-    corre bajo pythonw (sin ventana); si lanzara los servicios con pythonw, se
-    caen (sin stdout/consola valida). Con python.exe + DETACHED_PROCESS corren SIN
-    ventana igual, y estables (asi lo hacia start_all, que funcionaba horas).
+    Python con el que lanzar los servicios. PREFIERE el 'python' del PATH: es el
+    que el usuario usa a mano y el que tiene las dependencias instaladas (PyYAML,
+    numpy, etc.). El vigilante puede correr bajo OTRO python (el 'pythonw' que
+    resuelve el .vbs) que NO tenga esas libs -> los servicios crasheaban con
+    'ModuleNotFoundError: yaml'. Fallbacks: python.exe junto a pythonw, o
+    sys.executable. DETACHED_PROCESS igual los deja sin ventana.
     """
+    import shutil
+    por_path = shutil.which("python")
+    if por_path:
+        return por_path
     exe = sys.executable or "python"
     if os.name == "nt" and os.path.basename(exe).lower() == "pythonw.exe":
         cand = os.path.join(os.path.dirname(exe), "python.exe")
