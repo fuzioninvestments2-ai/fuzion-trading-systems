@@ -15,7 +15,11 @@ _RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _RAIZ not in sys.path:
     sys.path.insert(0, _RAIZ)
 
-from scripts.vigilante import evaluar_salud                       # noqa: E402
+import os as _os
+import tempfile as _tempfile
+
+from scripts.vigilante import (evaluar_salud, vigilante_ya_corriendo,   # noqa: E402
+                               _tomar_lock, _soltar_lock)
 
 _UMBRALES = {"mudo_seg": 180, "gracia_pagos_seg": 120}
 
@@ -85,12 +89,34 @@ def test_db_sin_mtime_no_marca_mudo() -> None:
     assert "collector" not in plan["reiniciar"]
 
 
+def test_lock_instancia_unica() -> None:
+    tmp = _tempfile.NamedTemporaryFile(suffix=".lock", delete=False)
+    tmp.close()
+    lock = tmp.name
+    try:
+        # PID muerto en el lock -> se puede tomar (no hay vigilante vivo).
+        with open(lock, "w", encoding="utf-8") as f:
+            f.write("999999")
+        assert vigilante_ya_corriendo(lock) is False
+        # PID propio (vivo) -> ya hay vigilante -> el segundo no debe arrancar.
+        with open(lock, "w", encoding="utf-8") as f:
+            f.write(str(_os.getpid()))
+        assert vigilante_ya_corriendo(lock) is True
+        # Lock inexistente -> libre.
+        _os.remove(lock)
+        assert vigilante_ya_corriendo(lock) is False
+    finally:
+        if _os.path.exists(lock):
+            _os.remove(lock)
+
+
 def _run_all() -> None:
     tests = [test_todo_sano_no_hace_nada, test_reinicia_proceso_caido,
              test_colector_mudo_se_reinicia,
              test_colector_recien_arrancado_no_se_marca_mudo,
              test_colector_caido_no_duplica_reinicio,
-             test_alerta_pagos_solo_tras_gracia, test_db_sin_mtime_no_marca_mudo]
+             test_alerta_pagos_solo_tras_gracia, test_db_sin_mtime_no_marca_mudo,
+             test_lock_instancia_unica]
     for t in tests:
         t()
         print(f"  OK  {t.__name__}")

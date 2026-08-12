@@ -33,6 +33,7 @@ from scripts.start_all import (PROCESOS, SCRIPT_DE, ROOT,          # noqa: E402
                                lanzar_proceso, leer_pids, guardar_pids)
 
 DB_PATH = os.path.join(ROOT, "data", "db", "po_candles.db")
+LOCK_FILE = os.path.join(ROOT, "logs", "vigilante.lock")   # instancia unica
 INTERVALO_SEG = 20                     # cada cuanto revisa
 MUDO_SEG = 180                         # colector vivo pero sin escribir hace tanto -> mudo
 GRACIA_PAGOS_SEG = 120                 # margen tras arrancar antes de alertar por pagos
@@ -137,6 +138,33 @@ def _pagos_count(db_path: str) -> int:
         return 0
 
 
+def vigilante_ya_corriendo(lock_file: str = LOCK_FILE) -> bool:
+    """
+    True si YA hay un vigilante vivo (segun el PID del lock). Evita que dos
+    vigilantes (p.ej. doble clic en el .vbs) se pisen reiniciando procesos. Lock
+    huerfano (PID muerto) -> False, se puede tomar.
+    """
+    try:
+        with open(lock_file, "r", encoding="utf-8") as f:
+            pid = int(f.read().strip())
+    except (OSError, ValueError):
+        return False
+    return _proceso_vivo(pid)
+
+
+def _tomar_lock(lock_file: str = LOCK_FILE) -> None:
+    os.makedirs(os.path.dirname(lock_file), exist_ok=True)
+    with open(lock_file, "w", encoding="utf-8") as f:
+        f.write(str(os.getpid()))
+
+
+def _soltar_lock(lock_file: str = LOCK_FILE) -> None:
+    try:
+        os.remove(lock_file)
+    except OSError:
+        pass
+
+
 def _snapshot(pids: Dict[str, int], arranque: float, arranque_colector: float,
               ahora: float) -> Dict[str, Any]:
     procesos = {nombre: _proceso_vivo(pids.get(nombre)) for nombre, _ in PROCESOS}
@@ -183,6 +211,11 @@ def _setup_logging() -> None:
 
 def main() -> None:
     _setup_logging()
+    # Instancia unica: si ya hay un vigilante vivo, este se apaga (no duplicar).
+    if vigilante_ya_corriendo():
+        log.warning("Ya hay un vigilante activo (lock). Este proceso se cierra.")
+        return
+    _tomar_lock()
     notifier = _notifier()
     arranque = time.time()
     arranque_colector = arranque       # cuando arranco el colector actual (grace)
@@ -225,6 +258,8 @@ def main() -> None:
             time.sleep(INTERVALO_SEG)
     except KeyboardInterrupt:
         log.info("Vigilante detenido (los procesos siguen corriendo).")
+    finally:
+        _soltar_lock()             # liberar el candado para el proximo arranque
 
 
 if __name__ == "__main__":
