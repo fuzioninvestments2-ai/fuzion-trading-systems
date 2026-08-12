@@ -47,6 +47,9 @@ from core.config import get_bot_config, load_config, ROOT  # noqa: E402
 # piden por historial a PO (request_history). Las muy largas (4h/1D) no se agregan
 # desde ticks (haria falta conexion dedicada); se dejan para el historial batch.
 TIMEFRAMES = [5, 10, 15, 30, 60, 120, 180, 300, 600, 900, 1800, 3600]
+# Vela EN FORMACION que se persiste por tick (precio vivo): solo las operables
+# (<=5m). Las largas se llenan por historial, no por tick (evita 12 commits/tick).
+TF_VIVO = [tf for tf in TIMEFRAMES if tf <= 300]
 # Periodos que se piden por HISTORIAL real a PO en cada rotacion (los que PO sirve
 # como velas; las cortas <60s vienen de ticks en vivo).
 HISTORIAL_TF = [120, 180, 300, 600, 900, 1800, 3600]
@@ -188,8 +191,12 @@ class PocketOptionCollector:
         for (p, tf, bucket, ohlc) in cerradas:
             self.store.upsert_candle(p, tf, bucket, ohlc["open"], ohlc["high"],
                                      ohlc["low"], ohlc["close"], ohlc["volume"])
-        # Ademas, persiste la vela EN FORMACION de cada tf (precio vivo para los bots).
-        for tf in TIMEFRAMES:
+        # Ademas, persiste la vela EN FORMACION de las temporalidades OPERABLES
+        # (<=5m): es el precio vivo que necesitan los bots para la entrada. Las
+        # largas (10m-1h) cambian lento y se llenan por historial (request_history):
+        # escribirlas en CADA tick era desperdicio (12 commits/tick). Asi baja la
+        # carga de escritura del colector sin perder el precio vivo operable.
+        for tf in TF_VIVO:
             cur = self.agg.current(pair, tf)
             if cur:
                 bucket, o = cur
