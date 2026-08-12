@@ -28,9 +28,11 @@ def test_config_bots() -> None:
     assert config.bot_ids() == ["f1_m1", "f2_m2", "f3_m3", "f4_m5"]
     b = config.get_bot_config("f4_m5")
     assert b["timeframe_seconds"] == 300
-    # 3, no 4: con solo 4 indicadores votantes (2 tendencia + 2 reversion), exigir
-    # 4 es una contradiccion estructural y el 5M nunca emitia. Ver diagnostico.
-    assert b["signal"]["min_confirmations"] == 3
+    # 2, no 3 ni 4: con solo 4 indicadores votantes (2 tendencia + 2 reversion),
+    # que se OPONEN en los extremos, exigir 3+ deja el motor casi mudo (medido:
+    # 3 emite 0.6% de los patrones, 4 el 0%, 2 el 73%). 2 = mayoria simple. Ver
+    # test_integracion_e2e (cadena completa colector->bot->emite->resuelve).
+    assert b["signal"]["min_confirmations"] == 2
     assert len(b["pairs"]) == 22
     assert os.path.isabs(b["db_path"])
 

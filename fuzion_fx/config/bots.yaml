@@ -24,7 +24,7 @@ bots:
     card_label: "1 min - M1"
     pairs: [AUD/CAD, AUD/JPY, AUD/NZD, AUD/USD, CAD/JPY, CHF/JPY, EUR/AUD, EUR/CAD, EUR/CHF, EUR/GBP, EUR/JPY, EUR/USD, GBP/AUD, GBP/CAD, GBP/CHF, GBP/JPY, GBP/USD, NZD/JPY, NZD/USD, USD/CAD, USD/CHF, USD/JPY]
     indicators: {ema_fast: 9, ema_slow: 21, rsi_period: 14, rsi_oversold: 40, rsi_overbought: 60, macd_fast: 12, macd_slow: 26, macd_signal: 9, bb_period: 20, bb_std: 2.0, atr_period: 14}
-    signal: {min_confirmations: 3, max_signals_per_hour: 10}
+    signal: {min_confirmations: 2, max_signals_per_hour: 10}
     risk: {max_daily_trades_per_pair: 10, max_daily_loss_pct: 5.0, recovery_after_consecutive_losses: 3, news_buffer_minutes: 5, default_stake_pct: 1.0}
     learning: {min_trades_for_setup_evaluation: 10, discard_setup_below_win_pct: 40, prioritize_setup_above_win_pct: 70}
     checkpoint_offset: 20
@@ -38,7 +38,7 @@ bots:
     card_label: "2 min - M2"
     pairs: [AUD/CAD, AUD/JPY, AUD/NZD, AUD/USD, CAD/JPY, CHF/JPY, EUR/AUD, EUR/CAD, EUR/CHF, EUR/GBP, EUR/JPY, EUR/USD, GBP/AUD, GBP/CAD, GBP/CHF, GBP/JPY, GBP/USD, NZD/JPY, NZD/USD, USD/CAD, USD/CHF, USD/JPY]
     indicators: {ema_fast: 9, ema_slow: 21, rsi_period: 14, rsi_oversold: 40, rsi_overbought: 60, macd_fast: 12, macd_slow: 26, macd_signal: 9, bb_period: 20, bb_std: 2.0, atr_period: 14}
-    signal: {min_confirmations: 3, max_signals_per_hour: 8}
+    signal: {min_confirmations: 2, max_signals_per_hour: 8}
     risk: {max_daily_trades_per_pair: 10, max_daily_loss_pct: 5.0, recovery_after_consecutive_losses: 3, news_buffer_minutes: 5, default_stake_pct: 1.0}
     learning: {min_trades_for_setup_evaluation: 10, discard_setup_below_win_pct: 40, prioritize_setup_above_win_pct: 70}
     checkpoint_offset: 30
@@ -52,7 +52,7 @@ bots:
     card_label: "3 min - M3"
     pairs: [AUD/CAD, AUD/JPY, AUD/NZD, AUD/USD, CAD/JPY, CHF/JPY, EUR/AUD, EUR/CAD, EUR/CHF, EUR/GBP, EUR/JPY, EUR/USD, GBP/AUD, GBP/CAD, GBP/CHF, GBP/JPY, GBP/USD, NZD/JPY, NZD/USD, USD/CAD, USD/CHF, USD/JPY]
     indicators: {ema_fast: 9, ema_slow: 21, rsi_period: 14, rsi_oversold: 40, rsi_overbought: 60, macd_fast: 12, macd_slow: 26, macd_signal: 9, bb_period: 20, bb_std: 2.0, atr_period: 14}
-    signal: {min_confirmations: 3, max_signals_per_hour: 6}
+    signal: {min_confirmations: 2, max_signals_per_hour: 6}
     risk: {max_daily_trades_per_pair: 8, max_daily_loss_pct: 4.0, recovery_after_consecutive_losses: 2, news_buffer_minutes: 5, default_stake_pct: 1.0}
     learning: {min_trades_for_setup_evaluation: 8, discard_setup_below_win_pct: 40, prioritize_setup_above_win_pct: 70}
     checkpoint_offset: 30
@@ -70,11 +70,14 @@ bots:
     # emita sobre los pares con buen pago. El win-rate real se mide ahora sobre
     # datos limpios; si baja, se vuelve a subir el umbral.
     indicators: {ema_fast: 9, ema_slow: 21, rsi_period: 14, rsi_oversold: 40, rsi_overbought: 60, macd_fast: 12, macd_slow: 26, macd_signal: 9, bb_period: 20, bb_std: 2.0, atr_period: 14}
-    # min_confirmations 3 (no 4): el motor tiene SOLO 4 indicadores votantes y 2
-    # son de tendencia (ema, macd) y 2 de reversion (rsi, bb), que se oponen en
-    # los extremos; exigir 4 es una contradiccion estructural -> el 5M no emitia
-    # NUNCA (mudo desde 7/8). Con 3 emite como 2M/3M. Ver diagnostico_5m_2026-08-11.md.
-    signal: {min_confirmations: 3, max_signals_per_hour: 5}
+    # min_confirmations 2 (no 3 ni 4): el motor tiene SOLO 4 indicadores votantes,
+    # 2 de tendencia (ema, macd) y 2 de reversion (rsi, bb), que se OPONEN en los
+    # extremos. Medido sobre 360 patrones: con 3 confirmaciones emite el 0.6% (casi
+    # mudo), con 4 el 0.0%, con 2 el 73%. Exigir 3+ era la razon real de "no llegan
+    # senales". Con 2 (mayoria simple: 2 votos de un lado que superan al otro) el
+    # pipeline fluye; el pre-filtro 10s, el pago 72-92% y el aprendizaje recortan
+    # la calidad. Ver /tmp tasa de emision y test_integracion_e2e.
+    signal: {min_confirmations: 2, max_signals_per_hour: 5}
     risk: {max_daily_trades_per_pair: 6, max_daily_loss_pct: 3.0, recovery_after_consecutive_losses: 2, news_buffer_minutes: 10, default_stake_pct: 1.0}
     learning: {min_trades_for_setup_evaluation: 6, discard_setup_below_win_pct: 45, prioritize_setup_above_win_pct: 75}
     checkpoint_offset: 30
