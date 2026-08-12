@@ -62,7 +62,17 @@
   .banner.clear{background:rgba(38,230,166,.1);color:var(--green);border:1px solid rgba(38,230,166,.35)}
   .banner.block{background:rgba(255,93,108,.12);color:var(--red);border:1px solid rgba(255,93,108,.4)}
   select{background:#0a121f;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 8px}
-  #chart{width:100%;border-radius:8px;border:1px solid var(--line);background:#0e1116;min-height:180px}
+  #chart{width:100%;height:230px;border-radius:8px;border:1px solid var(--line);background:#0b0f16}
+  .scan{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+  .op{background:#0a121f;border:1px solid var(--line);border-radius:9px;padding:9px 11px}
+  .op .top{display:flex;justify-content:space-between;align-items:center}
+  .op .par{font-weight:700}
+  .op .st{font-size:10px;font-weight:800;letter-spacing:1px;padding:2px 7px;border-radius:6px}
+  .op.listo{border-color:var(--green);box-shadow:0 0 14px rgba(38,230,166,.18)}
+  .op.listo .st{background:var(--green);color:#04120c}
+  .op.obs{border-color:rgba(255,207,92,.5)} .op.obs .st{background:rgba(255,207,92,.15);color:var(--amber)}
+  .op.na .st{background:rgba(123,138,163,.12);color:var(--dim)}
+  .op .meta{font-size:11px;color:var(--dim);margin-top:5px;display:flex;gap:8px;flex-wrap:wrap}
   .muted{color:var(--dim);font-size:12px}
   .foot{padding:6px 22px 20px;color:var(--dim);font-size:11px}
 </style>
@@ -122,15 +132,29 @@
   </div>
 
   <div class="card span5">
-    <h2>Gráfico en vivo (precio real)</h2>
+    <h2>Gráfico en vivo (precio real · continuo)</h2>
     <div style="display:flex;gap:8px;margin-bottom:8px">
       <select id="selpair"></select>
       <select id="seltf">
         <option value="60">1M</option><option value="120">2M</option>
         <option value="180" selected>3M</option><option value="300">5M</option>
       </select>
+      <span id="chartlast" class="mono" style="margin-left:auto;color:var(--cyan);align-self:center"></span>
     </div>
-    <img id="chart" alt="grafico">
+    <canvas id="chart" width="520" height="230"></canvas>
+  </div>
+
+  <div class="card span12">
+    <h2>◆ Escáner mágico · oportunidades en vivo</h2>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
+      <select id="scantf">
+        <option value="60">1M</option><option value="120">2M</option>
+        <option value="180" selected>3M</option><option value="300">5M</option>
+      </select>
+      <span id="scanresumen" class="muted"></span>
+    </div>
+    <div id="scan" class="scan"></div>
+    <div class="muted" style="margin-top:8px">LISTO = señal viva + pago ≥72% + sin noticia. OBSERVANDO = alineándose pero pago bajo o noticia. No garantiza acierto: muestra dónde se alinean las condiciones.</div>
   </div>
 
   <div class="card span12">
@@ -197,18 +221,64 @@ function render(d){
   }
 }
 
-function refreshChart(){
+// ---- Grafico de velas VIVO en canvas (mismo estilo PO, continuo) ----
+function drawCandles(cv, c){
+  const ctx=cv.getContext('2d'), W=cv.width, H=cv.height;
+  ctx.clearRect(0,0,W,H); ctx.fillStyle='#0b0f16'; ctx.fillRect(0,0,W,H);
+  const close=c.close||[]; if(close.length<2){ctx.fillStyle='#7b8aa3';ctx.font='12px sans-serif';ctx.fillText('sin datos de este par todavía',14,H/2);return;}
+  const o=c.open,h=c.high,l=c.low; const n=close.length;
+  let lo=Math.min(...l), hi=Math.max(...h); const pad=(hi-lo)*0.12||1e-4; lo-=pad; hi+=pad;
+  const padR=54, padB=16, plotW=W-padR, plotH=H-padB;
+  const x=i=>i*(plotW/n)+ (plotW/n)/2;
+  const y=v=>plotH-((v-lo)/(hi-lo))*plotH;
+  // grid
+  ctx.strokeStyle='#16202f'; ctx.lineWidth=1;
+  for(let g=0;g<=4;g++){const yy=plotH*g/4;ctx.beginPath();ctx.moveTo(0,yy);ctx.lineTo(plotW,yy);ctx.stroke();
+    ctx.fillStyle='#4d5c72';ctx.font='9px monospace';ctx.fillText((hi-(hi-lo)*g/4).toFixed(5),plotW+4,yy+9);}
+  const bw=Math.max(1.4,(plotW/n)*0.6);
+  for(let i=0;i<n;i++){
+    const up=close[i]>=o[i], col=up?'#26e6a6':'#ff5d6c';
+    ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(x(i),y(h[i]));ctx.lineTo(x(i),y(l[i]));ctx.stroke();
+    const yo=y(o[i]),yc=y(close[i]); ctx.fillRect(x(i)-bw/2,Math.min(yo,yc),bw,Math.max(1,Math.abs(yc-yo)));
+  }
+  const last=close[n-1];
+  ctx.strokeStyle='#31e1ff';ctx.setLineDash([4,3]);ctx.beginPath();ctx.moveTo(0,y(last));ctx.lineTo(plotW,y(last));ctx.stroke();ctx.setLineDash([]);
+  $('#chartlast').textContent=last.toFixed(5);
+}
+async function refreshChart(){
   const pair=$('#selpair').value||'EUR/USD', tf=$('#seltf').value;
-  $('#chart').src=`/api/chart?pair=${encodeURIComponent(pair)}&tf=${tf}&t=${Date.now()}`;
+  try{const r=await fetch(`/api/candles?pair=${encodeURIComponent(pair)}&tf=${tf}`);
+    drawCandles($('#chart'), await r.json());}catch(e){}
 }
 $('#selpair').addEventListener('change',refreshChart);
 $('#seltf').addEventListener('change',refreshChart);
+
+// ---- Escaner magico ----
+async function refreshScan(){
+  const tf=$('#scantf').value;
+  try{
+    const r=await fetch(`/api/escaner?tf=${tf}`); const rows=await r.json();
+    const listos=rows.filter(x=>x.estado==='LISTO').length;
+    const obs=rows.filter(x=>x.estado==='OBSERVANDO').length;
+    $('#scanresumen').innerHTML=`<b style="color:var(--green)">${listos} LISTO</b> · ${obs} observando · ${rows.length} pares`;
+    $('#scan').innerHTML=rows.map(o=>{
+      const cls=o.estado==='LISTO'?'listo':(o.estado==='OBSERVANDO'?'obs':'na');
+      const dir=o.signal==='CALL'?'<span class="t-call">▲ CALL</span>':(o.signal==='PUT'?'<span class="t-put">▼ PUT</span>':'<span class="muted">—</span>');
+      const pay=o.payout!=null?o.payout+'%':'s/d';
+      return `<div class="op ${cls}"><div class="top"><span class="par">${o.pair}</span><span class="st">${o.estado}</span></div>
+        <div class="meta">${dir}<span>conf ${o.confirmations}</span><span style="color:${o.pasa_pago?'var(--green)':'var(--dim)'}">${pay}</span>${o.bloqueo?'<span style="color:var(--red)">noticia</span>':''}</div></div>`;
+    }).join('');
+  }catch(e){}
+}
+$('#scantf').addEventListener('change',refreshScan);
 
 async function tick(){
   try{const r=await fetch('/api/estado');render(await r.json());}catch(e){}
 }
 tick(); setInterval(tick,5000);
-setInterval(refreshChart,15000);
+setInterval(refreshChart,4000);
+setInterval(refreshScan,6000); refreshScan();
 </script>
 </body>
 </html>

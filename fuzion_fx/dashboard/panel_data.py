@@ -26,8 +26,11 @@ NEWS_PATH = os.path.join(ROOT, "config", "news.json")
 # (bot_id, etiqueta, timeframe_seg). El db de cada bot: f<N>_memory.db.
 BOTS = [("f1_m1", "1M", 60), ("f2_m2", "2M", 120),
         ("f3_m3", "3M", 180), ("f4_m5", "5M", 300)]
+TF_BOT = {60: "f1_m1", 120: "f2_m2", 180: "f3_m3", 300: "f4_m5"}
 
 PAGO_MIN_DEFAULT = 72.0
+# Orden del escaner: primero lo que esta LISTO para operar.
+_RANK_ESTADO = {"LISTO": 0, "OBSERVANDO": 1, "-": 2, "sin datos": 3}
 
 
 def _db_bot(bot_id: str) -> str:
@@ -127,6 +130,76 @@ def estado_noticias(now_ts: Optional[float] = None, buffer_min: float = 5.0,
                      "monedas": prox.get("monedas", [])} if prox else None),
         "buffer_min": buffer_min,
     }
+
+
+def candles_json(pair: str, tf: int, n: int = 90,
+                 db_candles: Optional[str] = None) -> Dict[str, List[float]]:
+    """
+    Velas REALES del par+tf en JSON (ts/open/high/low/close) para el grafico VIVO
+    del navegador. Cae a los ticks solo si no hay reales. {} si no hay nada.
+    """
+    db = db_candles or DB_CANDLES
+    if not os.path.exists(db):
+        return {}
+    from collector.candle_store import CandleStore
+    store = CandleStore(db)
+    try:
+        c = (store.get_real_candles(pair, int(tf), int(n))
+             or store.get_candles(pair, int(tf), int(n)))
+    finally:
+        store.close()
+    return c or {}
+
+
+def escaner(tf: int, now_ts: Optional[float] = None,
+            db_candles: Optional[str] = None,
+            news_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    ESCANER de oportunidades: corre el motor sobre las velas reales de TODOS los
+    pares a un timeframe y marca su estado, ordenando primero lo que esta LISTO
+    (senal viva + pago >= 72% + sin bloqueo de noticia). No garantiza acierto:
+    muestra donde se estan alineando las condiciones.
+    """
+    now_ts = time.time() if now_ts is None else now_ts
+    from core.config import get_bot_config
+    from core.signal_engine import SignalEngine, NEUTRAL
+    from core.news_guard import cargar_eventos, en_bloqueo
+    cfg = get_bot_config(TF_BOT.get(int(tf), "f4_m5"))
+    eng = SignalEngine(cfg["indicators"], cfg["signal"])
+    buffer = float(cfg["risk"].get("news_buffer_minutes", 5))
+    eventos = cargar_eventos(news_path or NEWS_PATH)
+    pagos_map = {p["pair"]: p for p in pagos(db_candles)}
+
+    filas: List[Dict[str, Any]] = []
+    for pair in cfg["pairs"]:
+        c = candles_json(pair, tf, 120, db_candles)
+        pay = pagos_map.get(pair, {}).get("payout")
+        pasa_pago = pay is not None and pay >= PAGO_MIN_DEFAULT
+        if not c or len(c.get("close", [])) < 30:
+            filas.append({"pair": pair, "signal": "NEUTRAL", "confirmations": 0,
+                          "confirming": [], "payout": pay, "pasa_pago": pasa_pago,
+                          "bloqueo": False, "estado": "sin datos"})
+            continue
+        try:
+            res = eng.analyze(c)
+        except Exception:
+            res = {"signal": NEUTRAL, "confirmations": 0, "confirming": []}
+        bloqueo, _ = en_bloqueo(now_ts, eventos, buffer, pair)
+        sig = res.get("signal", NEUTRAL)
+        if sig != NEUTRAL and pasa_pago and not bloqueo:
+            estado = "LISTO"
+        elif sig != NEUTRAL:
+            estado = "OBSERVANDO"                # senal pero pago bajo o noticia
+        else:
+            estado = "-"
+        filas.append({"pair": pair, "signal": sig,
+                      "confirmations": int(res.get("confirmations", 0)),
+                      "confirming": res.get("confirming", []),
+                      "payout": pay, "pasa_pago": pasa_pago, "bloqueo": bloqueo,
+                      "estado": estado})
+    filas.sort(key=lambda f: (_RANK_ESTADO.get(f["estado"], 9),
+                              -f["confirmations"], -(f["payout"] or 0)))
+    return filas
 
 
 def resumen_general(now_ts: Optional[float] = None) -> Dict[str, Any]:

@@ -66,9 +66,44 @@ def test_resumen_general_estructura() -> None:
     assert len(r["bots"]) == 4
 
 
+def _seed_candles(cdb, pair="EUR/USD", tf=60, n=120):
+    s = CandleStore(cdb)
+    for i in range(n):
+        x = 1.10 + i * 0.0002                 # tendencia clara
+        s.upsert_real_candle(pair, tf, i * tf, x, x + 0.0001, x - 0.0001, x + 0.00005, 3)
+    s.upsert_payout(pair, 80.0, 1000)
+    s.close()
+
+
+def test_candles_json_devuelve_velas() -> None:
+    cdb = _db("po_candles.db")
+    _seed_candles(cdb)
+    c = panel_data.candles_json("EUR/USD", 60, 50, db_candles=cdb)
+    assert len(c["close"]) == 50 and "open" in c
+    assert panel_data.candles_json("NADA/NADA", 60, 50, db_candles=cdb) == {}
+
+
+def test_escaner_estructura_y_orden() -> None:
+    cdb = _db("po_candles.db")
+    _seed_candles(cdb, pair="EUR/USD", tf=60)
+    rows = panel_data.escaner(60, db_candles=cdb)
+    assert len(rows) == 22                          # los 22 pares
+    for r in rows:
+        for k in ("pair", "signal", "confirmations", "payout", "estado"):
+            assert k in r
+    # EUR/USD tiene velas -> se evalua (no 'sin datos') y va antes que los vacios.
+    eur = next(r for r in rows if r["pair"] == "EUR/USD")
+    assert eur["estado"] != "sin datos"
+    assert rows[0]["estado"] != "sin datos"
+    # 'sin datos' siempre al final.
+    estados = [r["estado"] for r in rows]
+    assert estados[-1] == "sin datos"
+
+
 def _run_all() -> None:
     tests = [test_winrate_bot_no_cuenta_nulas, test_pagos_marca_filtro,
-             test_resumen_general_estructura]
+             test_resumen_general_estructura, test_candles_json_devuelve_velas,
+             test_escaner_estructura_y_orden]
     for t in tests:
         t()
         print(f"  OK  {t.__name__}")

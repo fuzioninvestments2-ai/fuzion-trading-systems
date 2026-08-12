@@ -72,6 +72,25 @@ class Handler(BaseHTTPRequestHandler):
             body = json.dumps(panel_data.resumen_general()).encode("utf-8")
             self._send(200, body, "application/json; charset=utf-8")
             return
+        if ruta.path == "/api/candles":
+            q = parse_qs(ruta.query)
+            pair = q.get("pair", ["EUR/USD"])[0]
+            try:
+                tf = int(q.get("tf", ["180"])[0])
+            except ValueError:
+                tf = 180
+            body = json.dumps(panel_data.candles_json(pair, tf, 90)).encode("utf-8")
+            self._send(200, body, "application/json; charset=utf-8")
+            return
+        if ruta.path == "/api/escaner":
+            q = parse_qs(ruta.query)
+            try:
+                tf = int(q.get("tf", ["180"])[0])
+            except ValueError:
+                tf = 180
+            body = json.dumps(panel_data.escaner(tf)).encode("utf-8")
+            self._send(200, body, "application/json; charset=utf-8")
+            return
         if ruta.path == "/api/chart":
             q = parse_qs(ruta.query)
             pair = (q.get("pair", ["EUR/USD"])[0])
