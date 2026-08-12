@@ -44,8 +44,10 @@ def _bot():
     bot.pairs = ["EUR/USD"]
     bot.prefilter_seconds = 0
     bot._schedule_enabled = False
-    # Desactivar el filtro de convergencia multi-temporalidad: este test valida el
-    # ANTI-DUPLICADO, no la foto completa (que se prueba en test_multi_timeframe).
+    # Este test valida el ANTI-DUPLICADO, no la foto completa ni el modo. Se
+    # neutraliza aplicar_modo (que en cada pasada resetearia min_tf_convergencia) y
+    # se sube el minimo de tiempos para que el gate de convergencia no intervenga.
+    bot.aplicar_modo = lambda: "test"
     bot.min_tf_convergencia = 99
     bot.engine = _FixedEngine(CALL)
     return bot

@@ -11,10 +11,11 @@
 market: real
 
 # Filtro de PAGO (payout) real de Pocket Option, aplicado a los 4 bots. El usuario
-# opera la banda 72%-92%: emite solo si el pago del activo esta en ese rango.
-# require=true: si el colector aun no recibio el pago del par, NO se emite (mejor
-# callar que emitir a ciegas).
-payout: {min_pct: 72, max_pct: 92, require: true}
+# opera la banda 53%-92%: emite solo si el pago del activo esta en ese rango, y
+# PRIORIZA el de mayor pago (scan_once ordena los pares por pago desc). require=true:
+# si el colector aun no recibio el pago del par, NO se emite (mejor callar que a
+# ciegas).
+payout: {min_pct: 53, max_pct: 92, require: true}
 
 bots:
   f1_m1:

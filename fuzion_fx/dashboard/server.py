@@ -77,6 +77,11 @@ def ejecutar_accion(accion: str, params: dict) -> dict:
     if accion == "reanudar":
         control.set_pausado(False)
         return {"ok": True, "pausado": False}
+    if accion == "modo":
+        # Cambia el modo (lento/normal/rapido) EN VIVO; los bots lo leen en la
+        # proxima pasada y ajustan exigencia y cadencia (sin reiniciar).
+        control.set_modo(str(params.get("valor", "rapido")))
+        return {"ok": True, "modo": control.get_modo()}
     if accion == "reiniciar":
         from scripts.start_all import leer_pids, guardar_pids, lanzar_servicio
         from scripts.servicios import POR_NOMBRE

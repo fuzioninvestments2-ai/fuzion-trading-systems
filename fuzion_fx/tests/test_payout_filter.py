@@ -82,7 +82,7 @@ def test_pago_ok_logica() -> None:
 
 def test_no_emite_con_pago_bajo() -> None:
     feed = InMemoryPriceFeed()
-    feed.set_payout("AUD/CAD", 65.0)                # bajo el minimo (72)
+    feed.set_payout("AUD/CAD", 40.0)                # bajo el minimo (banda 53-92)
     bot = _bot(feed)
     assert bot.scan_once(now=1000.0) == []          # filtrado por pago
 

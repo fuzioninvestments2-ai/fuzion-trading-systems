@@ -342,6 +342,7 @@ def resumen_general(now_ts: Optional[float] = None) -> Dict[str, Any]:
     return {
         "ts": int(now_ts),
         "pausado": control.esta_pausado(),
+        "modo": control.get_modo(),
         "telegram": control.estado_telegram([b for b, _, _ in BOTS]),
         "bots": bots,
         "global": {"wins": tot_w, "losses": tot_l, "win_pct": global_pct,

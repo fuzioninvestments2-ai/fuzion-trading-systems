@@ -32,6 +32,7 @@ from core.learning_engine import LearningEngine
 from core import news_guard
 from core import control
 from core import afiliados
+from core.modos import params_modo
 from data.price_feed import PriceFeed, StubPriceFeed, CandleStoreFeed
 from telegram.notifier import TelegramNotifier
 from telegram.signal_formatter import SignalCardFormatter
@@ -76,6 +77,8 @@ class BaseBot:
         self.mtf = MultiTimeframeAnalyzer(cfg["indicators"])
         self.min_tf_convergencia = int(cfg.get("min_tf_convergencia", 3))
         self.learning = LearningEngine(self.store, cfg["learning"])
+        # Modo actual aplicado (para no releer/loggear en cada pasada si no cambio).
+        self._modo_actual = ""
         # Feed real por defecto: lee po_candles.db del colector. Si el colector
         # no arranco (archivo inexistente), CandleStoreFeed devuelve None y el
         # bot simplemente no emite (seguro).
@@ -182,6 +185,26 @@ class BaseBot:
             return not self.payout_require
         return self.payout_min <= payout <= self.payout_max
 
+    # ------------------------------------------------------------- modo (vivo)
+    def aplicar_modo(self) -> str:
+        """
+        Lee el modo (lento/normal/rapido) del control y ajusta EN VIVO la exigencia:
+        umbral de convergencia, confirmaciones y cuantas temporalidades se exigen.
+        Se puede cambiar desde el panel sin reiniciar. Devuelve el modo aplicado.
+        """
+        modo = control.get_modo()
+        p = params_modo(modo)
+        self.engine.min_confirmations = int(p["min_confirmations"])
+        self.mtf.umbral = float(p["umbral_convergencia"])
+        self.min_tf_convergencia = int(p["min_tf_convergencia"])
+        if modo != self._modo_actual:
+            self.log.info("Modo '%s': convergencia>=%.2f, %d confirmaciones, "
+                          "%d tiempos, rastreo %ds", modo, p["umbral_convergencia"],
+                          p["min_confirmations"], p["min_tf_convergencia"],
+                          p["scan_interval"])
+            self._modo_actual = modo
+        return modo
+
     # ------------------------------------------------------------- foto completa
     def convergencia(self, pair: str) -> Optional[Dict[str, Any]]:
         """
@@ -277,10 +300,19 @@ class BaseBot:
         # mata el proceso (el vigilante no pelea); solo silencia hasta reanudar.
         if control.esta_pausado():
             return emitidas
+        # Modo en vivo (lento/normal/rapido): ajusta exigencia antes de la pasada.
+        self.aplicar_modo()
         # Noticias: se releen cada pasada (el archivo se puede editar en caliente).
         eventos = news_guard.cargar_eventos(NEWS_PATH)
 
-        for pair in self.pairs:
+        # PRIORIDAD POR PAGO: el usuario quiere que ELIJA la mayor. Se ordenan los
+        # pares por pago (%) descendente, asi los de mejor pago se analizan y emiten
+        # PRIMERO (con el tope por hora, los de pago alto ganan el cupo). Sin dato de
+        # pago van al final (None -> -1). Se lee el pago UNA vez por par.
+        pago_de = {p: (self._payout_de(p) or -1.0) for p in self.pairs}
+        pares_ordenados = sorted(self.pairs, key=lambda p: pago_de[p], reverse=True)
+
+        for pair in pares_ordenados:
             if not self._rate_ok(now):
                 self.log.info("Tope de %d senales/hora alcanzado; se corta la pasada",
                               self.max_signals_per_hour)
@@ -655,7 +687,7 @@ class BaseBot:
                 e["en_banda"], key=lambda x: -x[1])[:6])
             diag = (f"✅ Operativo: {n_banda} pares con buen pago ({muestra}). "
                     f"Buscando setups.")
-        return (f"🩺 *{self.name}* — {prefijo}\n"
+        return (f"🩺 *{self.name}* — {prefijo}  ·  modo *{control.get_modo()}*\n"
                 f"Pares: {e['pares']} · con datos: {e['con_datos']} · "
                 f"pago {int(self.payout_min)}-{int(self.payout_max)}%: {n_banda}\n"
                 f"Señales última hora: {e['emitidas_hora']}\n"
@@ -682,13 +714,9 @@ class BaseBot:
         ve al toque si busca o qué lo frena, sin mirar logs).
         """
         self._running = True
-        # Cadencia de escaneo: mas energia = revisar seguido. No baja de 15s para no
-        # golpear el feed, ni pasa del timeframe (para M1 igual conviene 30s).
-        intervalo = int(getattr(self, "scan_interval",
-                                min(self.timeframe_seconds, 30)) or 30)
-        intervalo = max(15, intervalo)
-        self.log.info("%s arrancado (%d pares, escaneo cada %ds, tf %ds). Feed: %s | "
-                      "Telegram: %s", self.name, len(self.pairs), intervalo,
+        modo = self.aplicar_modo()                 # fija exigencia y cadencia inicial
+        self.log.info("%s arrancado (%d pares, modo '%s', tf %ds). Feed: %s | "
+                      "Telegram: %s", self.name, len(self.pairs), modo,
                       self.timeframe_seconds, type(self.feed).__name__,
                       "ON" if self.notifier else "DRY-RUN")
         self._notificar_salud("arranque")          # el bot avisa que está vivo
@@ -696,13 +724,16 @@ class BaseBot:
         while self._running:
             try:
                 self.resolve_pending()       # aprende de las senales ya vencidas
-                self.scan_once()             # busca nuevas
+                self.scan_once()             # busca nuevas (aplica el modo en vivo)
                 # Latido cada hora: sigue vivo + estado (aunque esté callado).
                 if time.time() - ultimo_latido >= 3600:
                     self._notificar_salud("latido (1h)")
                     ultimo_latido = time.time()
             except Exception:
                 self.log.exception("Error en la pasada; el bot sigue vivo")
+            # Cadencia segun el modo (rapido=15s .. lento=45s), leida en vivo: si
+            # cambias el modo en el panel, la proxima espera ya lo respeta.
+            intervalo = max(15, int(params_modo(control.get_modo())["scan_interval"]))
             time.sleep(intervalo)
 
     def stop(self) -> None:

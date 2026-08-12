@@ -107,7 +107,7 @@ def test_cadena_bloquea_por_pago_fuera_de_banda() -> None:
         col = PocketOptionCollector('42["auth",{"session":"x"}]', db_path=tmp.name)
         tf = 60
         code = _po_code("EUR/USD", col.mercado)
-        col._on_assets(_payload_assets(code, 60))         # 60% -> por debajo de 72
+        col._on_assets(_payload_assets(code, 40))         # 40% -> por debajo de 53
         base_ts = 60_000_000
         closes = [1.1000 + 0.00006 * i for i in range(40)]
         col._on_history(_payload_history(code, tf, base_ts, closes))

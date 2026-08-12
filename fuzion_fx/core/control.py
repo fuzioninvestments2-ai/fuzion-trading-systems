@@ -74,3 +74,25 @@ def estado_telegram(bots, path: Optional[str] = None) -> Dict[str, bool]:
     tg = leer_control(path).get("telegram", {})
     tg = tg if isinstance(tg, dict) else {}
     return {b: bool(tg.get(b, True)) for b in bots}
+
+
+# ------------------------------------------------- modo (lento / normal / rapido)
+def get_modo(path: Optional[str] = None) -> str:
+    """
+    Modo de agresividad del sistema: 'rapido' (mas entradas), 'normal' o 'lento'
+    (menos, mas exigentes). El panel lo escribe; los bots lo leen cada pasada y
+    ajustan umbral de convergencia, confirmaciones y cadencia. Default 'rapido':
+    el usuario quiere que el bot ENCUENTRE entradas.
+    """
+    m = str(leer_control(path).get("modo", "rapido")).lower()
+    return m if m in ("rapido", "normal", "lento") else "rapido"
+
+
+def set_modo(valor: str, path: Optional[str] = None) -> None:
+    """Cambia el modo (lento/normal/rapido) sin pisar el resto del estado."""
+    v = str(valor).lower()
+    if v not in ("rapido", "normal", "lento"):
+        v = "rapido"
+    data = leer_control(path)
+    data["modo"] = v
+    _escribir(data, path)
