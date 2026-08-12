@@ -29,8 +29,9 @@ _RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _RAIZ not in sys.path:
     sys.path.insert(0, _RAIZ)
 
-from scripts.start_all import (PROCESOS, SCRIPT_DE, ROOT,          # noqa: E402
-                               lanzar_proceso, leer_pids, guardar_pids)
+from scripts.start_all import (ROOT, lanzar_servicio,             # noqa: E402
+                               leer_pids, guardar_pids)
+from scripts.servicios import supervisados                        # noqa: E402
 
 DB_PATH = os.path.join(ROOT, "data", "db", "po_candles.db")
 LOCK_FILE = os.path.join(ROOT, "logs", "vigilante.lock")   # instancia unica
@@ -167,7 +168,8 @@ def _soltar_lock(lock_file: str = LOCK_FILE) -> None:
 
 def _snapshot(pids: Dict[str, int], arranque: float, arranque_colector: float,
               ahora: float) -> Dict[str, Any]:
-    procesos = {nombre: _proceso_vivo(pids.get(nombre)) for nombre, _ in PROCESOS}
+    procesos = {s["nombre"]: _proceso_vivo(pids.get(s["nombre"]))
+                for s in supervisados()}
     return {
         "procesos": procesos,
         "db_mtime_age": _db_mtime_age(DB_PATH, ahora),
@@ -221,11 +223,11 @@ def main() -> None:
     arranque_colector = arranque       # cuando arranco el colector actual (grace)
     pids = leer_pids()
 
-    # Arranque: asegurar que TODO este corriendo (levanta lo que falte).
-    for nombre, script in PROCESOS:
-        if not _proceso_vivo(pids.get(nombre)):
-            pids[nombre] = lanzar_proceso(script)
-            log.info("Arrancado %s -> PID %d", nombre, pids[nombre])
+    # Arranque: asegurar que TODO (registro de servicios) este corriendo.
+    for s in supervisados():
+        if not _proceso_vivo(pids.get(s["nombre"])):
+            pids[s["nombre"]] = lanzar_servicio(s["nombre"])
+            log.info("Arrancado %s -> PID %d", s["nombre"], pids[s["nombre"]])
     guardar_pids(pids)
     log.info("Vigilante activo: revisa cada %ds (colector mudo > %ds).",
              INTERVALO_SEG, MUDO_SEG)
@@ -239,13 +241,14 @@ def main() -> None:
             plan = evaluar_salud(snap, umbrales)
 
             for nombre in plan["reiniciar"]:
-                script = SCRIPT_DE.get(nombre)
-                if script:
-                    pids[nombre] = lanzar_proceso(script)
-                    guardar_pids(pids)
-                    log.warning("Reiniciado %s -> PID %d", nombre, pids[nombre])
-                    if nombre == "collector":
-                        arranque_colector = ahora   # reinicia el grace del colector
+                try:
+                    pids[nombre] = lanzar_servicio(nombre)
+                except KeyError:
+                    continue                        # nombre fuera del registro
+                guardar_pids(pids)
+                log.warning("Reiniciado %s -> PID %d", nombre, pids[nombre])
+                if nombre == "collector":
+                    arranque_colector = ahora        # reinicia el grace del colector
 
             # Alertar SOLO lo nuevo (evita spamear el mismo problema cada 20s).
             nuevas = [a for a in plan["alertas"] if a not in alertas_previas]

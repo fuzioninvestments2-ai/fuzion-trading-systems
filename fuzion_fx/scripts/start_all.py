@@ -18,17 +18,17 @@ import os
 import subprocess
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))     # fuzion_fx/
-BOTS = ["f1_m1", "f2_m2", "f3_m3", "f4_m5"]
+_AQUI = os.path.dirname(os.path.abspath(__file__))
+if _AQUI not in sys.path:
+    sys.path.insert(0, os.path.dirname(_AQUI))     # para 'scripts.*'
+
+from scripts.servicios import SERVICIOS, POR_NOMBRE, ROOT      # noqa: E402
+
 PIDS_FILE = os.path.join(ROOT, "logs", "pids.json")
 
-# (nombre, ruta del script). El COLECTOR va primero: es la unica conexion a PO
-# y llena po_candles.db; los bots leen de ahi. Todos son procesos independientes.
-PROCESOS = [("collector", os.path.join(ROOT, "collector", "po_collector.py"))]
-PROCESOS += [(b, os.path.join(ROOT, "bots", f"{b}.py")) for b in BOTS]
-
-# Mapa nombre -> script (para relanzar por nombre desde el vigilante).
-SCRIPT_DE = {nombre: script for nombre, script in PROCESOS}
+# Compatibilidad: lista (nombre, script) derivada del registro unico.
+PROCESOS = [(s["nombre"], s["script"]) for s in SERVICIOS]
+SCRIPT_DE = POR_NOMBRE                              # nombre -> servicio (con args)
 
 
 def _kwargs() -> dict:
@@ -41,10 +41,16 @@ def _kwargs() -> dict:
     return kwargs
 
 
-def lanzar_proceso(script: str) -> int:
-    """Lanza un script Python desacoplado y devuelve su PID."""
-    proc = subprocess.Popen([sys.executable, script], **_kwargs())
+def lanzar_proceso(script: str, args=None) -> int:
+    """Lanza un script Python desacoplado (con args opcionales) y devuelve su PID."""
+    proc = subprocess.Popen([sys.executable, script, *(args or [])], **_kwargs())
     return proc.pid
+
+
+def lanzar_servicio(nombre: str) -> int:
+    """Lanza un servicio del registro por su nombre (usa su script y args)."""
+    s = POR_NOMBRE[nombre]
+    return lanzar_proceso(s["script"], s["args"])
 
 
 def leer_pids() -> dict:
@@ -66,12 +72,12 @@ def guardar_pids(pids: dict) -> None:
 def main() -> None:
     os.makedirs(os.path.join(ROOT, "logs"), exist_ok=True)
     pids = {}
-    for nombre, script in PROCESOS:
-        pids[nombre] = lanzar_proceso(script)
-        print(f"[start] {nombre} -> PID {pids[nombre]}")
+    for s in SERVICIOS:
+        pids[s["nombre"]] = lanzar_servicio(s["nombre"])
+        print(f"[start] {s['nombre']} -> PID {pids[s['nombre']]}")
     guardar_pids(pids)
     print(f"PIDs guardados en {PIDS_FILE}")
-    print("Colector + 4 bots corriendo. check_status.py para verlos.")
+    print(f"{len(SERVICIOS)} servicios corriendo (colector + 4 bots + panel).")
 
 
 if __name__ == "__main__":
