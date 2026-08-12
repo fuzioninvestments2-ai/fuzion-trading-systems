@@ -108,13 +108,22 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     url = f"http://127.0.0.1:{PORT}"
-    print(f"Tablero Fuzion FX en {url}  (Ctrl+C para parar)")
+    # --no-open: no abrir el navegador (lo usa el lanzador de ventana tipo app,
+    # que abre el Chrome/Edge en modo aplicacion el mismo).
+    abrir = "--no-open" not in sys.argv
     try:
-        webbrowser.open(url)
-    except Exception:
-        pass
+        srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    except OSError:
+        # Puerto ocupado = el tablero YA esta corriendo. No es error: se reusa.
+        print(f"El tablero ya esta corriendo en {url}.")
+        return
+    print(f"Tablero Fuzion FX en {url}  (Ctrl+C para parar)")
+    if abrir:
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
