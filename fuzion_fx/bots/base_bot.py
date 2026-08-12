@@ -79,6 +79,7 @@ class BaseBot:
         self.learning = LearningEngine(self.store, cfg["learning"])
         # Modo actual aplicado (para no releer/loggear en cada pasada si no cambio).
         self._modo_actual = ""
+        self._scan_interval = 30               # cadencia (la fija aplicar_modo)
         # Feed real por defecto: lee po_candles.db del colector. Si el colector
         # no arranco (archivo inexistente), CandleStoreFeed devuelve None y el
         # bot simplemente no emite (seguro).
@@ -188,20 +189,23 @@ class BaseBot:
     # ------------------------------------------------------------- modo (vivo)
     def aplicar_modo(self) -> str:
         """
-        Lee el modo (lento/normal/rapido) del control y ajusta EN VIVO la exigencia:
-        umbral de convergencia, confirmaciones y cuantas temporalidades se exigen.
-        Se puede cambiar desde el panel sin reiniciar. Devuelve el modo aplicado.
+        Lee el modo (lento/normal/rapido) del control y ajusta EN VIVO la exigencia
+        de la FOTO COMPLETA: umbral de convergencia, cuantas temporalidades se
+        exigen y la cadencia. NO toca engine.min_confirmations (queda en 2 por
+        config: apretarlo dejaria el motor casi mudo). Se puede cambiar desde el
+        panel sin reiniciar. Devuelve el modo aplicado y cachea la cadencia.
         """
         modo = control.get_modo()
         p = params_modo(modo)
-        self.engine.min_confirmations = int(p["min_confirmations"])
         self.mtf.umbral = float(p["umbral_convergencia"])
         self.min_tf_convergencia = int(p["min_tf_convergencia"])
+        self._scan_interval = max(15, int(p["scan_interval"]))
         if modo != self._modo_actual:
-            self.log.info("Modo '%s': convergencia>=%.2f, %d confirmaciones, "
-                          "%d tiempos, rastreo %ds", modo, p["umbral_convergencia"],
-                          p["min_confirmations"], p["min_tf_convergencia"],
-                          p["scan_interval"])
+            self.log.info("Modo '%s': convergencia>=%.2f, %d tiempos, rastreo %ds "
+                          "(min_confirmations queda en %s por config)", modo,
+                          p["umbral_convergencia"], p["min_tf_convergencia"],
+                          self._scan_interval,
+                          getattr(self.engine, "min_confirmations", "?"))
             self._modo_actual = modo
         return modo
 
@@ -305,12 +309,16 @@ class BaseBot:
         # Noticias: se releen cada pasada (el archivo se puede editar en caliente).
         eventos = news_guard.cargar_eventos(NEWS_PATH)
 
-        # PRIORIDAD POR PAGO: el usuario quiere que ELIJA la mayor. Se ordenan los
-        # pares por pago (%) descendente, asi los de mejor pago se analizan y emiten
-        # PRIMERO (con el tope por hora, los de pago alto ganan el cupo). Sin dato de
-        # pago van al final (None -> -1). Se lee el pago UNA vez por par.
-        pago_de = {p: (self._payout_de(p) or -1.0) for p in self.pairs}
-        pares_ordenados = sorted(self.pairs, key=lambda p: pago_de[p], reverse=True)
+        # PRIORIDAD POR PAGO: el usuario quiere que ELIJA la mayor. Se lee el pago
+        # UNA vez por par (se reusa abajo) y se ordenan por pago (%) descendente, asi
+        # los de mejor pago se analizan y emiten PRIMERO (con el tope por hora, los de
+        # pago alto ganan el cupo). Sin dato de pago (None) van al final. Ojo: un pago
+        # real de 0% NO es 'sin dato' -> se compara con `is not None`, no con `or`.
+        pago_de = {p: self._payout_de(p) for p in self.pairs}
+        pares_ordenados = sorted(
+            self.pairs,
+            key=lambda p: pago_de[p] if pago_de[p] is not None else -1.0,
+            reverse=True)
 
         for pair in pares_ordenados:
             if not self._rate_ok(now):
@@ -345,10 +353,11 @@ class BaseBot:
                               evento["titulo"], self.risk.news_buffer_minutes)
                 continue
 
-            # FILTRO DE PAGO: solo emitir si el activo paga >= min_pct (72%). Es
-            # exigencia del usuario: un pago bajo destruye la ventaja aunque el
-            # acierto sea bueno (break-even sube). Sin dato de pago -> no emitir.
-            pago = self._payout_de(pair)
+            # FILTRO DE PAGO: solo emitir si el activo paga dentro de la banda
+            # (53-92%). Un pago bajo destruye la ventaja aunque el acierto sea bueno
+            # (break-even sube). Sin dato de pago -> no emitir. Se reusa el pago ya
+            # leido para el ordenamiento (no se relee el feed).
+            pago = pago_de[pair]
             if not self._pago_ok(pago):
                 self.log.debug("Pago fuera de rango en %s: %s (min %s)",
                                pair, pago, self.payout_min)
@@ -731,10 +740,10 @@ class BaseBot:
                     ultimo_latido = time.time()
             except Exception:
                 self.log.exception("Error en la pasada; el bot sigue vivo")
-            # Cadencia segun el modo (rapido=15s .. lento=45s), leida en vivo: si
-            # cambias el modo en el panel, la proxima espera ya lo respeta.
-            intervalo = max(15, int(params_modo(control.get_modo())["scan_interval"]))
-            time.sleep(intervalo)
+            # Cadencia segun el modo (rapido=15s .. lento=45s). scan_once() ya llamo
+            # a aplicar_modo() y dejo self._scan_interval fresco: se reusa sin releer
+            # el control de nuevo (si cambiaste el modo en el panel, ya esta aplicado).
+            time.sleep(getattr(self, "_scan_interval", 30))
 
     def stop(self) -> None:
         self._running = False

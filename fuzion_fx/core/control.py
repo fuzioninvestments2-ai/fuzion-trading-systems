@@ -89,10 +89,14 @@ def get_modo(path: Optional[str] = None) -> str:
 
 
 def set_modo(valor: str, path: Optional[str] = None) -> None:
-    """Cambia el modo (lento/normal/rapido) sin pisar el resto del estado."""
+    """
+    Cambia el modo (lento/normal/rapido) sin pisar el resto del estado. Un valor
+    INVALIDO se IGNORA (no se toca el modo actual): asi un cliente con un valor
+    corrupto no fuerza el modo mas permisivo sin que el usuario lo pida.
+    """
     v = str(valor).lower()
     if v not in ("rapido", "normal", "lento"):
-        v = "rapido"
+        return                                 # invalido -> no cambiar nada
     data = leer_control(path)
     data["modo"] = v
     _escribir(data, path)
