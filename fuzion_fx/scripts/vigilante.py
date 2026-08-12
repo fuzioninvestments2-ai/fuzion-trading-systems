@@ -36,6 +36,7 @@ from scripts.servicios import supervisados                        # noqa: E402
 DB_PATH = os.path.join(ROOT, "data", "db", "po_candles.db")
 LOCK_FILE = os.path.join(ROOT, "logs", "vigilante.lock")   # instancia unica
 INTERVALO_SEG = 20                     # cada cuanto revisa
+RELANZAR_GRACE_SEG = 45                # no relanzar un servicio antes de este margen
 MUDO_SEG = 180                         # colector vivo pero sin escribir hace tanto -> mudo
 GRACIA_PAGOS_SEG = 120                 # margen tras arrancar antes de alertar por pagos
 
@@ -93,8 +94,22 @@ def evaluar_salud(snapshot: Dict[str, Any], umbrales: Dict[str, Any]
 
 # --------------------------------------------------------------- estado real (SO/db)
 def _proceso_vivo(pid: Optional[int]) -> bool:
-    """True si el PID esta vivo. Multiplataforma sin dependencias de terceros."""
+    """
+    True si el PID esta vivo. Usa psutil (fiable en Windows, igual que
+    check_status): el metodo con ctypes/OpenProcess fallaba con los procesos
+    pythonw que lanza el vigilante y provocaba reinicios en loop. Sin psutil,
+    cae a os.kill (POSIX) / ctypes (Windows) como respaldo.
+    """
     if not pid:
+        return False
+    try:
+        import psutil
+        if not psutil.pid_exists(int(pid)):
+            return False
+        return psutil.Process(int(pid)).status() != psutil.STATUS_ZOMBIE
+    except ImportError:
+        pass
+    except Exception:
         return False
     if os.name == "nt":
         import ctypes
@@ -221,12 +236,14 @@ def main() -> None:
     notifier = _notifier()
     arranque = time.time()
     arranque_colector = arranque       # cuando arranco el colector actual (grace)
+    lanzado_en: Dict[str, float] = {}  # nombre -> cuando se lanzo (anti-thrash)
     pids = leer_pids()
 
     # Arranque: asegurar que TODO (registro de servicios) este corriendo.
     for s in supervisados():
         if not _proceso_vivo(pids.get(s["nombre"])):
             pids[s["nombre"]] = lanzar_servicio(s["nombre"])
+            lanzado_en[s["nombre"]] = arranque
             log.info("Arrancado %s -> PID %d", s["nombre"], pids[s["nombre"]])
     guardar_pids(pids)
     log.info("Vigilante activo: revisa cada %ds (colector mudo > %ds).",
@@ -241,10 +258,15 @@ def main() -> None:
             plan = evaluar_salud(snap, umbrales)
 
             for nombre in plan["reiniciar"]:
+                # Anti-thrash: no relanzar si se lanzo hace muy poco (dale tiempo a
+                # iniciar). Evita el pile-up de procesos si algo falla momentaneamente.
+                if ahora - lanzado_en.get(nombre, 0) < RELANZAR_GRACE_SEG:
+                    continue
                 try:
                     pids[nombre] = lanzar_servicio(nombre)
                 except KeyError:
                     continue                        # nombre fuera del registro
+                lanzado_en[nombre] = ahora
                 guardar_pids(pids)
                 log.warning("Reiniciado %s -> PID %d", nombre, pids[nombre])
                 if nombre == "collector":
