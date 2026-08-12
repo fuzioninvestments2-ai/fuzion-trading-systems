@@ -286,9 +286,14 @@ class BaseBot:
             card = self.build_card(pair, result, payout=pago)
             if self.notifier:
                 # Grafico de velas del par como foto; si falla, va solo texto.
+                # Se REFRESCAN las velas (las de arriba son de antes del pre-filtro,
+                # ~10s viejas): asi el grafico coordina con la senal confirmada, y
+                # se le pasa direccion + precio de entrada para marcarlos.
                 try:
-                    img = render_candles(candles, f"{self.name} · {pair} · {self.card_label}",
-                                         result["signal"])
+                    velas_grafico = self.feed.get_candles(pair, self.timeframe_seconds) or candles
+                    img = render_candles(
+                        velas_grafico, f"{self.name} · {pair} · {self.card_label}",
+                        result["signal"], entry_price=result["price"])
                 except Exception:
                     img = None
                 self.notifier.send(card, photo_buffer=img)
