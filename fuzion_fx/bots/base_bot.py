@@ -565,19 +565,26 @@ class BaseBot:
         now = time.time() if now is None else now
         con_datos = 0
         en_banda: List = []
+        con_pago: List = []                          # TODOS los pagos capturados
         for pair in self.pairs:
             try:
                 c = self.feed.get_candles(pair, self.timeframe_seconds)
                 if c and len(c.get("close", [])) >= 2:
                     con_datos += 1
                 p = self._payout_de(pair)
-                if p is not None and self.payout_min <= p <= self.payout_max:
-                    en_banda.append((pair, p))
+                if p is not None:
+                    con_pago.append((pair, p))
+                    if self.payout_min <= p <= self.payout_max:
+                        en_banda.append((pair, p))
             except Exception:
                 continue
         emitidas_hora = len([t for t in self._emitted_ts if t >= now - 3600.0])
+        # top: mejores pagos capturados (en la banda o no) -> revela si el mercado
+        # paga poco (real de madrugada) o si directamente no se capturo pago.
+        top = sorted(con_pago, key=lambda x: -x[1])[:6]
         return {"pares": len(self.pairs), "con_datos": con_datos,
-                "en_banda": en_banda, "emitidas_hora": emitidas_hora}
+                "en_banda": en_banda, "con_pago": len(con_pago), "top": top,
+                "emitidas_hora": emitidas_hora}
 
     def _tarjeta_salud(self, prefijo: str, now: Optional[float] = None) -> str:
         """Tarjeta de estado para Telegram: dice si busca o QUE lo frena, en claro."""
@@ -587,9 +594,17 @@ class BaseBot:
             diag = ("⏳ Sin velas aún: el colector está cargando o el mercado está "
                     "cerrado. En cuanto lleguen velas, analizo.")
         elif n_banda == 0:
-            diag = (f"🚫 Ningún par con pago {int(self.payout_min)}-"
-                    f"{int(self.payout_max)}% ahora mismo. No emito hasta que haya "
-                    f"(el pago sube en horario activo).")
+            # Revelar los mejores pagos capturados: si hay pagos pero por debajo de
+            # 72%, el mercado paga poco ahora (bajar el minimo o esperar); si no hay
+            # NINGUN pago capturado, es problema de captura (no de banda).
+            if e.get("con_pago", 0) == 0:
+                extra = ("No se capturo NINGUN pago todavia (updateAssets). Espera "
+                         "1-2 min; si sigue en 0, es la captura de pagos.")
+            else:
+                mejores = ", ".join(f"{p} {int(v)}%" for p, v in e.get("top", []))
+                extra = f"Mejores pagos AHORA: {mejores}."
+            diag = (f"🚫 0 pares con pago {int(self.payout_min)}-"
+                    f"{int(self.payout_max)}%. {extra}")
         else:
             muestra = ", ".join(f"{p} {int(v)}%" for p, v in sorted(
                 e["en_banda"], key=lambda x: -x[1])[:6])
