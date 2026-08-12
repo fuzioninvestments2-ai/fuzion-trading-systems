@@ -20,9 +20,9 @@ from scripts.vigilante import evaluar_salud                       # noqa: E402
 _UMBRALES = {"mudo_seg": 180, "gracia_pagos_seg": 120}
 
 
-def _snap(procesos, age=10.0, pagos=22, uptime=1000.0):
-    return {"procesos": procesos, "db_mtime_age": age, "pagos": pagos,
-            "uptime": uptime}
+def _snap(procesos, age=10.0, pagos=22, uptime=1000.0, col_uptime=1000.0):
+    return {"procesos": procesos, "db_mtime_age": age, "col_uptime": col_uptime,
+            "pagos": pagos, "uptime": uptime}
 
 
 def test_todo_sano_no_hace_nada() -> None:
@@ -43,9 +43,19 @@ def test_reinicia_proceso_caido() -> None:
 def test_colector_mudo_se_reinicia() -> None:
     procesos = {"collector": True, "f1_m1": True, "f2_m2": True,
                 "f3_m3": True, "f4_m5": True}
-    plan = evaluar_salud(_snap(procesos, age=400.0), _UMBRALES)   # 400 > 180
+    # Mudo REAL: vivo hace rato (col_uptime alto) y sin escribir hace 400s.
+    plan = evaluar_salud(_snap(procesos, age=400.0, col_uptime=500.0), _UMBRALES)
     assert plan["reiniciar"] == ["collector"]
     assert any("MUDO" in a for a in plan["alertas"])
+
+
+def test_colector_recien_arrancado_no_se_marca_mudo() -> None:
+    # mtime viejo (400s, del colector anterior) pero el actual recien arranco
+    # (col_uptime=5s): el silencio real es min(400,5)=5 -> NO se reinicia.
+    procesos = {"collector": True, "f1_m1": True, "f2_m2": True,
+                "f3_m3": True, "f4_m5": True}
+    plan = evaluar_salud(_snap(procesos, age=400.0, col_uptime=5.0), _UMBRALES)
+    assert "collector" not in plan["reiniciar"]
 
 
 def test_colector_caido_no_duplica_reinicio() -> None:
@@ -77,7 +87,9 @@ def test_db_sin_mtime_no_marca_mudo() -> None:
 
 def _run_all() -> None:
     tests = [test_todo_sano_no_hace_nada, test_reinicia_proceso_caido,
-             test_colector_mudo_se_reinicia, test_colector_caido_no_duplica_reinicio,
+             test_colector_mudo_se_reinicia,
+             test_colector_recien_arrancado_no_se_marca_mudo,
+             test_colector_caido_no_duplica_reinicio,
              test_alerta_pagos_solo_tras_gracia, test_db_sin_mtime_no_marca_mudo]
     for t in tests:
         t()

@@ -64,12 +64,20 @@ def evaluar_salud(snapshot: Dict[str, Any], umbrales: Dict[str, Any]
             alertas.append(f"{nombre} caido → reiniciando")
 
     # Colector VIVO pero que no escribe hace rato = socket mudo -> reiniciar.
+    # OJO: el mtime de la db puede ser viejo (del colector anterior) mientras el
+    # nuevo recien arranca y todavia no escribio. Por eso el "silencio" real es el
+    # MINIMO entre el tiempo sin escribir (age) y el tiempo que lleva vivo este
+    # colector (col_uptime): asi no se lo declara mudo apenas arranca.
     col_vivo = procesos.get("collector", False)
     age = snapshot.get("db_mtime_age")
-    if col_vivo and age is not None and age > umbrales.get("mudo_seg", MUDO_SEG):
-        if "collector" not in reiniciar:
-            reiniciar.append("collector")
-        alertas.append(f"colector MUDO ({int(age)}s sin escribir) → reiniciando")
+    col_uptime = snapshot.get("col_uptime")
+    if col_vivo and age is not None:
+        silencio = age if col_uptime is None else min(age, col_uptime)
+        if silencio > umbrales.get("mudo_seg", MUDO_SEG):
+            if "collector" not in reiniciar:
+                reiniciar.append("collector")
+            alertas.append(f"colector MUDO ({int(silencio)}s sin escribir) → "
+                           f"reiniciando")
 
     # Sin pagos cargados: los bots no emiten (filtro de pago). Solo alerta.
     if (snapshot.get("pagos", 0) == 0
@@ -129,11 +137,13 @@ def _pagos_count(db_path: str) -> int:
         return 0
 
 
-def _snapshot(pids: Dict[str, int], arranque: float, ahora: float) -> Dict[str, Any]:
+def _snapshot(pids: Dict[str, int], arranque: float, arranque_colector: float,
+              ahora: float) -> Dict[str, Any]:
     procesos = {nombre: _proceso_vivo(pids.get(nombre)) for nombre, _ in PROCESOS}
     return {
         "procesos": procesos,
         "db_mtime_age": _db_mtime_age(DB_PATH, ahora),
+        "col_uptime": ahora - arranque_colector,   # seg vivo del colector actual
         "pagos": _pagos_count(DB_PATH),
         "uptime": ahora - arranque,
     }
@@ -160,6 +170,7 @@ def main() -> None:
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     notifier = _notifier()
     arranque = time.time()
+    arranque_colector = arranque       # cuando arranco el colector actual (grace)
     pids = leer_pids()
 
     # Arranque: asegurar que TODO este corriendo (levanta lo que falte).
@@ -176,7 +187,7 @@ def main() -> None:
     try:
         while True:
             ahora = time.time()
-            snap = _snapshot(pids, arranque, ahora)
+            snap = _snapshot(pids, arranque, arranque_colector, ahora)
             plan = evaluar_salud(snap, umbrales)
 
             for nombre in plan["reiniciar"]:
@@ -185,6 +196,8 @@ def main() -> None:
                     pids[nombre] = lanzar_proceso(script)
                     guardar_pids(pids)
                     log.warning("Reiniciado %s -> PID %d", nombre, pids[nombre])
+                    if nombre == "collector":
+                        arranque_colector = ahora   # reinicia el grace del colector
 
             # Alertar SOLO lo nuevo (evita spamear el mismo problema cada 20s).
             nuevas = [a for a in plan["alertas"] if a not in alertas_previas]
