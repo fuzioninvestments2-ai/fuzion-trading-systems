@@ -88,9 +88,25 @@ def test_accion_pausar_reanudar() -> None:
         os.unlink(tmp.name)
 
 
+def test_telegram_por_temporalidad() -> None:
+    tmp = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
+    tmp.close()
+    try:
+        assert control.telegram_activo("f1_m1", tmp.name) is True     # default
+        control.set_pausado(True, tmp.name)                           # otro estado
+        control.set_telegram("f1_m1", False, tmp.name)               # apaga solo 1M
+        assert control.telegram_activo("f1_m1", tmp.name) is False
+        assert control.telegram_activo("f2_m2", tmp.name) is True     # 2M intacto
+        assert control.esta_pausado(tmp.name) is True                # pausa preservada
+        est = control.estado_telegram(["f1_m1", "f2_m2"], tmp.name)
+        assert est == {"f1_m1": False, "f2_m2": True}
+    finally:
+        os.unlink(tmp.name)
+
+
 def _run_all() -> None:
     tests = [test_control_archivo, test_bot_no_emite_en_pausa,
-             test_accion_pausar_reanudar]
+             test_accion_pausar_reanudar, test_telegram_por_temporalidad]
     for t in tests:
         t()
         print(f"  OK  {t.__name__}")

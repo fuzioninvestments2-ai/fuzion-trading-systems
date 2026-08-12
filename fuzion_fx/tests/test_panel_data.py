@@ -100,10 +100,37 @@ def test_escaner_estructura_y_orden() -> None:
     assert estados[-1] == "sin datos"
 
 
+def test_reporte_ordenes_filtra_y_suma() -> None:
+    db = _db("f3_memory.db")
+    st = ResultsStore(db)
+    a = st.save_signal({"ts": 100, "pair": "EUR/USD", "timeframe": "3m",
+                        "direction": "CALL", "setup_id": "s", "confirmations": 3,
+                        "price": 1.1, "atr": 0})
+    b = st.save_signal({"ts": 200, "pair": "GBP/JPY", "timeframe": "3m",
+                        "direction": "PUT", "setup_id": "s", "confirmations": 3,
+                        "price": 1.1, "atr": 0})
+    st.resolve_signal(a, "win", 8.0)
+    st.resolve_signal(b, "loss", -10.0)
+    st.close()
+    # Apunta el bot f3_m3 (3M) a esta db temporal.
+    _orig = panel_data._db_bot
+    panel_data._db_bot = lambda bid: db if bid == "f3_m3" else "/no.db"
+    try:
+        r = panel_data.reporte_ordenes(bot="3M")
+        assert r["resumen"]["wins"] == 1 and r["resumen"]["losses"] == 1
+        assert r["resumen"]["pnl"] == -2.0 and r["resumen"]["win_pct"] == 50.0
+        # Filtro por resultado.
+        solo_win = panel_data.reporte_ordenes(bot="3M", resultado="win")
+        assert solo_win["resumen"]["total"] == 1
+        assert solo_win["filas"][0]["pair"] == "EUR/USD"
+    finally:
+        panel_data._db_bot = _orig
+
+
 def _run_all() -> None:
     tests = [test_winrate_bot_no_cuenta_nulas, test_pagos_marca_filtro,
              test_resumen_general_estructura, test_candles_json_devuelve_velas,
-             test_escaner_estructura_y_orden]
+             test_escaner_estructura_y_orden, test_reporte_ordenes_filtra_y_suma]
     for t in tests:
         t()
         print(f"  OK  {t.__name__}")

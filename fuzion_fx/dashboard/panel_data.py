@@ -98,6 +98,39 @@ def ultimas_transacciones(n: int = 25) -> List[Dict[str, Any]]:
     return filas[:n]
 
 
+def reporte_ordenes(bot: Optional[str] = None, resultado: Optional[str] = None,
+                    limite: int = 200) -> Dict[str, Any]:
+    """
+    REPORTE de ordenes (senales) de los 4 bots con detalle y totales. Filtros:
+    bot (etiqueta '1M'..'5M' o id) y resultado (win/loss/NULL/pendiente). Devuelve
+    {filas, resumen}. resumen = conteos + pnl total (sintetico, de aprendizaje).
+    """
+    filas: List[Dict[str, Any]] = []
+    for bot_id, etiqueta, _ in BOTS:
+        if bot and bot not in (etiqueta, bot_id):
+            continue
+        rows = _query(_db_bot(bot_id),
+                      """SELECT ts, pair, direction, resolved, result, price, pnl
+                         FROM signals ORDER BY ts DESC LIMIT ?""", (int(limite),))
+        for ts, pair, direction, resolved, result, price, pnl in rows:
+            estado = "pendiente" if not resolved else (result or "?")
+            if resultado and estado != resultado:
+                continue
+            filas.append({"ts": int(ts or 0), "bot": etiqueta, "pair": pair,
+                          "direction": direction, "estado": estado,
+                          "price": price, "pnl": round(float(pnl or 0), 2)})
+    filas.sort(key=lambda f: f["ts"], reverse=True)
+    filas = filas[:limite]
+    wins = sum(1 for f in filas if f["estado"] == "win")
+    losses = sum(1 for f in filas if f["estado"] == "loss")
+    nulas = sum(1 for f in filas if f["estado"] == "NULL")
+    pend = sum(1 for f in filas if f["estado"] == "pendiente")
+    return {"filas": filas, "resumen": {
+        "total": len(filas), "wins": wins, "losses": losses, "nulas": nulas,
+        "pendientes": pend, "pnl": round(sum(f["pnl"] for f in filas), 2),
+        "win_pct": round(100.0 * wins / (wins + losses), 1) if (wins + losses) else None}}
+
+
 def estado_procesos() -> List[Dict[str, Any]]:
     """Procesos (colector + bots + resumen) y si estan vivos. Sin dependencias."""
     try:
@@ -215,6 +248,7 @@ def resumen_general(now_ts: Optional[float] = None) -> Dict[str, Any]:
     return {
         "ts": int(now_ts),
         "pausado": control.esta_pausado(),
+        "telegram": control.estado_telegram([b for b, _, _ in BOTS]),
         "bots": bots,
         "global": {"wins": tot_w, "losses": tot_l, "win_pct": global_pct,
                    "nulas": sum(b["nulas"] for b in bots),

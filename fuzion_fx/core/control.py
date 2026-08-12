@@ -2,14 +2,13 @@
 core/control.py (fuzion_fx)
 ===========================
 Estado de CONTROL compartido entre el panel y los bots (config/control.json).
-Hoy: pausa global de señales. El panel lo escribe; los 4 bots lo leen cada pasada.
+- pausado: pausa GLOBAL de senales (los bots no emiten).
+- telegram: por bot (f1_m1..f4_m5) si su tarjeta se MANDA a Telegram (True/False).
+  Asi el dueno elige recibir 1, 2, 3 o las 4 temporalidades sin apagar los bots.
 
-Por que un archivo: los bots son procesos independientes; un archivo sqlite/json
-compartido es la via simple para que un boton del panel afecte a los 4 sin
-acoplarlos. PAUSA = no emitir (NO mata procesos): reversible y no pelea con el
-vigilante (que revive procesos muertos).
-
-Sin red. Robusto: si el archivo no existe o esta mal, se asume NO pausado.
+El panel lo escribe; los 4 bots lo leen cada pasada. Un archivo (no acople): los
+bots son procesos independientes. Robusto: si falta o esta mal, se asume el
+default seguro (no pausado, todas las temporalidades a Telegram).
 """
 
 from __future__ import annotations
@@ -23,7 +22,7 @@ CONTROL_PATH = os.path.join(ROOT, "config", "control.json")
 
 
 def leer_control(path: Optional[str] = None) -> Dict[str, Any]:
-    """Estado de control ({pausado: bool}). {} si no hay archivo o esta corrupto."""
+    """Estado de control completo. {} si no hay archivo o esta corrupto."""
     path = path or CONTROL_PATH
     try:
         with open(path, "r", encoding="utf-8") as f:
@@ -33,14 +32,45 @@ def leer_control(path: Optional[str] = None) -> Dict[str, Any]:
         return {}
 
 
+def _escribir(data: Dict[str, Any], path: Optional[str] = None) -> None:
+    path = path or CONTROL_PATH
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+
+# ------------------------------------------------------------- pausa global
 def esta_pausado(path: Optional[str] = None) -> bool:
-    """True si las señales estan en PAUSA (los bots no emiten)."""
     return bool(leer_control(path).get("pausado", False))
 
 
 def set_pausado(valor: bool, path: Optional[str] = None) -> None:
-    """Escribe la pausa global. Crea la carpeta si falta."""
-    path = path or CONTROL_PATH
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump({"pausado": bool(valor)}, f)
+    """Pausa/reanuda sin pisar el resto del estado (telegram, etc.)."""
+    data = leer_control(path)
+    data["pausado"] = bool(valor)
+    _escribir(data, path)
+
+
+# ------------------------------------------------- telegram por temporalidad
+def telegram_activo(bot_id: str, path: Optional[str] = None) -> bool:
+    """True si el bot manda su tarjeta a Telegram (default True)."""
+    tg = leer_control(path).get("telegram", {})
+    return bool(tg.get(bot_id, True)) if isinstance(tg, dict) else True
+
+
+def set_telegram(bot_id: str, valor: bool, path: Optional[str] = None) -> None:
+    """Activa/desactiva Telegram de UNA temporalidad, sin tocar el resto."""
+    data = leer_control(path)
+    tg = data.get("telegram", {})
+    if not isinstance(tg, dict):
+        tg = {}
+    tg[str(bot_id)] = bool(valor)
+    data["telegram"] = tg
+    _escribir(data, path)
+
+
+def estado_telegram(bots, path: Optional[str] = None) -> Dict[str, bool]:
+    """{bot_id: activo} para la lista de bots dada (para el panel)."""
+    tg = leer_control(path).get("telegram", {})
+    tg = tg if isinstance(tg, dict) else {}
+    return {b: bool(tg.get(b, True)) for b in bots}

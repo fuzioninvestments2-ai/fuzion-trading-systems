@@ -89,6 +89,13 @@ def ejecutar_accion(accion: str, params: dict) -> dict:
         pids[nombre] = lanzar_servicio(nombre)
         guardar_pids(pids)
         return {"ok": True, "reiniciado": nombre, "pid": pids[nombre]}
+    if accion == "telegram":
+        bot = str(params.get("bot", ""))
+        from dashboard.panel_data import BOTS
+        if bot not in [b for b, _, _ in BOTS]:
+            return {"ok": False, "error": "bot desconocido"}
+        control.set_telegram(bot, bool(params.get("valor", True)))
+        return {"ok": True, "bot": bot, "valor": bool(params.get("valor", True))}
     if accion == "escanear":
         return {"ok": True}
     return {"ok": False, "error": "accion desconocida"}
@@ -141,6 +148,17 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 tf = 180
             body = json.dumps(panel_data.candles_json(pair, tf, 90)).encode("utf-8")
+            self._send(200, body, "application/json; charset=utf-8")
+            return
+        if ruta.path == "/api/reporte":
+            q = parse_qs(ruta.query)
+            bot = q.get("bot", [None])[0] or None
+            res = q.get("result", [None])[0] or None
+            try:
+                lim = int(q.get("limite", ["200"])[0])
+            except ValueError:
+                lim = 200
+            body = json.dumps(panel_data.reporte_ordenes(bot, res, lim)).encode("utf-8")
             self._send(200, body, "application/json; charset=utf-8")
             return
         if ruta.path == "/api/escaner":

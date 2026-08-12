@@ -303,7 +303,7 @@ class BaseBot:
             sid = self.store.save_signal(rec)
             rec["id"] = sid
             card = self.build_card(pair, result, payout=pago)
-            if self.notifier:
+            if self.notifier and control.telegram_activo(self.id):
                 # Grafico de velas del par como foto; si falla, va solo texto.
                 # Se REFRESCAN las velas (las de arriba son de antes del pre-filtro,
                 # ~10s viejas): asi el grafico coordina con la senal confirmada, y
@@ -383,7 +383,7 @@ class BaseBot:
                   f"Emitida hace {segs}s\n"
                   f"Cambios: {cambios}\n"
                   f"_Alerta informativa. El bot no opera por vos._")
-        if self.notifier:
+        if self.notifier and control.telegram_activo(self.id):
             self.notifier.send_alert(alerta)
         else:
             self.log.info("[DRY-RUN alerta] %s", alerta.replace("\n", " | "))
@@ -506,7 +506,7 @@ class BaseBot:
             "modo_recuperacion": modo_recuperacion,
         }
         txt = self.formatter.format_result(d)
-        if self.notifier:
+        if self.notifier and control.telegram_activo(self.id):
             self.notifier.send_text(txt)
         else:
             self.log.info("[DRY-RUN resultado] %s", txt.replace("\n", " | "))
