@@ -71,8 +71,24 @@ class PocketOptionCollector:
         # guarda como fuente de verdad (candles_real), aparte de los ticks ralos.
         from bot.pocket_client import PocketOptionClient
         self.client = PocketOptionClient(ssid, on_tick=self._on_tick,
-                                         on_history=self._on_history, demo=True,
+                                         on_history=self._on_history,
+                                         on_assets=self._on_assets, demo=True,
                                          logger=logging.getLogger("pocket_client"))
+
+    def _on_assets(self, payload) -> None:
+        """
+        Lista de activos con su PAGO (updateAssets). Se guarda el pago real (%) de
+        NUESTROS 22 pares para que los bots filtren por pago (el usuario exige
+        >= 72%). Reutiliza el parser robusto bot/payout.py (valida por rango, no
+        confia en una posicion fija del array). ts=ahora para saber que tan fresco.
+        """
+        from bot.payout import parse_assets
+        por_simbolo = parse_assets(payload)          # {symbol: payout%}
+        ahora = int(time.time())
+        for simbolo, pago in por_simbolo.items():
+            pair = self._code2pair.get(str(simbolo).upper())
+            if pair is not None:
+                self.store.upsert_payout(pair, float(pago), ahora)
 
     def _on_history(self, payload) -> None:
         """

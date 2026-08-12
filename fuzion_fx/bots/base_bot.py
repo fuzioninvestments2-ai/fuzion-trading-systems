@@ -85,7 +85,15 @@ class BaseBot:
         # timeframe). Asi una tendencia con varias CALL validas no se silencia.
         self._last_dir: Dict[str, str] = {}
         self._last_emit_ts: Dict[str, float] = {}
-        self.payout_pct = 85                   # pago asumido (PO no lo expone aca)
+        self.payout_pct = 85                   # fallback de DISPLAY si no hay pago real
+        # Filtro de pago real: el usuario exige emitir solo en activos con pago
+        # >= min_pct (72%). require: si el colector aun no recibio el pago del par,
+        # NO emitir (mejor callar que a ciegas). El pago real lo provee el feed
+        # (lo guarda el colector desde updateAssets de PO).
+        pf = cfg.get("payout", {}) or {}
+        self.payout_min = float(pf.get("min_pct", 72))
+        self.payout_max = float(pf.get("max_pct", 100))
+        self.payout_require = bool(pf.get("require", True))
         # Margen para resolver contra el OHLC real: si al vencer aun no llego la
         # vela real de PO (el colector rota 22 pares), se ESPERA hasta este margen
         # antes de declarar la senal NULA. Evita nulificar de mas por demora del
@@ -134,8 +142,29 @@ class BaseBot:
         self._emitted_ts = [t for t in self._emitted_ts if t >= limite]
         return len(self._emitted_ts) < self.max_signals_per_hour
 
+    # ------------------------------------------------------------- filtro de pago
+    def _payout_de(self, pair: str) -> Optional[float]:
+        """Pago real (%) del par segun el feed (colector). None si no hay dato."""
+        getter = getattr(self.feed, "get_payout", None)
+        if getter is None:
+            return None
+        try:
+            return getter(pair)
+        except Exception:
+            return None
+
+    def _pago_ok(self, payout: Optional[float]) -> bool:
+        """
+        True si se puede emitir por pago. Sin dato: depende de payout_require
+        (True -> no emitir a ciegas). Con dato: dentro de [min, max].
+        """
+        if payout is None:
+            return not self.payout_require
+        return self.payout_min <= payout <= self.payout_max
+
     # ------------------------------------------------------------- tarjeta rica
-    def build_card(self, pair: str, result: Dict[str, Any]) -> str:
+    def build_card(self, pair: str, result: Dict[str, Any],
+                   payout: Optional[float] = None) -> str:
         """
         Arma el dict de datos POR PAR y delega el formato en SignalCardFormatter.
         El bot solo calcula (tiempos, ATR en pips, acierto por par); el formato
@@ -177,7 +206,9 @@ class BaseBot:
             "tz_offset": horas_off,
             # utc_hour: el formatter deriva el mercado (Asia/Europe/America).
             "utc_hour": datetime.now(timezone.utc).hour,
-            "payout": self.payout_pct,
+            # Pago REAL del activo (lo que paga PO ahora); si no hay dato, el
+            # fallback de display. El filtro ya garantizo que es >= min_pct.
+            "payout": int(round(payout)) if payout is not None else self.payout_pct,
             "confirmaciones": result["confirming"],
             "acierto_pct": acierto_pct,
             "n_muestras": wr["trades"],
@@ -218,6 +249,15 @@ class BaseBot:
                 if now - self._last_emit_ts.get(pair, 0.0) < self.timeframe_seconds:
                     continue
 
+            # FILTRO DE PAGO: solo emitir si el activo paga >= min_pct (72%). Es
+            # exigencia del usuario: un pago bajo destruye la ventaja aunque el
+            # acierto sea bueno (break-even sube). Sin dato de pago -> no emitir.
+            pago = self._payout_de(pair)
+            if not self._pago_ok(pago):
+                self.log.debug("Pago fuera de rango en %s: %s (min %s)",
+                               pair, pago, self.payout_min)
+                continue
+
             ok, motivo = self.risk.can_trade(pair)
             if not ok:
                 self.log.debug("Riesgo bloquea %s: %s", pair, motivo)
@@ -243,7 +283,7 @@ class BaseBot:
                    "price": result["price"], "atr": result["atr"]}
             sid = self.store.save_signal(rec)
             rec["id"] = sid
-            card = self.build_card(pair, result)
+            card = self.build_card(pair, result, payout=pago)
             if self.notifier:
                 # Grafico de velas del par como foto; si falla, va solo texto.
                 try:

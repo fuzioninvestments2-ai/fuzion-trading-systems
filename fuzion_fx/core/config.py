@@ -68,6 +68,9 @@ def get_bot_config(bot_id: str, path: str = None) -> Dict[str, Any]:
     bot = dict(bots[bot_id])
     bot["id"] = bot_id
     bot["telegram"] = cfg.get("telegram", {})
+    # Filtro de pago: default global (top-level 'payout') salvo que el bot lo pise.
+    # El usuario exige emitir solo en activos con pago real >= 72%.
+    bot["payout"] = bot.get("payout", cfg.get("payout", {}))
     if "db_path" in bot and not os.path.isabs(bot["db_path"]):
         bot["db_path"] = os.path.join(ROOT, bot["db_path"])
     return bot

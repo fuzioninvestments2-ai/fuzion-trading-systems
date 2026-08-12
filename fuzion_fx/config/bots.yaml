@@ -1,6 +1,14 @@
 # fuzion_fx/config/bots.yaml — Configuracion de los 4 bots Fuzion FX.
 # Cada bot: su timeframe, sus 22 pares, indicadores, riesgo, aprendizaje y su
 # sqlite propia. Los 4 comparten token y canal de Telegram (se resuelven de .env).
+
+# Filtro de PAGO (payout) real de Pocket Option, aplicado a los 4 bots. El usuario
+# exige NO emitir en activos con pago bajo: minimo 72%. min_pct es el piso duro;
+# max_pct=100 deja pasar cualquier pago mas alto (mejor pago = mejor para el
+# operador). require=true: si el colector aun no recibio el pago del par, NO se
+# emite (mejor callar que emitir a ciegas). Bajar el piso solo si sabes lo que haces.
+payout: {min_pct: 72, max_pct: 100, require: true}
+
 bots:
   f1_m1:
     name: "FUZION FX 1M"

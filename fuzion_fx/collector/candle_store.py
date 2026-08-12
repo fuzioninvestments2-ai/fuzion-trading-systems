@@ -63,7 +63,31 @@ class CandleStore:
                 volume  REAL DEFAULT 0,
                 PRIMARY KEY (pair, tf, ts)
             )""")
+        # payouts: pago REAL (%) por par, que PO manda en updateAssets. El colector
+        # (unica conexion) lo escribe; los 4 bots lo leen para NO emitir en activos
+        # con pago bajo (el usuario exige pago >= 72%). ts = ultima actualizacion.
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS payouts (
+                pair    TEXT PRIMARY KEY,
+                payout  REAL,
+                ts      INTEGER
+            )""")
         self.conn.commit()
+
+    def upsert_payout(self, pair: str, payout: float, ts: int) -> None:
+        """Guarda/actualiza el pago real (%) de un par."""
+        self.conn.execute(
+            """INSERT INTO payouts (pair, payout, ts) VALUES (?, ?, ?)
+               ON CONFLICT(pair) DO UPDATE SET payout=excluded.payout,
+                 ts=excluded.ts""",
+            (pair, float(payout), int(ts)))
+        self.conn.commit()
+
+    def get_payout(self, pair: str) -> Optional[float]:
+        """Pago real (%) del par, o None si el colector aun no lo recibio."""
+        row = self.conn.execute(
+            "SELECT payout FROM payouts WHERE pair=? LIMIT 1", (pair,)).fetchone()
+        return float(row[0]) if row else None
 
     def upsert_candle(self, pair: str, tf: int, ts: int, o: float, h: float,
                       l: float, c: float, volume: float = 0.0) -> None:

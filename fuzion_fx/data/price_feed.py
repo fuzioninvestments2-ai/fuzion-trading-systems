@@ -56,9 +56,20 @@ class InMemoryPriceFeed(PriceFeed):
 
     def __init__(self) -> None:
         self._data: Dict[str, Dict[str, List[float]]] = {}
+        # Pago por par para el filtro; default 85 (en rango) para que las pruebas
+        # de emision no queden mudas por el filtro de pago.
+        self._payouts: Dict[str, float] = {}
+        self._payout_default: Optional[float] = 85.0
 
     def set_candles(self, pair: str, candles: Dict[str, Sequence[float]]) -> None:
         self._data[pair] = {k: list(v) for k, v in candles.items()}
+
+    def set_payout(self, pair: str, payout: Optional[float]) -> None:
+        """Fija el pago (%) de un par para probar el filtro de pago."""
+        self._payouts[pair] = payout
+
+    def get_payout(self, pair: str) -> Optional[float]:
+        return self._payouts.get(pair, self._payout_default)
 
     def get_candles(self, pair: str, timeframe_seconds: int,
                     count: int = 200) -> Optional[Dict[str, List[float]]]:
@@ -128,3 +139,10 @@ class CandleStoreFeed(PriceFeed):
         if store is None:
             return None
         return store.real_candle_at(pair, int(timeframe_seconds), int(bucket))
+
+    def get_payout(self, pair: str) -> Optional[float]:
+        """Pago real (%) del par que guardo el colector. None si aun no llego."""
+        store = self._get_store()
+        if store is None:
+            return None
+        return store.get_payout(pair)
