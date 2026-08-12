@@ -27,6 +27,7 @@ from core.config import get_bot_config, load_config, ROOT
 from core.results_store import ResultsStore
 from core.risk_manager import RiskManager
 from core.signal_engine import SignalEngine, NEUTRAL
+from core.multi_timeframe import MultiTimeframeAnalyzer, TF_SEGUNDOS
 from core.learning_engine import LearningEngine
 from core import news_guard
 from core import control
@@ -67,6 +68,13 @@ class BaseBot:
         self.store = store or ResultsStore(cfg["db_path"])
         self.risk = RiskManager(cfg["risk"])
         self.engine = SignalEngine(cfg["indicators"], cfg["signal"])
+        # LA FOTO COMPLETA: analizador de convergencia multi-temporalidad. El motor
+        # de una sola tf da el disparo de ENTRADA; la convergencia confirma que TODA
+        # la foto (corto/medio/largo) apoya la direccion. Solo se aplica como filtro
+        # cuando hay datos de al menos `min_tf_convergencia` temporalidades (si no,
+        # cae al motor de una tf: no bloquea al arranque cuando aun no hay historia).
+        self.mtf = MultiTimeframeAnalyzer(cfg["indicators"])
+        self.min_tf_convergencia = int(cfg.get("min_tf_convergencia", 3))
         self.learning = LearningEngine(self.store, cfg["learning"])
         # Feed real por defecto: lee po_candles.db del colector. Si el colector
         # no arranco (archivo inexistente), CandleStoreFeed devuelve None y el
@@ -174,10 +182,30 @@ class BaseBot:
             return not self.payout_require
         return self.payout_min <= payout <= self.payout_max
 
+    # ------------------------------------------------------------- foto completa
+    def convergencia(self, pair: str) -> Optional[Dict[str, Any]]:
+        """
+        Lee las velas de TODAS las temporalidades disponibles (5s..1h) del par y
+        devuelve el veredicto de convergencia (o None si el feed no las tiene). Es
+        la "foto completa": el conjunto de tiempos, no una sola tf.
+        """
+        velas: Dict[int, Any] = {}
+        for tf in TF_SEGUNDOS.values():
+            try:
+                c = self.feed.get_candles(pair, tf)
+            except Exception:
+                c = None
+            if c and len(c.get("close", [])) >= 2:
+                velas[tf] = c
+        if not velas:
+            return None
+        return self.mtf.analizar(velas)
+
     # ------------------------------------------------------------- tarjeta rica
     def build_card(self, pair: str, result: Dict[str, Any],
                    payout: Optional[float] = None,
-                   entry_ts: Optional[int] = None) -> str:
+                   entry_ts: Optional[int] = None,
+                   confluencia: str = "") -> str:
         """
         Arma el dict de datos POR PAR y delega el formato en SignalCardFormatter.
         El bot solo calcula (tiempos, ATR en pips, acierto por par); el formato
@@ -233,6 +261,7 @@ class BaseBot:
             "acierto_pct": acierto_pct,
             "n_muestras": wr["trades"],
             "atr": atr_pips,
+            "confluencia": confluencia,        # foto completa (multi-temporalidad)
         }
         return self.formatter.format_signal(d)
 
@@ -311,6 +340,21 @@ class BaseBot:
                 continue
             result = confirmado                # usar la lectura fresca confirmada
 
+            # FOTO COMPLETA (convergencia multi-temporalidad): el disparo de esta tf
+            # solo vale si el CONJUNTO de tiempos (corto/medio/largo) apoya la misma
+            # direccion. Solo se aplica si hay datos de >= min_tf_convergencia
+            # temporalidades; si no, cae al motor de una tf (no bloquea al arranque).
+            conv = self.convergencia(pair)
+            conv_detalle = ""
+            if conv is not None and conv["total"] >= self.min_tf_convergencia:
+                if conv["signal"] != result["signal"]:
+                    self.log.info("Foto completa NO confirma %s %s (conv=%s, %s) "
+                                  "-> no emito", pair, result["signal"],
+                                  conv["signal"], conv["detalle"])
+                    continue
+                conv_detalle = (f"{conv['alineadas']}/{conv['total']} tiempos "
+                                f"({conv['detalle']}) conv {conv['convergencia']:.0%}")
+
             # Borde de entrada = proximo borde de vela DESDE EL INSTANTE DE EMISION
             # (tras el pre-filtro de 10s, que es cuando el humano recibe la tarjeta y
             # entra). Se calcula UNA sola vez, se guarda y lo usan TANTO la tarjeta
@@ -331,7 +375,8 @@ class BaseBot:
                    "entry_ts": entry_border}
             sid = self.store.save_signal(rec)
             rec["id"] = sid
-            card = self.build_card(pair, result, payout=pago, entry_ts=entry_border)
+            card = self.build_card(pair, result, payout=pago, entry_ts=entry_border,
+                                   confluencia=conv_detalle)
             if self.notifier:
                 # Grafico coordinado con la senal (velas frescas + direccion + entrada).
                 img = None

@@ -87,6 +87,9 @@ class SignalCardFormatter:
         bot_name = d.get("bot_name", "FUZION FX")
         card_label = d.get("card_label", "")
         label_txt = f"  ({card_label})" if card_label else ""
+        # Confluencia multi-temporalidad (la foto completa): línea extra si viene.
+        conf = str(d.get("confluencia", "") or "")
+        linea_conf = f"🔭 Confluencia: {conf}\n" if conf else ""
 
         return (
             f"🤖 *{bot_name}*{estrella}\n"
@@ -98,6 +101,7 @@ class SignalCardFormatter:
             f"🌍 Mercado: {mercado}\n"
             f"💰 Pago del activo: {int(d.get('payout', 85))}%\n"
             f"🎯 Confirmaciones: {len(d.get('confirmaciones', []))} ({indic})\n"
+            f"{linea_conf}"
             f"📈 Acierto reciente: {acierto}\n"
             f"📊 Volatilidad (ATR): {d.get('atr', 0.0)} pips\n"
             f"⚠️ Demo · señal educativa · el acierto no está garantizado")

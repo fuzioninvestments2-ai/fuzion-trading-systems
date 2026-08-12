@@ -107,10 +107,11 @@ def test_on_history_ignora_timeframe_no_usado() -> None:
     try:
         col = _colector(tmp.name)
         code = _po_code("EUR/USD", col.mercado)
-        # period 900 no lo analiza ningun bot -> no se guarda.
-        col._on_history({"asset": code, "period": 900, "candles": [
-            {"time": 900, "open": 1, "high": 1, "low": 1, "close": 1}]})
-        assert col.store.get_real_candles("EUR/USD", 900) is None
+        # period 7200 (2h) no esta en las temporalidades que junta el colector -> no
+        # se guarda. (900=15m y 3600=1h SI se juntan ahora para la foto completa.)
+        col._on_history({"asset": code, "period": 7200, "candles": [
+            {"time": 7200, "open": 1, "high": 1, "low": 1, "close": 1}]})
+        assert col.store.get_real_candles("EUR/USD", 7200) is None
         col.store.close()
     finally:
         os.unlink(tmp.name)

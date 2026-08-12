@@ -42,7 +42,14 @@ from collector.candle_store import CandleStore             # noqa: E402
 from collector.po_history import parse_history             # noqa: E402
 from core.config import get_bot_config, load_config, ROOT  # noqa: E402
 
-TIMEFRAMES = [60, 120, 180, 300]                            # M1, M2, M3, M5
+# Temporalidades que junta el colector: LA FOTO COMPLETA que pide el usuario
+# (5s..1h). Las cortas (5-30s) se arman desde ticks; las medias/largas tambien se
+# piden por historial a PO (request_history). Las muy largas (4h/1D) no se agregan
+# desde ticks (haria falta conexion dedicada); se dejan para el historial batch.
+TIMEFRAMES = [5, 10, 15, 30, 60, 120, 180, 300, 600, 900, 1800, 3600]
+# Periodos que se piden por HISTORIAL real a PO en cada rotacion (los que PO sirve
+# como velas; las cortas <60s vienen de ticks en vivo).
+HISTORIAL_TF = [120, 180, 300, 600, 900, 1800, 3600]
 SEGUNDOS_POR_PAR = 8                                        # ventana de escucha por par
 DB_PATH = os.path.join(ROOT, "data", "db", "po_candles.db")
 
@@ -203,7 +210,7 @@ class PocketOptionCollector:
                     # manda (solo emite historial del periodo suscripto). Termina en
                     # 60 para seguir recibiendo ticks M1. Tiempos a afinar en vivo.
                     await self.client.set_asset(code, period=60)
-                    await self.client.request_history(code, [120, 180, 300])
+                    await self.client.request_history(code, HISTORIAL_TF)
                 except Exception:
                     log.exception("No se pudo cambiar a %s", pair)
                 await asyncio.sleep(SEGUNDOS_POR_PAR)
