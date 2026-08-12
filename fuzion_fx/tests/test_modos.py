@@ -34,6 +34,10 @@ def test_params_por_modo() -> None:
     assert r["scan_interval"] < lento["scan_interval"]
     # El modo NO toca min_confirmations (queda en config).
     assert "min_confirmations" not in r
+    # Politica de convergencia por modo: rapido informa (no frena), lento confirma.
+    assert r["convergencia"] == "info"
+    assert params_modo("normal")["convergencia"] == "no_contradice"
+    assert lento["convergencia"] == "confirma"
     # Desconocido -> default.
     assert params_modo("xxx") == params_modo(MODO_DEFAULT)
     # Es COPIA: mutar el resultado no toca el registro.

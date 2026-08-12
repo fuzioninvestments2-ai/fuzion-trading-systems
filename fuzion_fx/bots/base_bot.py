@@ -80,6 +80,7 @@ class BaseBot:
         # Modo actual aplicado (para no releer/loggear en cada pasada si no cambio).
         self._modo_actual = ""
         self._scan_interval = 30               # cadencia (la fija aplicar_modo)
+        self._conv_politica = "no_contradice"  # cuanto manda la foto (la fija el modo)
         # Feed real por defecto: lee po_candles.db del colector. Si el colector
         # no arranco (archivo inexistente), CandleStoreFeed devuelve None y el
         # bot simplemente no emite (seguro).
@@ -199,6 +200,7 @@ class BaseBot:
         p = params_modo(modo)
         self.mtf.umbral = float(p["umbral_convergencia"])
         self.min_tf_convergencia = int(p["min_tf_convergencia"])
+        self._conv_politica = str(p.get("convergencia", "no_contradice"))
         self._scan_interval = max(15, int(p["scan_interval"]))
         if modo != self._modo_actual:
             self.log.info("Modo '%s': convergencia>=%.2f, %d tiempos, rastreo %ds "
@@ -381,20 +383,30 @@ class BaseBot:
                 continue
             result = confirmado                # usar la lectura fresca confirmada
 
-            # FOTO COMPLETA (convergencia multi-temporalidad): el disparo de esta tf
-            # solo vale si el CONJUNTO de tiempos (corto/medio/largo) apoya la misma
-            # direccion. Solo se aplica si hay datos de >= min_tf_convergencia
-            # temporalidades; si no, cae al motor de una tf (no bloquea al arranque).
+            # FOTO COMPLETA (convergencia multi-temporalidad). Cuanto MANDA depende
+            # del MODO (self._conv_politica), no siempre bloquea:
+            #   info          -> nunca frena; solo muestra la confluencia (rapido).
+            #   no_contradice -> frena solo si la foto va en direccion OPUESTA.
+            #   confirma      -> exige que la foto apoye la MISMA direccion (lento).
+            # Solo se evalua con datos de >= min_tf_convergencia tiempos; si no, no
+            # interviene (cae al motor de una tf, no bloquea al arranque).
             conv = self.convergencia(pair)
             conv_detalle = ""
+            politica = getattr(self, "_conv_politica", "no_contradice")
             if conv is not None and conv["total"] >= self.min_tf_convergencia:
-                if conv["signal"] != result["signal"]:
-                    self.log.info("Foto completa NO confirma %s %s (conv=%s, %s) "
-                                  "-> no emito", pair, result["signal"],
+                opuesta = (conv["signal"] != NEUTRAL
+                           and conv["signal"] != result["signal"])
+                frena = ((politica == "confirma"
+                          and conv["signal"] != result["signal"])
+                         or (politica == "no_contradice" and opuesta))
+                if frena:
+                    self.log.info("Foto completa frena %s %s (modo=%s, conv=%s, %s)",
+                                  pair, result["signal"], self._modo_actual,
                                   conv["signal"], conv["detalle"])
                     continue
-                conv_detalle = (f"{conv['alineadas']}/{conv['total']} tiempos "
-                                f"({conv['detalle']}) conv {conv['convergencia']:.0%}")
+                if conv["detalle"]:
+                    conv_detalle = (f"{conv['alineadas']}/{conv['total']} tiempos "
+                                    f"({conv['detalle']}) conv {conv['convergencia']:.0%}")
 
             # Borde de entrada = proximo borde de vela DESDE EL INSTANTE DE EMISION
             # (tras el pre-filtro de 10s, que es cuando el humano recibe la tarjeta y

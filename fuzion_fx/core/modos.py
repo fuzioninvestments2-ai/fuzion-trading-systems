@@ -24,16 +24,21 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+# 'convergencia' = cuanto MANDA la foto completa sobre el disparo de una tf:
+#   "info"          -> NO bloquea; solo muestra la confluencia (rapido: mas señales).
+#   "no_contradice" -> bloquea solo si la foto va en direccion OPUESTA (normal).
+#   "confirma"      -> exige que la foto APOYE la misma direccion (lento: mas seguro).
 MODOS: Dict[str, Dict[str, Any]] = {
-    # Mas entradas: convergencia liviana, pocos tiempos, rastreo rapido.
+    # Mas entradas: la convergencia informa pero NO frena (mercado real es ruidoso;
+    # exigir foto perfecta dejaba todo mudo). Rastreo rapido.
     "rapido": {"umbral_convergencia": 0.25, "min_tf_convergencia": 2,
-               "scan_interval": 15},
-    # Equilibrio.
+               "convergencia": "info", "scan_interval": 15},
+    # Equilibrio: no opera contra la foto completa.
     "normal": {"umbral_convergencia": 0.40, "min_tf_convergencia": 3,
-               "scan_interval": 30},
-    # Menos entradas, mas seguras: mucha convergencia y muchos tiempos alineados.
+               "convergencia": "no_contradice", "scan_interval": 30},
+    # Menos entradas, mas seguras: la foto DEBE confirmar la direccion.
     "lento":  {"umbral_convergencia": 0.60, "min_tf_convergencia": 4,
-               "scan_interval": 45},
+               "convergencia": "confirma", "scan_interval": 45},
 }
 
 MODO_DEFAULT = "rapido"
