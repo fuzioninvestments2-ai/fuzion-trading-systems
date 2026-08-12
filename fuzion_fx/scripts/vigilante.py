@@ -165,9 +165,24 @@ def _notifier():
     return None
 
 
+def _setup_logging() -> None:
+    """
+    Loguea a ARCHIVO (logs/vigilante.log) siempre, y a consola solo si hay una.
+    Asi el vigilante puede correr INVISIBLE (pythonw, sin ventana) sin romper: con
+    pythonw no hay stderr, y un StreamHandler a stderr=None fallaria.
+    """
+    logs_dir = os.path.join(ROOT, "logs")
+    os.makedirs(logs_dir, exist_ok=True)
+    fmt = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+    handlers: list = [logging.FileHandler(os.path.join(logs_dir, "vigilante.log"),
+                                          encoding="utf-8")]
+    if sys.stderr is not None:                 # hay consola -> tambien a pantalla
+        handlers.append(logging.StreamHandler())
+    logging.basicConfig(level=logging.INFO, format=fmt, handlers=handlers)
+
+
 def main() -> None:
-    logging.basicConfig(level=logging.INFO,
-                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    _setup_logging()
     notifier = _notifier()
     arranque = time.time()
     arranque_colector = arranque       # cuando arranco el colector actual (grace)
