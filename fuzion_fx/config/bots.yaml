@@ -50,12 +50,11 @@ bots:
     timeframe_seconds: 300
     card_label: "5 min - M5"
     pairs: [AUD/CAD, AUD/JPY, AUD/NZD, AUD/USD, CAD/JPY, CHF/JPY, EUR/AUD, EUR/CAD, EUR/CHF, EUR/GBP, EUR/JPY, EUR/USD, GBP/AUD, GBP/CAD, GBP/CHF, GBP/JPY, GBP/USD, NZD/JPY, NZD/USD, USD/CAD, USD/CHF, USD/JPY]
-    # rsi 40/60 (no 30/70): calibrado por backtest sobre el historial real (ver
-    # calibrar.py). El default 30/70 dejaba al 5M casi mudo (RSI votaba ~9% de las
-    # velas). 40/60 sube la frecuencia SIN caer en ruido: backtest 71% win-rate
-    # (62 trades) vs ~57% pegado al breakeven de configs mas sueltas (45/55). En
-    # binarias payout 85% el equilibrio es ~54%: aflojar mas seria perder neto.
-    indicators: {ema_fast: 9, ema_slow: 21, rsi_period: 14, rsi_oversold: 40, rsi_overbought: 60, macd_fast: 12, macd_slow: 26, macd_signal: 9, bb_period: 20, bb_std: 2.0, atr_period: 14}
+    # rsi 30/70 (default): revertido desde 40/60. El backtest que justificaba 40/60
+    # (71% win-rate) se corrio sobre po_candles.db, cuyos datos son ticks ralos que
+    # divergen del precio real de PO -> win-rate inflado, no confiable. Congelado en
+    # 30/70 hasta validar contra el OHLC real de PO (herramienta de comparacion).
+    indicators: {ema_fast: 9, ema_slow: 21, rsi_period: 14, macd_fast: 12, macd_slow: 26, macd_signal: 9, bb_period: 20, bb_std: 2.0, atr_period: 14}
     # min_confirmations 3 (no 4): el motor tiene SOLO 4 indicadores votantes y 2
     # son de tendencia (ema, macd) y 2 de reversion (rsi, bb), que se oponen en
     # los extremos; exigir 4 es una contradiccion estructural -> el 5M no emitia
