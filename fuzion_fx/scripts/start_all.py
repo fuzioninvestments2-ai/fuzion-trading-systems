@@ -31,6 +31,21 @@ PROCESOS = [(s["nombre"], s["script"]) for s in SERVICIOS]
 SCRIPT_DE = POR_NOMBRE                              # nombre -> servicio (con args)
 
 
+def _python_exe() -> str:
+    """
+    Ejecutable python.exe (NO pythonw.exe) para lanzar los servicios. El vigilante
+    corre bajo pythonw (sin ventana); si lanzara los servicios con pythonw, se
+    caen (sin stdout/consola valida). Con python.exe + DETACHED_PROCESS corren SIN
+    ventana igual, y estables (asi lo hacia start_all, que funcionaba horas).
+    """
+    exe = sys.executable or "python"
+    if os.name == "nt" and os.path.basename(exe).lower() == "pythonw.exe":
+        cand = os.path.join(os.path.dirname(exe), "python.exe")
+        if os.path.isfile(cand):
+            return cand
+    return exe
+
+
 def _kwargs() -> dict:
     """Lanzar DESACOPLADO de la consola (los procesos siguen vivos aunque se
     cierre la ventana). Su salida va a DEVNULL (cada bot ya escribe su log)."""
@@ -42,8 +57,9 @@ def _kwargs() -> dict:
 
 
 def lanzar_proceso(script: str, args=None) -> int:
-    """Lanza un script Python desacoplado (con args opcionales) y devuelve su PID."""
-    proc = subprocess.Popen([sys.executable, script, *(args or [])], **_kwargs())
+    """Lanza un script Python desacoplado (con args opcionales) y devuelve su PID.
+    Siempre con python.exe (no pythonw): estable y sin ventana (DETACHED)."""
+    proc = subprocess.Popen([_python_exe(), script, *(args or [])], **_kwargs())
     return proc.pid
 
 
