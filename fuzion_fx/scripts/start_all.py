@@ -46,27 +46,47 @@ def _python_exe() -> str:
     return exe
 
 
-def _kwargs() -> dict:
-    """Lanzar DESACOPLADO de la consola (los procesos siguen vivos aunque se
-    cierre la ventana). Su salida va a DEVNULL (cada bot ya escribe su log)."""
-    kwargs = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+def _kwargs(salida) -> dict:
+    """Lanzar DESACOPLADO de la consola. `salida` = destino de stdout/stderr
+    (DEVNULL o un archivo). Redirigir a archivo captura el traceback si el proceso
+    crashea al arrancar (con DEVNULL se perdia)."""
+    kwargs = {"stdout": salida, "stderr": salida}
     if os.name == "nt":
         kwargs["creationflags"] = (subprocess.DETACHED_PROCESS
                                    | subprocess.CREATE_NEW_PROCESS_GROUP)
     return kwargs
 
 
-def lanzar_proceso(script: str, args=None) -> int:
-    """Lanza un script Python desacoplado (con args opcionales) y devuelve su PID.
-    Siempre con python.exe (no pythonw): estable y sin ventana (DETACHED)."""
-    proc = subprocess.Popen([_python_exe(), script, *(args or [])], **_kwargs())
+def lanzar_proceso(script: str, args=None, err_path=None) -> int:
+    """
+    Lanza un script Python desacoplado con python.exe (no pythonw), sin ventana.
+    Redirige stdout/stderr a `err_path` (si se da) para CAPTURAR cualquier crash
+    de arranque; si no, a DEVNULL. Devuelve el PID.
+    """
+    salida = subprocess.DEVNULL
+    fh = None
+    if err_path:
+        try:
+            fh = open(err_path, "a", encoding="utf-8")
+            salida = fh
+        except OSError:
+            salida = subprocess.DEVNULL
+    try:
+        proc = subprocess.Popen([_python_exe(), script, *(args or [])],
+                                **_kwargs(salida))
+    finally:
+        if fh is not None:
+            fh.close()                     # el hijo ya tiene su propia copia del fd
     return proc.pid
 
 
 def lanzar_servicio(nombre: str) -> int:
-    """Lanza un servicio del registro por su nombre (usa su script y args)."""
+    """Lanza un servicio del registro por su nombre. Su salida (y crashes) van a
+    logs/<nombre>.err para poder diagnosticar."""
     s = POR_NOMBRE[nombre]
-    return lanzar_proceso(s["script"], s["args"])
+    err = os.path.join(ROOT, "logs", f"{nombre}.err")
+    os.makedirs(os.path.dirname(err), exist_ok=True)
+    return lanzar_proceso(s["script"], s["args"], err_path=err)
 
 
 def leer_pids() -> dict:
