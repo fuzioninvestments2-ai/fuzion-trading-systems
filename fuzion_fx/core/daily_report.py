@@ -37,7 +37,8 @@ class DailyReport:
         por_par: Dict[str, Dict[str, Any]] = {}
         for s in sigs:
             d = por_par.setdefault(s["pair"], {"signals": 0, "wins": 0,
-                                               "losses": 0, "ties": 0, "pending": 0})
+                                               "losses": 0, "ties": 0,
+                                               "nulas": 0, "pending": 0})
             d["signals"] += 1
             if not s["resolved"]:
                 d["pending"] += 1
@@ -45,8 +46,12 @@ class DailyReport:
                 d["wins"] += 1
             elif s["result"] == "loss":
                 d["losses"] += 1
-            else:
+            elif s["result"] == "tie":
                 d["ties"] += 1
+            else:
+                # result == 'NULL': sin dato real al vencimiento. Se registra pero
+                # NO cuenta como win/loss/tie (honestidad, Paso 3).
+                d["nulas"] += 1
 
         # win_pct por par (None si no hay resueltas win/loss).
         for d in por_par.values():
@@ -55,6 +60,7 @@ class DailyReport:
 
         wins = sum(d["wins"] for d in por_par.values())
         losses = sum(d["losses"] for d in por_par.values())
+        nulas = sum(d["nulas"] for d in por_par.values())
         day_win_pct = round(100.0 * wins / (wins + losses), 1) if (wins + losses) else None
 
         # Mejor / peor par entre los que tienen al menos una resuelta. Desempate:
@@ -81,6 +87,7 @@ class DailyReport:
             "por_par": por_par,
             "wins": wins,
             "losses": losses,
+            "nulas": nulas,
             "day_win_pct": day_win_pct,
             "best": best,
             "worst": worst,
@@ -119,6 +126,8 @@ class DailyReport:
                    else "sin señales resueltas")
         h.append(f"**Acierto del día:** {acierto}  "
                  f"({stats['wins']}W / {stats['losses']}L)")
+        if stats.get("nulas"):
+            h.append(f"**Nulas (sin dato real, no cuentan):** {stats['nulas']}")
         h.append(f"**Mejor par:** {self._par_txt(stats, stats['best'])}")
         h.append(f"**Peor par:** {self._par_txt(stats, stats['worst'])}")
 
@@ -150,7 +159,8 @@ class DailyReport:
         return (
             f"📋 *Resumen {fecha}* · {stats['bot_name']}\n"
             f"Señales: *{stats['total']}*  ·  Pares: {len(stats['pares'])}\n"
-            f"Acierto del día: *{acierto}*  ({stats['wins']}W/{stats['losses']}L)\n"
+            f"Acierto del día: *{acierto}*  ({stats['wins']}W/{stats['losses']}L)"
+            + (f"  ·  {stats['nulas']} nulas" if stats.get("nulas") else "") + "\n"
             f"Mejor: {self._par_txt(stats, stats['best'])}\n"
             f"Peor: {self._par_txt(stats, stats['worst'])}\n"
             f"Recuperación: {recup}\n"

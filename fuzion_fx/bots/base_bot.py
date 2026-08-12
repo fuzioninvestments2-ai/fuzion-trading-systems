@@ -86,6 +86,11 @@ class BaseBot:
         self._last_dir: Dict[str, str] = {}
         self._last_emit_ts: Dict[str, float] = {}
         self.payout_pct = 85                   # pago asumido (PO no lo expone aca)
+        # Margen para resolver contra el OHLC real: si al vencer aun no llego la
+        # vela real de PO (el colector rota 22 pares), se ESPERA hasta este margen
+        # antes de declarar la senal NULA. Evita nulificar de mas por demora del
+        # colector, sin inventar un resultado. Configurable por bot.
+        self.null_grace_seconds = int(cfg.get("null_grace_seconds", 600))
 
         # Sistema de Checkpoint Cuantico:
         # - prefilter: recalcula 10s despues; emite SOLO si coincide (menos falsas).
@@ -340,24 +345,43 @@ class BaseBot:
 
     def resolve_pending(self, now: Optional[float] = None) -> int:
         """
-        Cierra el loop de aprendizaje: para cada senal ya vencida, lee el precio
-        al vencimiento (vela en po_candles) y decide win/loss. Actualiza el store
-        (que alimenta al LearningEngine) y el riesgo (recovery/circuit breaker
-        reaccionan al desempeno reciente de las senales). Devuelve cuantas resolvio.
+        Cierra el loop de aprendizaje: para cada senal ya vencida, liquida contra
+        el precio REAL de PO (OHLC de candles_real) al vencimiento y decide
+        win/loss. Actualiza el store (que alimenta al LearningEngine) y el riesgo.
+        Devuelve cuantas resolvio con resultado REAL (las nulas no cuentan).
+
+        HONESTIDAD (Paso 3): se resuelve SOLO contra el OHLC real. Si al vencer no
+        hay vela real (gap/desconexion/colector sin rotar aun), se ESPERA hasta
+        `null_grace_seconds`; pasado ese margen, la senal se marca NULA (no se
+        interpola, no se inventa, no se gana por defecto). Las nulas se registran
+        para auditoria pero se IGNORAN en el win-rate y el aprendizaje.
 
         PnL SINTETICO (senal, no dinero real del usuario): +stake*payout si acierta,
         -stake si falla; sirve para que el bot mida su propio rendimiento y aprenda.
         """
         now = time.time() if now is None else now
-        if not hasattr(self.feed, "price_at"):
+        # Resolucion SOLO contra el OHLC real: si el feed no lo expone, no se
+        # resuelve (mejor no resolver que resolver sobre el tick viciado).
+        price_at_real = getattr(self.feed, "price_at_real", None)
+        if price_at_real is None:
             return 0
         cutoff = now - self.timeframe_seconds        # solo las ya vencidas
         n = 0
+        nulas = 0
         for s in self.store.pending_older_than(int(cutoff)):
             expiry = int(s["ts"]) + self.timeframe_seconds
-            exit_price = self.feed.price_at(s["pair"], self.timeframe_seconds, expiry)
+            exit_price = price_at_real(s["pair"], self.timeframe_seconds, expiry)
             if exit_price is None:
-                continue                             # aun sin vela de vencimiento
+                # Sin vela real al vencimiento: esperar dentro del margen; pasado
+                # el margen, NULA (no se inventa un cierre).
+                if now - expiry < self.null_grace_seconds:
+                    continue
+                self.store.resolve_signal(s["id"], "NULL", 0.0)
+                nulas += 1
+                self.log.info("Senal NULA %s %s: sin vela real al vencimiento "
+                              "(+%ds). No cuenta para el win-rate ni el aprendizaje.",
+                              s["pair"], s["direction"], int(now - expiry))
+                continue
             entry = float(s["price"])
             if exit_price == entry:
                 result, won = "tie", False
@@ -380,8 +404,9 @@ class BaseBot:
             # entra en RECUPERACION: la proxima senal sera mas estricta y menor.
             self._notificar_resultado(s, entry, exit_price, result)
             n += 1
-        if n:
-            self.log.info("Resueltas %d senales (feedback de aprendizaje)", n)
+        if n or nulas:
+            self.log.info("Resueltas %d senales reales, %d nulas (sin dato real)",
+                          n, nulas)
         return n
 
     def _notificar_resultado(self, s: Dict[str, Any], entry: float,
