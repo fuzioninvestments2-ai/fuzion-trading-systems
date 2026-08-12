@@ -71,13 +71,13 @@ def test_feed_sin_archivo_devuelve_none() -> None:
 
 
 def test_resolve_pending_aprende() -> None:
-    # Store de velas con un CALL que ACIERTA (precio sube al vencimiento). La
-    # resolucion honesta (Paso 3) liquida contra la vela REAL (candles_real): el
-    # vencimiento 1060 cae en el bucket 1020, ahi va el cierre real 1.12 > 1.10.
+    # CALL que ACIERTA. La resolucion honesta (Pasos 3-4) liquida sobre la vela
+    # REAL que se opera: el borde de entrada de ts=1000 es 1020; esa vela abre en
+    # 1.10 y cierra en 1.12 (subio) -> WIN.
     tmp = tempfile.mkdtemp()
     db = os.path.join(tmp, "po_candles.db")
     cs = CandleStore(db)
-    cs.upsert_real_candle("EUR/USD", 60, 1020, 1.12, 1.12, 1.12, 1.12, 1)
+    cs.upsert_real_candle("EUR/USD", 60, 1020, 1.10, 1.12, 1.10, 1.12, 1)
 
     st = ResultsStore(":memory:")
     bot = BaseBot("f1_m1", price_feed=CandleStoreFeed(db), store=st)

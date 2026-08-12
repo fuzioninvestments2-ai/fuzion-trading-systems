@@ -47,8 +47,8 @@ def test_resuelve_win_contra_real() -> None:
     bot, path = _bot_con_db()
     try:
         sid = _guardar(bot, 1000, "CALL", 1.1000)
-        # Vela real en el bucket que contiene el vencimiento (exp=1060 -> bucket
-        # 1020) con cierre por encima de la entrada -> WIN.
+        # La operacion es la vela del borde de entrada (ts=1000 -> borde 1020). Se
+        # puntua con esa vela real: open=entrada, close=cierre. close>open -> WIN.
         store = CandleStore(path)
         store.upsert_real_candle("EUR/USD", TF, 1020, 1.1005, 1.1012, 1.1004, 1.1010, 5)
         store.close()
@@ -114,10 +114,42 @@ def test_no_usa_ticks_para_resolver() -> None:
         os.unlink(path)
 
 
+def test_usa_open_del_borde_no_el_precio_de_deteccion() -> None:
+    bot, path = _bot_con_db()
+    try:
+        # Precio de deteccion 1.2000 (arriba); la vela operada abre en 1.1000 y
+        # cierra en 1.1010. Con el precio de deteccion como entrada, un CALL daria
+        # LOSS (1.1010 < 1.2000); con el OPEN del borde da WIN. Debe dar WIN.
+        _guardar(bot, 1000, "CALL", 1.2000)
+        store = CandleStore(path)
+        store.upsert_real_candle("EUR/USD", TF, 1020, 1.1000, 1.1015, 1.0999, 1.1010, 5)
+        store.close()
+        assert bot.resolve_pending(now=1200) == 1
+        assert bot.store.win_rate("EUR/USD")["wins"] == 1
+    finally:
+        os.unlink(path)
+
+
+def test_empate_open_igual_close_no_cuenta() -> None:
+    bot, path = _bot_con_db()
+    try:
+        _guardar(bot, 1000, "CALL", 1.1000)
+        store = CandleStore(path)
+        store.upsert_real_candle("EUR/USD", TF, 1020, 1.1000, 1.1000, 1.1000, 1.1000, 1)
+        store.close()
+        # open==close -> empate: se resuelve pero no cuenta en el win-rate.
+        assert bot.resolve_pending(now=1200) == 1
+        assert bot.store.win_rate("EUR/USD")["trades"] == 0
+    finally:
+        os.unlink(path)
+
+
 def _run_all() -> None:
     tests = [test_resuelve_win_contra_real, test_resuelve_loss_contra_real,
              test_espera_dentro_del_margen, test_nula_pasado_el_margen,
-             test_no_usa_ticks_para_resolver]
+             test_no_usa_ticks_para_resolver,
+             test_usa_open_del_borde_no_el_precio_de_deteccion,
+             test_empate_open_igual_close_no_cuenta]
     for t in tests:
         t()
         print(f"  OK  {t.__name__}")

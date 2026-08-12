@@ -121,3 +121,10 @@ class CandleStoreFeed(PriceFeed):
         if store is None:
             return None
         return store.price_at_real(pair, int(timeframe_seconds), int(ts))
+
+    def real_candle_at(self, pair: str, timeframe_seconds: int, bucket: int):
+        """(open, close) REAL de la vela en el bucket exacto. None si no hay dato."""
+        store = self._get_store()
+        if store is None:
+            return None
+        return store.real_candle_at(pair, int(timeframe_seconds), int(bucket))

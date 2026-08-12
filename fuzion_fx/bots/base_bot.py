@@ -345,44 +345,55 @@ class BaseBot:
 
     def resolve_pending(self, now: Optional[float] = None) -> int:
         """
-        Cierra el loop de aprendizaje: para cada senal ya vencida, liquida contra
-        el precio REAL de PO (OHLC de candles_real) al vencimiento y decide
-        win/loss. Actualiza el store (que alimenta al LearningEngine) y el riesgo.
-        Devuelve cuantas resolvio con resultado REAL (las nulas no cuentan).
+        Cierra el loop de aprendizaje: para cada senal vencida, la liquida sobre LA
+        MISMA vela que opera el humano y decide win/loss. Actualiza el store (que
+        alimenta al LearningEngine) y el riesgo. Devuelve cuantas resolvio con
+        resultado REAL (las nulas no cuentan).
 
-        HONESTIDAD (Paso 3): se resuelve SOLO contra el OHLC real. Si al vencer no
-        hay vela real (gap/desconexion/colector sin rotar aun), se ESPERA hasta
-        `null_grace_seconds`; pasado ese margen, la senal se marca NULA (no se
-        interpola, no se inventa, no se gana por defecto). Las nulas se registran
-        para auditoria pero se IGNORAN en el win-rate y el aprendizaje.
+        HONESTIDAD (Pasos 3 y 4): la tarjeta le dice al humano que ENTRE en el
+        proximo borde de vela y venza un timeframe despues. Entonces la operacion
+        real es UNA vela: la del borde. Se puntua sobre ESA vela real de PO
+        (open=precio de entrada en el borde, close=precio al vencimiento), NO desde
+        el instante en que el bot detecto (eso adelantaba el resultado y daba un
+        win-rate irreal). Si no hay vela real de esa operacion, se ESPERA hasta
+        `null_grace_seconds`; pasado el margen, NULA (no se interpola, no se
+        inventa, no se gana por defecto). Las nulas se ignoran en win-rate y
+        aprendizaje; quedan registradas para auditoria.
 
         PnL SINTETICO (senal, no dinero real del usuario): +stake*payout si acierta,
         -stake si falla; sirve para que el bot mida su propio rendimiento y aprenda.
         """
         now = time.time() if now is None else now
-        # Resolucion SOLO contra el OHLC real: si el feed no lo expone, no se
-        # resuelve (mejor no resolver que resolver sobre el tick viciado).
-        price_at_real = getattr(self.feed, "price_at_real", None)
-        if price_at_real is None:
+        tf = self.timeframe_seconds
+        # Resolucion SOLO contra el OHLC real de la vela operada: si el feed no lo
+        # expone, no se resuelve (mejor no resolver que resolver sobre datos malos).
+        real_candle_at = getattr(self.feed, "real_candle_at", None)
+        if real_candle_at is None:
             return 0
-        cutoff = now - self.timeframe_seconds        # solo las ya vencidas
+        cutoff = now - tf
         n = 0
         nulas = 0
         for s in self.store.pending_older_than(int(cutoff)):
-            expiry = int(s["ts"]) + self.timeframe_seconds
-            exit_price = price_at_real(s["pair"], self.timeframe_seconds, expiry)
-            if exit_price is None:
-                # Sin vela real al vencimiento: esperar dentro del margen; pasado
+            ts = int(s["ts"])
+            # Borde de entrada = proximo multiplo de tf tras la deteccion (misma
+            # formula que la tarjeta en build_card). La vela operada abre ahi y
+            # vence en borde+tf.
+            entry_border = ts - (ts % tf) + tf
+            expiry = entry_border + tf
+            vela = real_candle_at(s["pair"], tf, entry_border)
+            if vela is None:
+                # Sin vela real de la operacion: esperar dentro del margen; pasado
                 # el margen, NULA (no se inventa un cierre).
                 if now - expiry < self.null_grace_seconds:
                     continue
                 self.store.resolve_signal(s["id"], "NULL", 0.0)
                 nulas += 1
-                self.log.info("Senal NULA %s %s: sin vela real al vencimiento "
-                              "(+%ds). No cuenta para el win-rate ni el aprendizaje.",
-                              s["pair"], s["direction"], int(now - expiry))
+                self.log.info("Senal NULA %s %s: sin vela real de la operacion "
+                              "(borde %d, +%ds). No cuenta en win-rate ni aprendizaje.",
+                              s["pair"], s["direction"], entry_border,
+                              int(now - expiry))
                 continue
-            entry = float(s["price"])
+            entry, exit_price = vela                 # open (borde) y close (vencimiento)
             if exit_price == entry:
                 result, won = "tie", False
             elif s["direction"] == "CALL":

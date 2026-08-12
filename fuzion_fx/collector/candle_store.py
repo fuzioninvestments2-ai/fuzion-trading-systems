@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 
 class CandleStore:
@@ -144,6 +144,18 @@ class CandleStore:
             """SELECT close FROM candles_real WHERE pair=? AND tf=? AND ts=?
                LIMIT 1""", (pair, tf, bucket)).fetchone()
         return float(row[0]) if row else None
+
+    def real_candle_at(self, pair: str, tf: int, bucket: int
+                       ) -> Optional[Tuple[float, float]]:
+        """
+        (open, close) de la vela REAL en el bucket EXACTO `bucket` (un multiplo de
+        tf). Es la vela que el humano opera de punta a punta: entra en open (borde)
+        y vence en close (borde+tf). None si no hay esa vela real. No interpola.
+        """
+        row = self.conn.execute(
+            """SELECT open, close FROM candles_real WHERE pair=? AND tf=? AND ts=?
+               LIMIT 1""", (pair, int(tf), int(bucket))).fetchone()
+        return (float(row[0]), float(row[1])) if row else None
 
     def close(self) -> None:
         self.conn.close()
