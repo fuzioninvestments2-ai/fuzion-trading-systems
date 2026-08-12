@@ -211,8 +211,10 @@ def resumen_general(now_ts: Optional[float] = None) -> Dict[str, Any]:
     tot_l = sum(b["losses"] for b in bots)
     global_pct = round(100.0 * tot_w / (tot_w + tot_l), 1) if (tot_w + tot_l) else None
     lista_pagos = pagos()
+    from core import control
     return {
         "ts": int(now_ts),
+        "pausado": control.esta_pausado(),
         "bots": bots,
         "global": {"wins": tot_w, "losses": tot_l, "win_pct": global_pct,
                    "nulas": sum(b["nulas"] for b in bots),

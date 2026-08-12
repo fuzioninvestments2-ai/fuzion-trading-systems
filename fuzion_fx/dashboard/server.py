@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -48,9 +49,69 @@ def _chart_png(pair: str, tf: int):
         return None
 
 
+def _matar(pid) -> None:
+    """Termina un PID (multiplataforma). Best-effort."""
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(pid), "/F", "/T"],
+                          capture_output=True)
+        else:
+            import signal
+            os.kill(int(pid), signal.SIGTERM)
+    except Exception:
+        pass
+
+
+def ejecutar_accion(accion: str, params: dict) -> dict:
+    """
+    Aplica una accion del panel y devuelve el resultado. Acciones seguras:
+      pausar/reanudar -> pausa global de senales (no mata procesos).
+      reiniciar       -> reinicia un servicio (colector por defecto): lo mata y el
+                         vigilante lo revive; ademas se relanza al toque.
+      escanear        -> no hace nada en el server (el cliente refresca el escaner).
+    """
+    from core import control
+    if accion == "pausar":
+        control.set_pausado(True)
+        return {"ok": True, "pausado": True}
+    if accion == "reanudar":
+        control.set_pausado(False)
+        return {"ok": True, "pausado": False}
+    if accion == "reiniciar":
+        from scripts.start_all import leer_pids, guardar_pids, lanzar_servicio
+        from scripts.servicios import POR_NOMBRE
+        nombre = params.get("nombre", "collector")
+        if nombre not in POR_NOMBRE:
+            return {"ok": False, "error": "servicio desconocido"}
+        pids = leer_pids()
+        if pids.get(nombre):
+            _matar(pids[nombre])
+        pids[nombre] = lanzar_servicio(nombre)
+        guardar_pids(pids)
+        return {"ok": True, "reiniciado": nombre, "pid": pids[nombre]}
+    if accion == "escanear":
+        return {"ok": True}
+    return {"ok": False, "error": "accion desconocida"}
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args) -> None:      # silencioso (no ensuciar consola)
         pass
+
+    def do_POST(self) -> None:
+        ruta = urlparse(self.path)
+        if ruta.path != "/api/accion":
+            self._send(404, b"no encontrado", "text/plain")
+            return
+        try:
+            n = int(self.headers.get("Content-Length", 0))
+            cuerpo = json.loads(self.rfile.read(n) or b"{}")
+        except (ValueError, TypeError):
+            cuerpo = {}
+        res = ejecutar_accion(str(cuerpo.get("accion", "")), cuerpo)
+        self._send(200 if res.get("ok") else 400,
+                   json.dumps(res).encode("utf-8"),
+                   "application/json; charset=utf-8")
 
     def _send(self, code: int, body: bytes, ctype: str) -> None:
         self.send_response(code)

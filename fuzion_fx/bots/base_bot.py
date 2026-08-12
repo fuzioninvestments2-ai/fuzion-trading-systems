@@ -29,6 +29,7 @@ from core.risk_manager import RiskManager
 from core.signal_engine import SignalEngine, NEUTRAL
 from core.learning_engine import LearningEngine
 from core import news_guard
+from core import control
 from data.price_feed import PriceFeed, StubPriceFeed, CandleStoreFeed
 from telegram.notifier import TelegramNotifier
 from telegram.signal_formatter import SignalCardFormatter
@@ -227,6 +228,10 @@ class BaseBot:
         """
         now = time.time() if now is None else now
         emitidas: List[Dict[str, Any]] = []
+        # PAUSA global (boton del panel): si esta pausado, no se emite nada. No
+        # mata el proceso (el vigilante no pelea); solo silencia hasta reanudar.
+        if control.esta_pausado():
+            return emitidas
         # Noticias: se releen cada pasada (el archivo se puede editar en caliente).
         eventos = news_guard.cargar_eventos(NEWS_PATH)
 
