@@ -80,15 +80,10 @@ class SignalCardFormatter:
         direccion = str(d["direccion"]).upper()
         arrow = self.ARROWS.get(direccion, direccion)
         estrella = " ⭐" if self._star(acierto_pct, n_muestras) else ""
-        # Confluencia de tiempos (informativa): cuantas temporalidades coinciden.
-        # El backtest probo que NO predice el acierto (alta y baja rinden ~50%),
-        # asi que se muestra como dato descriptivo, sin prometer "entrada buena".
-        fuerza = d.get("fuerza")
-        linea_fuerza = ""
-        if fuerza is not None:
-            f = float(fuerza)
-            nivel = "ALTA" if f >= 0.60 else ("media" if f >= 0.45 else "baja")
-            linea_fuerza = f"🔭 Confluencia de tiempos: {nivel} ({f:.0%})\n"
+        # Una SOLA linea de confluencia (la detallada de abajo con X/Y tiempos +
+        # conv%). Antes habia ademas un badge de FUERZA que mostraba OTRO porcentaje
+        # (direccional) -> dos "Confluencia" con numeros distintos en la misma
+        # tarjeta (ej. badge 0% vs detalle 2%), confuso. Se elimina el badge.
         indic = ", ".join(d.get("confirmaciones", []))
         acierto = self._acierto(acierto_pct, n_muestras)
         # Mercado explicito del bot; si no viene, se deriva de la hora UTC.
@@ -121,7 +116,6 @@ class SignalCardFormatter:
             f"🌐 Zona Horaria: UTC{off:+d}:00\n"
             f"📊 DIVISA: *{pair_txt}*\n"
             f"{arrow}\n"
-            f"{linea_fuerza}"
             f"⏰ HORA DE ENTRADA: *{d['hora_entrada']}*\n"
             f"⌛ VENCE: {d['hora_vencimiento']}{label_txt}\n"
             f"🌍 Mercado: {mercado}\n"

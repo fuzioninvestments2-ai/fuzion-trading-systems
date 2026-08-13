@@ -61,6 +61,14 @@ class ResultsStore:
             # para MEDIR el acierto por fuerza (probar que la confluencia alta gana).
             if "fuerza" not in cols:
                 self.conn.execute("ALTER TABLE signals ADD COLUMN fuerza REAL")
+            # entry_show_ts = MISMO borde pero en el reloj LOCAL real (epoch), solo
+            # para MOSTRAR la hora al humano. entry_ts vive en el grid de PO (que va
+            # adelantado: su epoch es UTC+2) y sirve para liquidar contra la vela
+            # real; si se mostrara ese, la tarjeta diria una hora +2h de la real. Se
+            # separan: liquidar con entry_ts (PO), mostrar con entry_show_ts (local).
+            if "entry_show_ts" not in cols:
+                self.conn.execute(
+                    "ALTER TABLE signals ADD COLUMN entry_show_ts INTEGER")
             self.conn.commit()
 
     def save_signal(self, rec: Dict[str, Any]) -> int:
@@ -73,18 +81,20 @@ class ResultsStore:
         ts = int(rec.get("ts") or time.time())
         entry_ts = rec.get("entry_ts")
         entry_ts = int(entry_ts) if entry_ts is not None else None
+        entry_show_ts = rec.get("entry_show_ts")
+        entry_show_ts = int(entry_show_ts) if entry_show_ts is not None else None
         fuerza = rec.get("fuerza")
         fuerza = float(fuerza) if fuerza is not None else None
         with self._lock:
             cur = self.conn.execute(
                 """INSERT INTO signals
                    (ts, pair, timeframe, direction, setup_id, confirmations,
-                    price, atr, entry_ts, fuerza)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    price, atr, entry_ts, entry_show_ts, fuerza)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (ts, rec.get("pair", ""), rec.get("timeframe", ""),
                  rec.get("direction", ""), rec.get("setup_id"),
                  int(rec.get("confirmations", 0)), float(rec.get("price", 0.0)),
-                 float(rec.get("atr", 0.0)), entry_ts, fuerza))
+                 float(rec.get("atr", 0.0)), entry_ts, entry_show_ts, fuerza))
             self.conn.commit()
             return cur.lastrowid
 
@@ -103,11 +113,13 @@ class ResultsStore:
         """
         with self._lock:
             rows = self.conn.execute(
-                """SELECT id, pair, timeframe, direction, price, ts, entry_ts
+                """SELECT id, pair, timeframe, direction, price, ts, entry_ts,
+                          entry_show_ts
                    FROM signals WHERE resolved=0 AND ts <= ?
                    ORDER BY ts ASC""", (int(cutoff_ts),)).fetchall()
         return [{"id": r[0], "pair": r[1], "timeframe": r[2], "direction": r[3],
-                 "price": r[4], "ts": r[5], "entry_ts": r[6]} for r in rows]
+                 "price": r[4], "ts": r[5], "entry_ts": r[6],
+                 "entry_show_ts": r[7]} for r in rows]
 
     def setup_stats(self, setup_id: str) -> Dict[str, Any]:
         """{trades, wins, losses, win_pct} de un setup ya resuelto."""

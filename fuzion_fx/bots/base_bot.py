@@ -266,16 +266,18 @@ class BaseBot:
     def build_card(self, pair: str, result: Dict[str, Any],
                    payout: Optional[float] = None,
                    entry_ts: Optional[int] = None,
-                   confluencia: str = "", fuerza: Optional[float] = None) -> str:
+                   confluencia: str = "", fuerza: Optional[float] = None,
+                   show_ts: Optional[int] = None) -> str:
         """
         Arma el dict de datos POR PAR y delega el formato en SignalCardFormatter.
         El bot solo calcula (tiempos, ATR en pips, acierto por par); el formato
         (estrella, colores, mercado, disclaimer) vive en el formatter (Regla 1).
         Los tiempos van en hora LOCAL de la PC.
 
-        entry_ts: borde de vela de entrada (epoch seg) YA calculado al emitir. Es
-        el MISMO que se guarda y se liquida, para que la hora anunciada y la vela
-        operada sean identicas. Si no se pasa, se calcula aca (compatibilidad).
+        entry_ts: borde de vela de entrada en el grid de PO (para liquidar).
+        show_ts: MISMO borde pero en el reloj LOCAL real (para MOSTRAR la hora). Se
+        separan porque el epoch de PO va adelantado (UTC+2): mostrar entry_ts diria
+        una hora +2h de la real. Si show_ts no viene, se usa entry_ts (compat/tests).
         """
         from datetime import datetime, timezone
 
@@ -288,8 +290,10 @@ class BaseBot:
             epoch = int(ahora.timestamp())
             entry_ts = epoch - (epoch % seg) + seg
         entry_ts = int(entry_ts)
-        entrada = datetime.fromtimestamp(entry_ts).astimezone()
-        vence = datetime.fromtimestamp(entry_ts + seg).astimezone()
+        # La HORA mostrada sale del reloj local (show_ts); si no vino, cae a entry_ts.
+        disp = int(show_ts) if show_ts is not None else entry_ts
+        entrada = datetime.fromtimestamp(disp).astimezone()
+        vence = datetime.fromtimestamp(disp + seg).astimezone()
 
         # ATR en pips (volatilidad reciente real).
         ps = pip_size(pair)
@@ -461,15 +465,16 @@ class BaseBot:
                     conv_detalle = (f"{conv['alineadas']}/{conv['total']} tiempos "
                                     f"({conv['detalle']}) conv {conv['convergencia']:.0%}")
 
-            # Borde de entrada ANCLADO A LA GRILLA DE PO (no al reloj del PC). PORQUE:
-            # si el reloj de la maquina esta corrido respecto a PO (pasa seguido),
-            # calcular el borde con time.time() anunciaba una hora y liquidaba otra
-            # vela -> "tiempo desfasado sin relacion". Se toma la ULTIMA vela real
-            # conocida (ts de PO) y se opera la SIGUIENTE (ultimo+tf): asi la hora
-            # anunciada, la vela operada y la liquidacion viven en el MISMO reloj (PO).
+            # DOS bordes de la MISMA vela operada:
+            #  - entry_border (grid de PO): para LIQUIDAR contra la vela real. El
+            #    epoch de PO va adelantado (UTC+2), asi que casa con lo guardado.
+            #  - entry_show (reloj LOCAL real): para MOSTRAR la hora al humano. Si se
+            #    mostrara entry_border, la tarjeta diria una hora +2h de la real
+            #    (justo el desfase que se veia). Ambos son la SIGUIENTE vela.
             emitido = time.time()
             tf = self.timeframe_seconds
             entry_border = self._entry_border(candles, emitido)
+            entry_show = int(emitido) - (int(emitido) % tf) + tf
             # fuerza (direccional) ya calculada en el gate de convergencia arriba.
 
             # Emitir: persistir + notificar (tarjeta + grafico) + contadores.
@@ -477,11 +482,13 @@ class BaseBot:
                    "direction": result["signal"], "setup_id": result["setup_id"],
                    "confirmations": result["confirmations"],
                    "price": result["price"], "atr": result["atr"],
-                   "entry_ts": entry_border, "fuerza": fuerza}
+                   "entry_ts": entry_border, "entry_show_ts": entry_show,
+                   "fuerza": fuerza}
             sid = self.store.save_signal(rec)
             rec["id"] = sid
             card = self.build_card(pair, result, payout=pago, entry_ts=entry_border,
-                                   confluencia=conv_detalle, fuerza=fuerza)
+                                   confluencia=conv_detalle, fuerza=fuerza,
+                                   show_ts=entry_show)
             if self.notifier:
                 # Grafico coordinado con la senal (velas frescas + direccion + entrada).
                 img = None
@@ -705,7 +712,11 @@ class BaseBot:
         # resultado no traia hora -> con varias en vuelo no se sabia cual era).
         from datetime import datetime
         tf = self.timeframe_seconds
-        eb = s.get("entry_ts")
+        # Hora en reloj LOCAL (entry_show_ts); entry_ts es el grid de PO (+2h) y solo
+        # sirve para liquidar. Fallback a entry_ts por si una señal vieja no lo tiene.
+        eb = s.get("entry_show_ts")
+        if eb is None:
+            eb = s.get("entry_ts")
         hora_op = ""
         if eb is not None:
             ent = datetime.fromtimestamp(int(eb)).astimezone()

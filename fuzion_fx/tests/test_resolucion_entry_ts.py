@@ -185,6 +185,36 @@ def test_entry_border_reloj_local_adelantado_no_elige_pasado() -> None:
     assert bot._entry_border(candles, emitido=9000.0) == 9060
 
 
+def test_tarjeta_muestra_hora_local_no_el_grid_de_po() -> None:
+    """La tarjeta muestra la hora del reloj LOCAL (show_ts), no el grid de PO
+    (entry_ts, que va +2h). Antes se mostraba entry_ts -> hora +2h de la real."""
+    from datetime import datetime
+    bot = _bot(_FeedLiquidacion({}))
+    bot.timeframe_seconds = 60
+    po_border = 1_000_000 + 7200                   # grid de PO adelantado 2h
+    local_border = 1_000_000                       # reloj local real
+    result = {"signal": "CALL", "atr": 0.0010, "confirming": ["ema"],
+              "confirmations": 1, "price": 1.10, "votes": {"ema": 1}}
+    card = bot.build_card("EUR/USD", result, payout=85,
+                          entry_ts=po_border, show_ts=local_border)
+    hh_local = datetime.fromtimestamp(local_border).astimezone().strftime("%H:%M")
+    hh_po = datetime.fromtimestamp(po_border).astimezone().strftime("%H:%M")
+    assert f"HORA DE ENTRADA: *{hh_local}*" in card
+    assert hh_po not in card                       # NO la hora de PO (+2h)
+
+
+def test_entry_show_ts_persiste_y_vuelve() -> None:
+    """entry_show_ts se guarda aparte de entry_ts y vuelve en pending_older_than
+    (para que el RESULTADO muestre la hora local, no el grid de PO)."""
+    bot = _bot(_FeedLiquidacion({}))
+    bot.store.save_signal({"ts": 1000, "pair": "EUR/USD", "timeframe": "1m",
+                           "direction": "CALL", "setup_id": "s", "confirmations": 2,
+                           "price": 1.10, "atr": 0.001,
+                           "entry_ts": 1_008_200, "entry_show_ts": 1_001_000})
+    p = bot.store.pending_older_than(2_000_000)[0]
+    assert p["entry_ts"] == 1_008_200 and p["entry_show_ts"] == 1_001_000
+
+
 def _run_all() -> None:
     tests = [test_liquida_contra_entry_ts_guardado_no_recalculado,
              test_call_gana_si_sube_pierde_si_baja,
@@ -193,7 +223,9 @@ def _run_all() -> None:
              test_no_resuelve_antes_de_vencer,
              test_fallback_legado_sin_entry_ts,
              test_entry_border_anclado_a_grilla_de_po,
-             test_entry_border_reloj_local_adelantado_no_elige_pasado]
+             test_entry_border_reloj_local_adelantado_no_elige_pasado,
+             test_tarjeta_muestra_hora_local_no_el_grid_de_po,
+             test_entry_show_ts_persiste_y_vuelve]
     for t in tests:
         t()
         print(f"  OK  {t.__name__}")
