@@ -28,9 +28,13 @@ class SignalCardFormatter:
     ICONS_RESULT = {"win": "✅ WIN", "loss": "❌ LOSS", "tie": "➖ EMPATE"}
 
     # Reglas de la estrella y de la muestra (POR PAR).
+    # PORQUE: el backtest sobre 20.000+ operaciones mide ~50% (moneda al aire). Un
+    # % sobre 5-10 señales es RUIDO, no habilidad: mostrarlo engaña. Se exige
+    # muestra grande antes de mostrar acierto o estrella; sobre un proceso ~50%
+    # real, la estrella (80%) practicamente no se enciende — que es lo honesto.
     STAR_MIN_WIN_PCT = 80.0
-    STAR_MIN_MEASURED = 10
-    MIN_MEASURED_SHOW = 5          # por debajo: "sin muestra aún"
+    STAR_MIN_MEASURED = 100
+    MIN_MEASURED_SHOW = 100        # por debajo: "muestra insuficiente"
 
     # ------------------------------------------------------------- helpers
     @staticmethod
@@ -53,10 +57,12 @@ class SignalCardFormatter:
                 and n_muestras >= self.STAR_MIN_MEASURED)
 
     def _acierto(self, acierto_pct: Optional[float], n_muestras: int) -> str:
-        """Linea de acierto reciente (por par); 'sin muestra' si N < 5."""
+        """Linea de acierto reciente (por par). Con muestra chica un % es RUIDO
+        (una tarjeta de '83% (6)' que despues pierde engaña): no se muestra
+        porcentaje hasta juntar muestra grande (>=100)."""
         if acierto_pct is None or n_muestras < self.MIN_MEASURED_SHOW:
-            return "sin muestra aún (recién aprende)"
-        return f"{acierto_pct:.0f}%  ({n_muestras} señales medidas)"
+            return f"muestra insuficiente ({n_muestras}) — no medible aún"
+        return f"{acierto_pct:.0f}%  ({n_muestras} medidas · reciente por par)"
 
     # ------------------------------------------------------------- señal
     def format_signal(self, d: Dict[str, Any]) -> str:
@@ -74,18 +80,15 @@ class SignalCardFormatter:
         direccion = str(d["direccion"]).upper()
         arrow = self.ARROWS.get(direccion, direccion)
         estrella = " ⭐" if self._star(acierto_pct, n_muestras) else ""
-        # Badge de FUERZA (de un vistazo): la confluencia predice la calidad — en
-        # los datos reales, alta gana y baja pierde. 🔥 fuerte / ✅ buena / ➖ débil.
+        # Confluencia de tiempos (informativa): cuantas temporalidades coinciden.
+        # El backtest probo que NO predice el acierto (alta y baja rinden ~50%),
+        # asi que se muestra como dato descriptivo, sin prometer "entrada buena".
         fuerza = d.get("fuerza")
         linea_fuerza = ""
         if fuerza is not None:
             f = float(fuerza)
-            if f >= 0.60:
-                linea_fuerza = f"🔥 FUERZA: FUERTE ({f:.0%}) — entrada de alta confluencia\n"
-            elif f >= 0.45:
-                linea_fuerza = f"✅ FUERZA: BUENA ({f:.0%})\n"
-            else:
-                linea_fuerza = f"➖ FUERZA: débil ({f:.0%}) — analizá antes de entrar\n"
+            nivel = "ALTA" if f >= 0.60 else ("media" if f >= 0.45 else "baja")
+            linea_fuerza = f"🔭 Confluencia de tiempos: {nivel} ({f:.0%})\n"
         indic = ", ".join(d.get("confirmaciones", []))
         acierto = self._acierto(acierto_pct, n_muestras)
         # Mercado explicito del bot; si no viene, se deriva de la hora UTC.

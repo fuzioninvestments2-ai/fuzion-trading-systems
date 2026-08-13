@@ -130,9 +130,9 @@ def test_markdown_y_telegram_completos() -> None:
     assert "Recuperación: GBP/JPY" in tg
 
 
-def test_acierto_por_fuerza_en_resumen() -> None:
+def test_confluencia_no_se_muestra_con_muestra_chica() -> None:
+    # Con muestra chica (3 y 2) un '100% / 0%' es ruido: el desglose NO se publica.
     st = ResultsStore(":memory:")
-    # Fuertes (0.7) ganan; debiles (0.2) pierden -> el resumen lo muestra.
     for k in range(3):
         sid = st.save_signal({"pair": "EUR/USD", "direction": "CALL",
                               "setup_id": "s", "fuerza": 0.7, "ts": DIA + k})
@@ -144,17 +144,36 @@ def test_acierto_por_fuerza_en_resumen() -> None:
     rep = DailyReport(st, bot_name="FUZION FX 1M", card_label="1 min - M1",
                       recovery_after=3)
     s = rep.build(DIA, FIN)
-    assert s["por_fuerza"]["fuertes"]["win_pct"] == 100.0
-    assert s["por_fuerza"]["debiles"]["win_pct"] == 0.0
     tg = rep.to_telegram(s, "2026-08-13")
-    assert "Por fuerza (acumulado):" in tg and "🔥 100%" in tg and "➖ 0%" in tg
+    assert "Confluencia (acum" not in tg and "Por fuerza" not in tg
+
+
+def test_confluencia_se_muestra_con_muestra_grande_sin_prometer() -> None:
+    # Con muestra grande (>=100 c/u) se muestra el dato, etiquetado como que NO
+    # predice el acierto (lo que probo el backtest).
+    st = ResultsStore(":memory:")
+    for k in range(110):
+        sid = st.save_signal({"pair": "EUR/USD", "direction": "CALL",
+                              "setup_id": "s", "fuerza": 0.7, "ts": DIA + k})
+        st.resolve_signal(sid, "win" if k % 2 else "loss")
+    for k in range(110):
+        sid = st.save_signal({"pair": "EUR/USD", "direction": "CALL",
+                              "setup_id": "s", "fuerza": 0.2, "ts": DIA + 500 + k})
+        st.resolve_signal(sid, "win" if k % 2 else "loss")
+    rep = DailyReport(st, bot_name="FUZION FX 1M", card_label="1 min - M1",
+                      recovery_after=3)
+    s = rep.build(DIA, FIN)
+    tg = rep.to_telegram(s, "2026-08-13")
+    assert "Confluencia (acum · no predice):" in tg
+    assert "🔥" not in tg                      # sin badge que prometa fuerza=gana
 
 
 def _run_all() -> None:
     tests = [test_conteos_y_pares, test_acierto_del_dia, test_mejor_y_peor_par,
              test_recuperacion_derivada, test_recuperacion_umbral_2,
              test_acumulado, test_dia_vacio, test_markdown_y_telegram_completos,
-             test_acierto_por_fuerza_en_resumen]
+             test_confluencia_no_se_muestra_con_muestra_chica,
+             test_confluencia_se_muestra_con_muestra_grande_sin_prometer]
     for t in tests:
         t()
         print(f"  OK  {t.__name__}")

@@ -193,20 +193,27 @@ class DailyReport:
         d = stats["por_par"][pair]
         return f"{pair} ({d['win_pct']:.0f}%, {d['wins']}W/{d['losses']}L)"
 
+    # Muestra minima por conjunto para publicar el desglose por confluencia: con
+    # pocas resueltas un '100% (2)' es ruido. El backtest (20.000+ ops) mostro que
+    # la confluencia alta NO gana mas que la baja; solo se muestra el dato con
+    # muestra grande y SIN prometer que la alta rinda mejor.
+    MIN_FUERZA_MUESTRA = 100
+
     @staticmethod
     def _linea_fuerza(pf: Optional[Dict[str, Any]]) -> str:
-        """Acierto de las señales FUERTES vs DEBILES (o '' si aun no hay muestra)."""
+        """Acierto por confluencia (alta vs baja), acumulado, SOLO con muestra
+        grande (>=100 c/u). '' si aun no hay muestra suficiente: evita publicar
+        un porcentaje de ruido."""
         if not pf:
             return ""
         fu = pf.get("fuertes", {})
         de = pf.get("debiles", {})
-        if int(fu.get("trades", 0)) + int(de.get("trades", 0)) == 0:
+        n_fu = int(fu.get("trades", 0)); n_de = int(de.get("trades", 0))
+        if n_fu < DailyReport.MIN_FUERZA_MUESTRA or n_de < DailyReport.MIN_FUERZA_MUESTRA:
             return ""
-        # 'acumulado' explicito: estos numeros son de TODA la historia con fuerza,
-        # no solo del dia (win_rate_by_fuerza recorre todas las resueltas).
-        return (f"Por fuerza (acumulado): 🔥 {fu.get('win_pct', 0):.0f}% "
-                f"({fu.get('trades', 0)}) ·  ➖ {de.get('win_pct', 0):.0f}% "
-                f"({de.get('trades', 0)})")
+        # Dato descriptivo (no promesa): la confluencia no predice el acierto.
+        return (f"Confluencia (acum · no predice): alta {fu.get('win_pct', 0):.0f}% "
+                f"({n_fu}) · baja {de.get('win_pct', 0):.0f}% ({n_de})")
 
     @staticmethod
     def _linea_acumulado(ac: Dict[str, Any]) -> str:
