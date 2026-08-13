@@ -125,6 +125,23 @@ def test_sin_vela_real_no_resuelve_pasado_grace_nula() -> None:
     assert bot.store.win_rate("EUR/USD")["trades"] == 0   # NULL fuera de win-rate
 
 
+def test_no_resuelve_antes_de_vencer() -> None:
+    """No liquidar antes de que la vela operada CIERRE (aunque ya haya vela real):
+    si PO mando la vela en formacion, esperar hasta el vencimiento."""
+    tf = 60
+    feed = _FeedLiquidacion({("EUR/USD", tf, 1200): (1.10000, 1.10050)})
+    bot = _bot(feed)
+    bot.timeframe_seconds = tf
+    bot.store.save_signal({"ts": 1000, "pair": "EUR/USD", "timeframe": "1m",
+                           "direction": "CALL", "setup_id": "s", "confirmations": 3,
+                           "price": 1.10, "atr": 0.001, "entry_ts": 1200})
+    # expiry = 1260. now=1250 (< expiry) -> NO resuelve todavia.
+    assert bot.resolve_pending(now=1250.0) == 0
+    assert bot.store.win_rate("EUR/USD")["trades"] == 0
+    # now=1300 (>= expiry) -> ahora si resuelve.
+    assert bot.resolve_pending(now=1300.0) == 1
+
+
 def test_fallback_legado_sin_entry_ts() -> None:
     """Senales viejas sin entry_ts: se recalcula el borde desde ts (compat)."""
     tf = 60
@@ -144,6 +161,7 @@ def _run_all() -> None:
              test_call_gana_si_sube_pierde_si_baja,
              test_put_gana_si_baja,
              test_sin_vela_real_no_resuelve_pasado_grace_nula,
+             test_no_resuelve_antes_de_vencer,
              test_fallback_legado_sin_entry_ts]
     for t in tests:
         t()

@@ -617,6 +617,12 @@ class BaseBot:
             entry_border = int(entry_border) if entry_border is not None else (
                 ts - (ts % tf) + tf)
             expiry = entry_border + tf
+            # NO resolver antes de que la vela operada CIERRE: si PO ya mando la
+            # vela EN FORMACION, real_candle_at devolveria un cierre de mitad de
+            # vela (resultado prematuro, puede no coincidir con el cierre real).
+            # Se espera a que venza (now >= expiry) y recien ahi se liquida.
+            if now < expiry:
+                continue
             vela = real_candle_at(s["pair"], tf, entry_border)
             if vela is None:
                 # Sin vela real de la operacion: esperar dentro del margen; pasado
