@@ -79,6 +79,17 @@ class DailyReport:
         acumulado = {"emitidas": self.store.emitted_count(),
                      "resueltas": glob["trades"], "win_pct": glob["win_pct"]}
 
+        # Acierto por FUERZA (confluencia): prueba con los datos si las 🔥 fuertes
+        # ganan mas que las debiles. Acumulado (todas las resueltas con fuerza).
+        # getattr defensivo: stores viejos sin el metodo -> se omite.
+        por_fuerza = None
+        _wf = getattr(self.store, "win_rate_by_fuerza", None)
+        if _wf is not None:
+            try:
+                por_fuerza = _wf(0.45)
+            except Exception:
+                por_fuerza = None
+
         return {
             "bot_name": self.bot_name,
             "card_label": self.card_label,
@@ -93,6 +104,7 @@ class DailyReport:
             "worst": worst,
             "recuperacion": en_recuperacion,
             "acumulado": acumulado,
+            "por_fuerza": por_fuerza,
         }
 
     # ------------------------------------------------------------- Markdown
@@ -126,6 +138,9 @@ class DailyReport:
                    else "sin señales resueltas")
         h.append(f"**Acierto del día:** {acierto}  "
                  f"({stats['wins']}W / {stats['losses']}L)")
+        _lf = self._linea_fuerza(stats.get("por_fuerza"))
+        if _lf:
+            h.append(f"**{_lf}**")
         if stats.get("nulas"):
             h.append(f"**Nulas (sin dato real, no cuentan):** {stats['nulas']}")
         h.append(f"**Mejor par:** {self._par_txt(stats, stats['best'])}")
@@ -161,7 +176,9 @@ class DailyReport:
             f"Señales: *{stats['total']}*  ·  Pares: {len(stats['pares'])}\n"
             f"Acierto del día: *{acierto}*  ({stats['wins']}W/{stats['losses']}L)"
             + (f"  ·  {stats['nulas']} nulas" if stats.get("nulas") else "") + "\n"
-            f"Mejor: {self._par_txt(stats, stats['best'])}\n"
+            + (self._linea_fuerza(stats.get("por_fuerza")) + "\n"
+               if self._linea_fuerza(stats.get("por_fuerza")) else "")
+            + f"Mejor: {self._par_txt(stats, stats['best'])}\n"
             f"Peor: {self._par_txt(stats, stats['worst'])}\n"
             f"Recuperación: {recup}\n"
             f"Acumulado: {ac['emitidas']} emitidas · global "
@@ -175,6 +192,18 @@ class DailyReport:
             return "—"
         d = stats["por_par"][pair]
         return f"{pair} ({d['win_pct']:.0f}%, {d['wins']}W/{d['losses']}L)"
+
+    @staticmethod
+    def _linea_fuerza(pf: Optional[Dict[str, Any]]) -> str:
+        """Acierto de las señales FUERTES vs DEBILES (o '' si aun no hay muestra)."""
+        if not pf:
+            return ""
+        fu = pf.get("fuertes", {})
+        de = pf.get("debiles", {})
+        if int(fu.get("trades", 0)) + int(de.get("trades", 0)) == 0:
+            return ""
+        return (f"Por fuerza: 🔥 {fu.get('win_pct', 0):.0f}% ({fu.get('trades', 0)}) "
+                f"·  ➖ {de.get('win_pct', 0):.0f}% ({de.get('trades', 0)})")
 
     @staticmethod
     def _linea_acumulado(ac: Dict[str, Any]) -> str:

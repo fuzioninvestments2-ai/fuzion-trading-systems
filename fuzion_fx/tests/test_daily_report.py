@@ -130,10 +130,31 @@ def test_markdown_y_telegram_completos() -> None:
     assert "Recuperación: GBP/JPY" in tg
 
 
+def test_acierto_por_fuerza_en_resumen() -> None:
+    st = ResultsStore(":memory:")
+    # Fuertes (0.7) ganan; debiles (0.2) pierden -> el resumen lo muestra.
+    for k in range(3):
+        sid = st.save_signal({"pair": "EUR/USD", "direction": "CALL",
+                              "setup_id": "s", "fuerza": 0.7, "ts": DIA + k})
+        st.resolve_signal(sid, "win")
+    for k in range(2):
+        sid = st.save_signal({"pair": "EUR/USD", "direction": "CALL",
+                              "setup_id": "s", "fuerza": 0.2, "ts": DIA + 50 + k})
+        st.resolve_signal(sid, "loss")
+    rep = DailyReport(st, bot_name="FUZION FX 1M", card_label="1 min - M1",
+                      recovery_after=3)
+    s = rep.build(DIA, FIN)
+    assert s["por_fuerza"]["fuertes"]["win_pct"] == 100.0
+    assert s["por_fuerza"]["debiles"]["win_pct"] == 0.0
+    tg = rep.to_telegram(s, "2026-08-13")
+    assert "Por fuerza:" in tg and "🔥 100%" in tg and "➖ 0%" in tg
+
+
 def _run_all() -> None:
     tests = [test_conteos_y_pares, test_acierto_del_dia, test_mejor_y_peor_par,
              test_recuperacion_derivada, test_recuperacion_umbral_2,
-             test_acumulado, test_dia_vacio, test_markdown_y_telegram_completos]
+             test_acumulado, test_dia_vacio, test_markdown_y_telegram_completos,
+             test_acierto_por_fuerza_en_resumen]
     for t in tests:
         t()
         print(f"  OK  {t.__name__}")
