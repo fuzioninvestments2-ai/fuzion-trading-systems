@@ -29,19 +29,24 @@ from typing import Any, Dict
 #   "no_contradice" -> bloquea solo si la foto va en direccion OPUESTA (normal).
 #   "confirma"      -> exige que la foto APOYE la misma direccion (lento: mas seguro).
 MODOS: Dict[str, Dict[str, Any]] = {
-    # Mas entradas: la convergencia informa pero NO frena (mercado real es ruidoso;
-    # exigir foto perfecta dejaba todo mudo). Rastreo rapido.
+    # Mas entradas, pero NUNCA contra la foto completa: si el conjunto de tiempos va
+    # en direccion opuesta, no emite (evita el CALL con los tiempos para abajo). El
+    # volumen lo da el pago (banda 53-92) + rastreo rapido, no aflojar la calidad.
     "rapido": {"umbral_convergencia": 0.25, "min_tf_convergencia": 2,
-               "convergencia": "info", "scan_interval": 15},
-    # Equilibrio: no opera contra la foto completa.
-    "normal": {"umbral_convergencia": 0.40, "min_tf_convergencia": 3,
-               "convergencia": "no_contradice", "scan_interval": 30},
-    # Menos entradas, mas seguras: la foto DEBE confirmar la direccion.
-    "lento":  {"umbral_convergencia": 0.60, "min_tf_convergencia": 4,
+               "convergencia": "no_contradice", "scan_interval": 15},
+    # Equilibrio: la foto DEBE confirmar la direccion (mas selectivo).
+    "normal": {"umbral_convergencia": 0.35, "min_tf_convergencia": 3,
+               "convergencia": "confirma", "scan_interval": 30},
+    # Menos entradas, mas seguras: la foto confirma con fuerza y muchos tiempos.
+    "lento":  {"umbral_convergencia": 0.55, "min_tf_convergencia": 4,
                "convergencia": "confirma", "scan_interval": 45},
 }
 
-MODO_DEFAULT = "rapido"
+# Default NORMAL (no rapido): prioriza CALIDAD. En los datos reales, las señales
+# con confluencia alta ganan y las de confluencia baja pierden; 'normal' exige que
+# la foto completa CONFIRME la direccion, filtrando las perdedoras. Si el usuario
+# quiere mas volumen usa 'rapido'; si quiere maxima seguridad, 'lento'.
+MODO_DEFAULT = "normal"
 
 
 def params_modo(nombre: str) -> Dict[str, Any]:

@@ -34,9 +34,10 @@ def test_params_por_modo() -> None:
     assert r["scan_interval"] < lento["scan_interval"]
     # El modo NO toca min_confirmations (queda en config).
     assert "min_confirmations" not in r
-    # Politica de convergencia por modo: rapido informa (no frena), lento confirma.
-    assert r["convergencia"] == "info"
-    assert params_modo("normal")["convergencia"] == "no_contradice"
+    # Politica de convergencia por modo: rapido no opera contra la foto; normal y
+    # lento exigen que la foto CONFIRME (calidad).
+    assert r["convergencia"] == "no_contradice"
+    assert params_modo("normal")["convergencia"] == "confirma"
     assert lento["convergencia"] == "confirma"
     # Desconocido -> default.
     assert params_modo("xxx") == params_modo(MODO_DEFAULT)
@@ -48,7 +49,7 @@ def test_params_por_modo() -> None:
 def test_control_modo_roundtrip() -> None:
     p = tempfile.NamedTemporaryFile(suffix=".json", delete=False).name
     try:
-        assert control.get_modo(p) == "rapido"          # sin dato -> default
+        assert control.get_modo(p) == "normal"          # sin dato -> default calidad
         control.set_modo("lento", p)
         assert control.get_modo(p) == "lento"
         control.set_modo("basura", p)                   # invalido -> NO cambia
