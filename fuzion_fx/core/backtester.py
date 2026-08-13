@@ -23,6 +23,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Sequence
 
 from core.signal_engine import SignalEngine, NEUTRAL
+from core.multi_timeframe import MultiTimeframeAnalyzer, MIN_VELAS
 
 
 def _warmup_minimo(ind: Dict[str, Any]) -> int:
@@ -110,6 +111,116 @@ def backtest_series(candles: Dict[str, Sequence[float]],
         "emission_rate": emission_rate,
         "signals_per_hour": sph,
         "by_setup": by_setup,
+    }
+
+
+# =====================================================================
+# BACKTEST MULTI-TEMPORALIDAD (la "formula de tiempo" + patrones + fuerza)
+# =====================================================================
+# Convencion de tiempos relativa a la serie BASE (la mas fina). El backtest
+# resamplea la base a los tiempos mas largos y corre la convergencia como en vivo.
+_FACTORES = {60: 1, 120: 2, 180: 3, 300: 5, 600: 10, 900: 15, 1800: 30, 3600: 60}
+
+
+def resample(candles: Dict[str, Sequence[float]], factor: int
+             ) -> Dict[str, List[float]]:
+    """
+    Agrega la serie base a una mas gruesa (cada `factor` velas -> una). open=primer,
+    high=max, low=min, close=ultimo. Solo velas COMPLETAS (descarta la cola parcial).
+    """
+    o = list(candles["open"]); h = list(candles["high"])
+    lo = list(candles["low"]); c = list(candles["close"])
+    n = len(c) - (len(c) % factor)
+    out = {"open": [], "high": [], "low": [], "close": []}
+    for i in range(0, n, factor):
+        out["open"].append(o[i])
+        out["high"].append(max(h[i:i + factor]))
+        out["low"].append(min(lo[i:i + factor]))
+        out["close"].append(c[i + factor - 1])
+    return out
+
+
+def backtest_convergencia(base_candles: Dict[str, Sequence[float]],
+                          base_tf_seconds: int, indicators_cfg: Dict[str, Any],
+                          signal_cfg: Dict[str, Any], *, umbral: float = 0.35,
+                          min_tf: int = 3, min_fuerza: float = 0.0,
+                          politica: str = "no_contradice") -> Dict[str, Any]:
+    """
+    Backtest de la FOTO COMPLETA sobre UNA serie base (la mas fina, ej. 1m), SIN
+    mirar el futuro: en cada vela i arma la foto multi-temporalidad con las velas
+    [0..i] de la base y sus resampleos, decide con el motor de una tf + la
+    convergencia (misma politica/fuerza que en vivo) y resuelve con close[i+1].
+
+    Devuelve {emissions, wins, losses, ties, win_pct, by_fuerza:{fuertes,debiles},
+    emission_rate}. by_fuerza separa acierto de señales FUERTES (fuerza>=0.45) vs
+    DEBILES para PROBAR si la confluencia alta rinde mas.
+    """
+    close = list(base_candles["close"])
+    n = len(close)
+    eng = SignalEngine(indicators_cfg, signal_cfg)
+    mtf = MultiTimeframeAnalyzer(indicators_cfg, umbral)
+    warmup = _warmup_minimo(indicators_cfg)
+
+    # Resampleos por tiempo (relativos a la base). tf base incluido (factor 1).
+    resamp: Dict[int, Dict[str, List[float]]] = {}
+    for tf, fac in _FACTORES.items():
+        tf_seg = base_tf_seconds * fac
+        resamp[tf_seg] = base_candles if fac == 1 else resample(base_candles, fac)
+
+    emissions = wins = losses = ties = 0
+    fu = {"fuertes": {"trades": 0, "wins": 0}, "debiles": {"trades": 0, "wins": 0}}
+
+    for i in range(max(warmup, MIN_VELAS), n - 1):
+        sub = {k: list(base_candles[k])[: i + 1]
+               for k in ("open", "high", "low", "close")}
+        res = eng.analyze(sub)
+        if res["signal"] == NEUTRAL:
+            continue
+
+        # Foto: cada tiempo con SUS velas completas hasta la base i.
+        velas_por_tf: Dict[int, Any] = {}
+        for tf_seg, serie in resamp.items():
+            fac = tf_seg // base_tf_seconds
+            k = (i + 1) // fac                    # velas completas de ese tf hasta i
+            if k >= 2:
+                velas_por_tf[tf_seg] = {c2: serie[c2][:k] for c2 in
+                                        ("open", "high", "low", "close")}
+        conv = mtf.analizar(velas_por_tf)
+        sig = conv["signal"]
+        apoya = sig == res["signal"]
+        opuesta = sig != NEUTRAL and not apoya
+        if politica == "confirma":
+            if not (apoya and conv["total"] >= min_tf):
+                continue
+        elif politica == "no_contradice":
+            if opuesta:
+                continue
+        fuerza = conv["convergencia"] if apoya else 0.0
+        if min_fuerza > 0 and fuerza < min_fuerza:
+            continue
+
+        entrada = close[i]; salida = close[i + 1]
+        emissions += 1
+        if salida == entrada:
+            ties += 1
+            continue
+        gano = (salida > entrada) if res["signal"] == "CALL" else (salida < entrada)
+        banda = "fuertes" if fuerza >= 0.45 else "debiles"
+        fu[banda]["trades"] += 1
+        if gano:
+            wins += 1; fu[banda]["wins"] += 1
+        else:
+            losses += 1
+
+    resueltos = wins + losses
+    for b in fu.values():
+        b["win_pct"] = round(b["wins"] / b["trades"] * 100, 1) if b["trades"] else None
+    readings = max(n - 1 - max(warmup, MIN_VELAS), 0)
+    return {
+        "emissions": emissions, "wins": wins, "losses": losses, "ties": ties,
+        "win_pct": round(wins / resueltos * 100, 1) if resueltos else None,
+        "emission_rate": round(emissions / readings, 4) if readings else 0.0,
+        "by_fuerza": fu,
     }
 
 

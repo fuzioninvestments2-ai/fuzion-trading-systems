@@ -24,6 +24,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Sequence
 
 from core.signal_engine import SignalEngine, CALL, PUT, NEUTRAL
+from core import candle_patterns
 
 # Temporalidades (segundos) que pide el usuario, agrupadas. La clave es SEGUNDOS
 # para casar con el colector (tf en segundos).
@@ -75,6 +76,13 @@ class MultiTimeframeAnalyzer:
             return 0
         votos = self.engine._votos(candles)      # {ema, rsi, macd, bollinger}
         neto = sum(1 if v > 0 else (-1 if v < 0 else 0) for v in votos.values())
+        # PATRON DE VELA como votante extra (la FORMA de la vela, no solo el
+        # promedio): martillo/envolvente/marubozu suman ±1; el doji (indecision)
+        # no vota. Es la "historia de las velas japonesas" dentro de la formula.
+        try:
+            neto += candle_patterns.detectar(candles)["lean"]
+        except Exception:
+            pass
         return 1 if neto > 0 else (-1 if neto < 0 else 0)
 
     # --------------------------------------------------- veredicto del conjunto
