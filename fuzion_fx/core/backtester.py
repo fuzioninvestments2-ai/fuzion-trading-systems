@@ -144,17 +144,23 @@ def backtest_convergencia(base_candles: Dict[str, Sequence[float]],
                           base_tf_seconds: int, indicators_cfg: Dict[str, Any],
                           signal_cfg: Dict[str, Any], *, umbral: float = 0.35,
                           min_tf: int = 3, min_fuerza: float = 0.0,
-                          politica: str = "no_contradice") -> Dict[str, Any]:
+                          politica: str = "no_contradice",
+                          horizonte: int = 1) -> Dict[str, Any]:
     """
     Backtest de la FOTO COMPLETA sobre UNA serie base (la mas fina, ej. 1m), SIN
     mirar el futuro: en cada vela i arma la foto multi-temporalidad con las velas
     [0..i] de la base y sus resampleos, decide con el motor de una tf + la
-    convergencia (misma politica/fuerza que en vivo) y resuelve con close[i+1].
+    convergencia (misma politica/fuerza que en vivo) y resuelve con close[i+H].
+
+    `horizonte` (H): cuantas velas base dura la operacion (H=1 -> 1m si la base es
+    60s; H=5 -> 5m). PORQUE: a 1m el ruido puede tapar la señal; si la foto capta
+    tendencia, quiza rinde mejor a un vencimiento mas largo. El barrido lo mide.
 
     Devuelve {emissions, wins, losses, ties, win_pct, by_fuerza:{fuertes,debiles},
     emission_rate}. by_fuerza separa acierto de señales FUERTES (fuerza>=0.45) vs
     DEBILES para PROBAR si la confluencia alta rinde mas.
     """
+    horizonte = max(1, int(horizonte))
     close = list(base_candles["close"])
     n = len(close)
     eng = SignalEngine(indicators_cfg, signal_cfg)
@@ -170,7 +176,7 @@ def backtest_convergencia(base_candles: Dict[str, Sequence[float]],
     emissions = wins = losses = ties = 0
     fu = {"fuertes": {"trades": 0, "wins": 0}, "debiles": {"trades": 0, "wins": 0}}
 
-    for i in range(max(warmup, MIN_VELAS), n - 1):
+    for i in range(max(warmup, MIN_VELAS), n - horizonte):
         sub = {k: list(base_candles[k])[: i + 1]
                for k in ("open", "high", "low", "close")}
         res = eng.analyze(sub)
@@ -199,7 +205,7 @@ def backtest_convergencia(base_candles: Dict[str, Sequence[float]],
         if min_fuerza > 0 and fuerza < min_fuerza:
             continue
 
-        entrada = close[i]; salida = close[i + 1]
+        entrada = close[i]; salida = close[i + horizonte]
         emissions += 1
         if salida == entrada:
             ties += 1
@@ -215,7 +221,7 @@ def backtest_convergencia(base_candles: Dict[str, Sequence[float]],
     resueltos = wins + losses
     for b in fu.values():
         b["win_pct"] = round(b["wins"] / b["trades"] * 100, 1) if b["trades"] else None
-    readings = max(n - 1 - max(warmup, MIN_VELAS), 0)
+    readings = max(n - horizonte - max(warmup, MIN_VELAS), 0)
     return {
         "emissions": emissions, "wins": wins, "losses": losses, "ties": ties,
         "win_pct": round(wins / resueltos * 100, 1) if resueltos else None,

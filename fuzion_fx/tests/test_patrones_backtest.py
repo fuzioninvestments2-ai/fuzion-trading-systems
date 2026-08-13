@@ -83,10 +83,25 @@ def test_backtest_convergencia_corre_y_mide_por_fuerza() -> None:
     assert r["emissions"] >= 1
 
 
+def test_backtest_horizonte_cambia_resolucion() -> None:
+    # Con horizonte mayor se resuelve contra una vela mas lejana: la ventana util
+    # se acorta (n-H), pero la estructura del resultado se mantiene y sigue emitiendo.
+    cfg = get_bot_config("f1_m1")
+    base = _serie_tendencia(400)
+    r1 = backtest_convergencia(base, 60, cfg["indicators"], cfg["signal"],
+                               umbral=0.35, min_tf=3, horizonte=1)
+    r5 = backtest_convergencia(base, 60, cfg["indicators"], cfg["signal"],
+                               umbral=0.35, min_tf=3, horizonte=5)
+    assert set(r5) >= {"emissions", "wins", "losses", "win_pct", "by_fuerza"}
+    # horizonte>1 no puede resolver las ultimas H velas -> a lo sumo tantas como H=1.
+    assert r5["emissions"] <= r1["emissions"] + 1
+
+
 def _run_all() -> None:
     tests = [test_patron_martillo_y_estrella, test_patron_doji_indecision,
              test_patron_envolvente_alcista, test_resample_agrega_bien,
-             test_backtest_convergencia_corre_y_mide_por_fuerza]
+             test_backtest_convergencia_corre_y_mide_por_fuerza,
+             test_backtest_horizonte_cambia_resolucion]
     for t in tests:
         t()
         print(f"  OK  {t.__name__}")
