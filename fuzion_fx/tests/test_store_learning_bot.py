@@ -119,10 +119,27 @@ def test_base_bot_emite_y_persiste() -> None:
     assert len(bot._emitted_ts) == 1
 
 
+def test_win_rate_by_fuerza() -> None:
+    st = ResultsStore(":memory:")
+    # Fuertes (0.7) ganan; debiles (0.2) pierden -> el badge queda probado.
+    for _ in range(3):
+        sid = st.save_signal({"pair": "EUR/USD", "direction": "CALL",
+                              "setup_id": "s", "fuerza": 0.7})
+        st.resolve_signal(sid, "win")
+    for _ in range(2):
+        sid = st.save_signal({"pair": "EUR/USD", "direction": "CALL",
+                              "setup_id": "s", "fuerza": 0.2})
+        st.resolve_signal(sid, "loss")
+    r = st.win_rate_by_fuerza(0.45)
+    assert r["fuertes"] == {"trades": 3, "wins": 3, "win_pct": 100.0}
+    assert r["debiles"] == {"trades": 2, "wins": 0, "win_pct": 0.0}
+
+
 def _run_all() -> None:
     tests = [test_store_guarda_resuelve_y_winrate, test_learning_descarta_y_prioriza,
              test_learning_muestra_insuficiente_deja_pasar,
-             test_base_bot_stub_no_emite, test_base_bot_emite_y_persiste]
+             test_base_bot_stub_no_emite, test_base_bot_emite_y_persiste,
+             test_win_rate_by_fuerza]
     for t in tests:
         t()
         print(f"  OK  {t.__name__}")

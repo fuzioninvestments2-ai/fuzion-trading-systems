@@ -57,6 +57,10 @@ class ResultsStore:
                 "PRAGMA table_info(signals)").fetchall()}
             if "entry_ts" not in cols:
                 self.conn.execute("ALTER TABLE signals ADD COLUMN entry_ts INTEGER")
+            # fuerza = convergencia multi-temporalidad (0..1) al emitir. Se guarda
+            # para MEDIR el acierto por fuerza (probar que la confluencia alta gana).
+            if "fuerza" not in cols:
+                self.conn.execute("ALTER TABLE signals ADD COLUMN fuerza REAL")
             self.conn.commit()
 
     def save_signal(self, rec: Dict[str, Any]) -> int:
@@ -69,16 +73,18 @@ class ResultsStore:
         ts = int(rec.get("ts") or time.time())
         entry_ts = rec.get("entry_ts")
         entry_ts = int(entry_ts) if entry_ts is not None else None
+        fuerza = rec.get("fuerza")
+        fuerza = float(fuerza) if fuerza is not None else None
         with self._lock:
             cur = self.conn.execute(
                 """INSERT INTO signals
                    (ts, pair, timeframe, direction, setup_id, confirmations,
-                    price, atr, entry_ts)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    price, atr, entry_ts, fuerza)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (ts, rec.get("pair", ""), rec.get("timeframe", ""),
                  rec.get("direction", ""), rec.get("setup_id"),
                  int(rec.get("confirmations", 0)), float(rec.get("price", 0.0)),
-                 float(rec.get("atr", 0.0)), entry_ts))
+                 float(rec.get("atr", 0.0)), entry_ts, fuerza))
             self.conn.commit()
             return cur.lastrowid
 
@@ -132,6 +138,30 @@ class ResultsStore:
         wins = sum(1 for (r,) in rows if r == "win")
         return {"trades": trades, "wins": wins,
                 "win_pct": round(100.0 * wins / trades, 1) if trades else 0.0}
+
+    def win_rate_by_fuerza(self, umbral: float = 0.45) -> Dict[str, Any]:
+        """
+        Acierto separando señales FUERTES (fuerza >= umbral) de DEBILES (< umbral),
+        sobre las resueltas con resultado real. Sirve para PROBAR con los datos
+        propios que la confluencia alta gana mas (y calibrar el umbral del badge).
+        Las señales sin fuerza registrada (viejas) se ignoran.
+        """
+        with self._lock:
+            rows = self.conn.execute(
+                """SELECT fuerza, result FROM signals
+                   WHERE resolved=1 AND result IN ('win','loss')
+                     AND fuerza IS NOT NULL""").fetchall()
+
+        def _tally(sel):
+            t = len(sel)
+            w = sum(1 for _, r in sel if r == "win")
+            return {"trades": t, "wins": w,
+                    "win_pct": round(100.0 * w / t, 1) if t else 0.0}
+
+        fuertes = [(f, r) for f, r in rows if f >= umbral]
+        debiles = [(f, r) for f, r in rows if f < umbral]
+        return {"umbral": umbral, "fuertes": _tally(fuertes),
+                "debiles": _tally(debiles)}
 
     def signals_in_range(self, start_ts: int, end_ts: int) -> List[Dict[str, Any]]:
         """Senales EMITIDAS con ts en [start_ts, end_ts) (para el resumen diario)."""

@@ -421,16 +421,16 @@ class BaseBot:
             emitido = time.time()
             tf = self.timeframe_seconds
             entry_border = int(emitido) - (int(emitido) % tf) + tf
+            fuerza = conv["convergencia"] if conv is not None else None
 
             # Emitir: persistir + notificar (tarjeta + grafico) + contadores.
             rec = {"ts": int(emitido), "pair": pair, "timeframe": self.timeframe,
                    "direction": result["signal"], "setup_id": result["setup_id"],
                    "confirmations": result["confirmations"],
                    "price": result["price"], "atr": result["atr"],
-                   "entry_ts": entry_border}
+                   "entry_ts": entry_border, "fuerza": fuerza}
             sid = self.store.save_signal(rec)
             rec["id"] = sid
-            fuerza = conv["convergencia"] if conv is not None else None
             card = self.build_card(pair, result, payout=pago, entry_ts=entry_border,
                                    confluencia=conv_detalle, fuerza=fuerza)
             if self.notifier:
