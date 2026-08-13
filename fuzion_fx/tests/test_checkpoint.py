@@ -67,7 +67,8 @@ def _bot(engine, notif=None):
     bot = BaseBot("f1_m1", price_feed=_feed(), store=ResultsStore(":memory:"),
                   notifier=notif)
     bot.pairs = ["EUR/USD"]
-    bot.prefilter_seconds = 0            # sin esperas reales
+    bot.prefilter_seconds = 0
+    bot.signal_cooldown = 0            # sin esperas reales
     bot._schedule_enabled = False        # sin timers de fondo
     bot.engine = engine
     return bot

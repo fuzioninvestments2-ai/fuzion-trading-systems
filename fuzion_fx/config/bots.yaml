@@ -17,6 +17,11 @@ market: real
 # ciegas).
 payout: {min_pct: 53, max_pct: 92, require: true}
 
+# EMISION ORDENADA (de a una, global a los 4 bots): tras emitir una señal, NINGUN
+# bot manda otra hasta que esa termine (vence) + este descanso. Asi las señales
+# llegan de a una y con espacio, no en rafagas. 600 = 10 minutos de descanso.
+signal_cooldown_seconds: 600
+
 bots:
   f1_m1:
     name: "FUZION FX 1M"

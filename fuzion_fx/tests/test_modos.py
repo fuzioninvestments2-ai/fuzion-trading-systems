@@ -58,6 +58,17 @@ def test_control_modo_roundtrip() -> None:
         os.unlink(p)
 
 
+def test_candado_emision_roundtrip() -> None:
+    # Emision ordenada: el candado global (emitir_despues_de) se guarda y se lee.
+    p = tempfile.NamedTemporaryFile(suffix=".json", delete=False).name
+    try:
+        assert control.get_emitir_despues_de(p) == 0.0        # libre por defecto
+        control.set_emitir_despues_de(1786600000.0, p)
+        assert control.get_emitir_despues_de(p) == 1786600000.0
+    finally:
+        os.unlink(p)
+
+
 def test_bot_aplica_modo() -> None:
     bot = BaseBot("f1_m1", price_feed=StubPriceFeed(), store=ResultsStore(":memory:"))
     conf_previa = bot.engine.min_confirmations        # el modo NO debe tocar esto
@@ -70,7 +81,8 @@ def test_bot_aplica_modo() -> None:
 
 
 def _run_all() -> None:
-    tests = [test_params_por_modo, test_control_modo_roundtrip, test_bot_aplica_modo]
+    tests = [test_params_por_modo, test_control_modo_roundtrip,
+             test_candado_emision_roundtrip, test_bot_aplica_modo]
     for t in tests:
         t()
         print(f"  OK  {t.__name__}")

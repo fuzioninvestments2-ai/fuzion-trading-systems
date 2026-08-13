@@ -103,7 +103,8 @@ def test_base_bot_emite_y_persiste() -> None:
     st = ResultsStore(":memory:")
     bot = BaseBot("f1_m1", price_feed=feed, store=st)   # sin notifier -> dry-run
     bot.pairs = ["AUD/CAD"]                              # un solo par para el test
-    bot.prefilter_seconds = 0                           # sin espera real
+    bot.prefilter_seconds = 0
+    bot.signal_cooldown = 0                           # sin espera real
     bot._schedule_enabled = False                       # sin timers de fondo
     for p in bot.pairs:
         feed.set_candles(p, _candles())

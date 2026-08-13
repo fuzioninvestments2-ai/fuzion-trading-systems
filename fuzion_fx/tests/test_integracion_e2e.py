@@ -76,7 +76,8 @@ def test_cadena_completa_emite_y_resuelve() -> None:
         bot.pairs = ["EUR/USD"]
         bot.timeframe_seconds = tf
         bot.timeframe = "1m"
-        bot.prefilter_seconds = 0                         # sin espera real
+        bot.prefilter_seconds = 0
+        bot.signal_cooldown = 0                         # sin espera real
         bot._schedule_enabled = False                     # sin timers de fondo
 
         emitidas = bot.scan_once()
@@ -117,6 +118,7 @@ def test_cadena_bloquea_por_pago_fuera_de_banda() -> None:
         bot.pairs = ["EUR/USD"]
         bot.timeframe_seconds = tf
         bot.prefilter_seconds = 0
+        bot.signal_cooldown = 0
         bot._schedule_enabled = False
         assert bot.scan_once() == []                       # pago bajo -> no emite
         col.store.close()

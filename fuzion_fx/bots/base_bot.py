@@ -61,9 +61,13 @@ class BaseBot:
         # tarjeta lo muestra, para que el usuario opere el MISMO (OTC != real: son
         # series de precio distintas). Se lee del top-level 'market' del yaml.
         try:
-            self.mercado = str(load_config().get("market", "otc")).lower()
+            _cfg_top = load_config()
+            self.mercado = str(_cfg_top.get("market", "otc")).lower()
+            # Descanso entre señales (emision ordenada, de a una, global a los 4 bots).
+            self.signal_cooldown = int(_cfg_top.get("signal_cooldown_seconds", 600))
         except Exception:
             self.mercado = "otc"
+            self.signal_cooldown = 600
 
         # store inyectable (tests usan ':memory:'); por defecto, la sqlite del bot.
         self.store = store or ResultsStore(cfg["db_path"])
@@ -310,6 +314,11 @@ class BaseBot:
             return emitidas
         # Modo en vivo (lento/normal/rapido): ajusta exigencia antes de la pasada.
         self.aplicar_modo()
+        # EMISION ORDENADA (de a una, GLOBAL a los 4 bots): si hay una señal en
+        # curso o el descanso no termino, no se emite nada esta pasada. Asi las
+        # señales llegan de a una y con espacio (no en rafagas).
+        if self.signal_cooldown > 0 and now < control.get_emitir_despues_de():
+            return emitidas
         # Noticias: se releen cada pasada (el archivo se puede editar en caliente).
         eventos = news_guard.cargar_eventos(NEWS_PATH)
 
@@ -469,6 +478,13 @@ class BaseBot:
             # (entry_border..entry_border+tf), la misma que se liquida.
             expiry = entry_border + tf
             self._schedule_checkpoint(pair, result["signal"], expiry, result, emitido)
+
+            # EMISION ORDENADA: fija el candado GLOBAL (los 4 bots lo respetan) hasta
+            # que esta señal VENZA + el descanso, y CORTA la pasada: una sola señal
+            # por ventana, no una rafaga de pares. Con cooldown<=0 (tests) no aplica.
+            if self.signal_cooldown > 0:
+                control.set_emitir_despues_de(expiry + self.signal_cooldown)
+                break
 
         return emitidas
 

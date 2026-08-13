@@ -43,6 +43,7 @@ def _bot():
     bot = BaseBot("f1_m1", price_feed=feed, store=ResultsStore(":memory:"))
     bot.pairs = ["EUR/USD"]
     bot.prefilter_seconds = 0
+    bot.signal_cooldown = 0
     bot._schedule_enabled = False
     # Este test valida el ANTI-DUPLICADO, no la foto completa ni el modo. Se
     # neutraliza aplicar_modo (que en cada pasada resetearia min_tf_convergencia) y

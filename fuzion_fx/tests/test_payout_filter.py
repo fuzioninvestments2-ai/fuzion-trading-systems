@@ -51,6 +51,7 @@ def _bot(feed):
     bot = BaseBot("f1_m1", price_feed=feed, store=ResultsStore(":memory:"))
     bot.pairs = ["AUD/CAD"]
     bot.prefilter_seconds = 0
+    bot.signal_cooldown = 0
     bot._schedule_enabled = False
     bot.engine = _FakeEngine()
     feed_candles = _candles()

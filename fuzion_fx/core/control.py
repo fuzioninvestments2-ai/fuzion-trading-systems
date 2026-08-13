@@ -88,6 +88,26 @@ def get_modo(path: Optional[str] = None) -> str:
     return m if m in ("rapido", "normal", "lento") else "rapido"
 
 
+# ---------------------------------------- candado de emision (una a la vez, global)
+def get_emitir_despues_de(path: Optional[str] = None) -> float:
+    """
+    Epoch a partir del cual se puede emitir la PROXIMA señal. Compartido por los 4
+    bots: mientras hay una señal en curso + el descanso, todos callan (señales
+    ORDENADAS, de a una). 0 = libre.
+    """
+    try:
+        return float(leer_control(path).get("emitir_despues_de", 0) or 0)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def set_emitir_despues_de(ts: float, path: Optional[str] = None) -> None:
+    """Fija cuando se habilita la proxima emision (sin pisar el resto del estado)."""
+    data = leer_control(path)
+    data["emitir_despues_de"] = float(ts)
+    _escribir(data, path)
+
+
 def set_modo(valor: str, path: Optional[str] = None) -> None:
     """
     Cambia el modo (lento/normal/rapido) sin pisar el resto del estado. Un valor
