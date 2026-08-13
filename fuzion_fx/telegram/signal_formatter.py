@@ -74,6 +74,18 @@ class SignalCardFormatter:
         direccion = str(d["direccion"]).upper()
         arrow = self.ARROWS.get(direccion, direccion)
         estrella = " ⭐" if self._star(acierto_pct, n_muestras) else ""
+        # Badge de FUERZA (de un vistazo): la confluencia predice la calidad — en
+        # los datos reales, alta gana y baja pierde. 🔥 fuerte / ✅ buena / ➖ débil.
+        fuerza = d.get("fuerza")
+        linea_fuerza = ""
+        if fuerza is not None:
+            f = float(fuerza)
+            if f >= 0.60:
+                linea_fuerza = f"🔥 FUERZA: FUERTE ({f:.0%}) — entrada de alta confluencia\n"
+            elif f >= 0.45:
+                linea_fuerza = f"✅ FUERZA: BUENA ({f:.0%})\n"
+            else:
+                linea_fuerza = f"➖ FUERZA: débil ({f:.0%}) — analizá antes de entrar\n"
         indic = ", ".join(d.get("confirmaciones", []))
         acierto = self._acierto(acierto_pct, n_muestras)
         # Mercado explicito del bot; si no viene, se deriva de la hora UTC.
@@ -106,6 +118,7 @@ class SignalCardFormatter:
             f"🌐 Zona Horaria: UTC{off:+d}:00\n"
             f"📊 DIVISA: *{pair_txt}*\n"
             f"{arrow}\n"
+            f"{linea_fuerza}"
             f"⏰ HORA DE ENTRADA: *{d['hora_entrada']}*\n"
             f"⌛ VENCE: {d['hora_vencimiento']}{label_txt}\n"
             f"🌍 Mercado: {mercado}\n"

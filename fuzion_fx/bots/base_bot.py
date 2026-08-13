@@ -234,7 +234,7 @@ class BaseBot:
     def build_card(self, pair: str, result: Dict[str, Any],
                    payout: Optional[float] = None,
                    entry_ts: Optional[int] = None,
-                   confluencia: str = "") -> str:
+                   confluencia: str = "", fuerza: Optional[float] = None) -> str:
         """
         Arma el dict de datos POR PAR y delega el formato en SignalCardFormatter.
         El bot solo calcula (tiempos, ATR en pips, acierto por par); el formato
@@ -292,6 +292,7 @@ class BaseBot:
             "n_muestras": wr["trades"],
             "atr": atr_pips,
             "confluencia": confluencia,        # foto completa (multi-temporalidad)
+            "fuerza": fuerza,                  # convergencia 0..1 (para el badge FUERZA)
         }
         return self.formatter.format_signal(d)
 
@@ -429,8 +430,9 @@ class BaseBot:
                    "entry_ts": entry_border}
             sid = self.store.save_signal(rec)
             rec["id"] = sid
+            fuerza = conv["convergencia"] if conv is not None else None
             card = self.build_card(pair, result, payout=pago, entry_ts=entry_border,
-                                   confluencia=conv_detalle)
+                                   confluencia=conv_detalle, fuerza=fuerza)
             if self.notifier:
                 # Grafico coordinado con la senal (velas frescas + direccion + entrada).
                 img = None
