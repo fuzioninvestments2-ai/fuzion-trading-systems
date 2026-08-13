@@ -42,11 +42,11 @@ MODOS: Dict[str, Dict[str, Any]] = {
                "convergencia": "confirma", "scan_interval": 45},
 }
 
-# Default NORMAL (no rapido): prioriza CALIDAD. En los datos reales, las señales
-# con confluencia alta ganan y las de confluencia baja pierden; 'normal' exige que
-# la foto completa CONFIRME la direccion, filtrando las perdedoras. Si el usuario
-# quiere mas volumen usa 'rapido'; si quiere maxima seguridad, 'lento'.
-MODO_DEFAULT = "normal"
+# Default RAPIDO: MAS señales (lo que pide el usuario), pero NUNCA contra la foto
+# completa (no_contradice filtra el CALL con los tiempos para abajo). La tarjeta
+# lleva TODA la info (indicadores + tiempos + fuerza) para que el trader elija. Si
+# quiere menos y mas seguras, 'normal'/'lento'.
+MODO_DEFAULT = "rapido"
 
 
 def params_modo(nombre: str) -> Dict[str, Any]:

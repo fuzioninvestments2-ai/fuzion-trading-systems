@@ -287,6 +287,7 @@ class BaseBot:
             # fallback de display. El filtro ya garantizo que es >= min_pct.
             "payout": int(round(payout)) if payout is not None else self.payout_pct,
             "confirmaciones": result["confirming"],
+            "votos": result.get("votes", {}),  # ema/rsi/macd/bollinger: +1/-1/0
             "acierto_pct": acierto_pct,
             "n_muestras": wr["trades"],
             "atr": atr_pips,

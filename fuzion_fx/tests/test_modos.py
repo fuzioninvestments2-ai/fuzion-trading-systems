@@ -49,7 +49,7 @@ def test_params_por_modo() -> None:
 def test_control_modo_roundtrip() -> None:
     p = tempfile.NamedTemporaryFile(suffix=".json", delete=False).name
     try:
-        assert control.get_modo(p) == "normal"          # sin dato -> default calidad
+        assert control.get_modo(p) == "rapido"          # sin dato -> default volumen
         control.set_modo("lento", p)
         assert control.get_modo(p) == "lento"
         control.set_modo("basura", p)                   # invalido -> NO cambia

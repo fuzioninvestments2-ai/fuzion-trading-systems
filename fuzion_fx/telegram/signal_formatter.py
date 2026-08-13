@@ -90,6 +90,16 @@ class SignalCardFormatter:
         # Confluencia multi-temporalidad (la foto completa): línea extra si viene.
         conf = str(d.get("confluencia", "") or "")
         linea_conf = f"🔭 Confluencia: {conf}\n" if conf else ""
+        # Indicadores con su DIRECCION (todo lo que ve el motor, no solo el conteo):
+        # ↑ a favor de subir, ↓ de bajar, • neutro. Para que el trader analice.
+        votos = d.get("votos", {}) or {}
+        _NOM = {"ema": "EMA", "rsi": "RSI", "macd": "MACD", "bollinger": "BB"}
+        _FL = {1: "↑", -1: "↓", 0: "•"}
+        linea_ind = ""
+        if votos:
+            partes = [f"{_NOM.get(k, k.upper())}{_FL.get(int(v), '•')}"
+                      for k, v in votos.items()]
+            linea_ind = f"🎛️ Indicadores: {'  '.join(partes)}\n"
 
         return (
             f"🤖 *{bot_name}*{estrella}\n"
@@ -101,6 +111,7 @@ class SignalCardFormatter:
             f"🌍 Mercado: {mercado}\n"
             f"💰 Pago del activo: {int(d.get('payout', 85))}%\n"
             f"🎯 Confirmaciones: {len(d.get('confirmaciones', []))} ({indic})\n"
+            f"{linea_ind}"
             f"{linea_conf}"
             f"📈 Acierto reciente: {acierto}\n"
             f"📊 Volatilidad (ATR): {d.get('atr', 0.0)} pips\n"

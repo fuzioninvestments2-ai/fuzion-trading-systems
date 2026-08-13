@@ -84,8 +84,8 @@ def get_modo(path: Optional[str] = None) -> str:
     ajustan umbral de convergencia, confirmaciones y cadencia. Default 'rapido':
     el usuario quiere que el bot ENCUENTRE entradas.
     """
-    m = str(leer_control(path).get("modo", "normal")).lower()
-    return m if m in ("rapido", "normal", "lento") else "normal"
+    m = str(leer_control(path).get("modo", "rapido")).lower()
+    return m if m in ("rapido", "normal", "lento") else "rapido"
 
 
 def set_modo(valor: str, path: Optional[str] = None) -> None:
