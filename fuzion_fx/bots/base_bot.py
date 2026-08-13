@@ -668,6 +668,10 @@ class BaseBot:
                               "(borde %d, +%ds). No cuenta en win-rate ni aprendizaje.",
                               s["pair"], s["direction"], entry_border,
                               int(now - expiry))
+                # AVISAR la NULA: antes se resolvia NULL en silencio y el humano se
+                # quedaba sin resultado (parecia que la señal "no mando nada"). Ahora
+                # se le dice que no se pudo medir (no cuenta como win ni loss).
+                self._notificar_resultado(s, None, None, "nula")
                 continue
             entry, exit_price = vela                 # open (borde) y close (vencimiento)
             if exit_price == entry:

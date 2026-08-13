@@ -80,6 +80,18 @@ def test_disclaimer_resultado() -> None:
     assert "Demo · resultado educativo · el acierto no esta garantizado" in txt
 
 
+def test_nula_sin_precios_no_crashea() -> None:
+    # NULA: sin vela real -> sin precios. Debe mostrar el motivo, no romper con
+    # entrada/cierre None ni inventar numeros.
+    fmt = SignalCardFormatter()
+    txt = fmt.format_result(_base(resultado="nula", entrada=None, cierre=None,
+                                  hora_operacion="16:30→16:31"))
+    assert "NULA" in txt
+    assert "No llegó la vela real" in txt
+    assert "Operación: 16:30→16:31" in txt
+    assert "→  Cierre" not in txt          # no hay linea de precios inventada
+
+
 def test_hora_operacion_relaciona_resultado() -> None:
     # El resultado repite la hora de la operacion (misma que la señal) para
     # relacionarlo; si no se provee, no aparece la linea.
@@ -95,7 +107,8 @@ def _run_all() -> None:
              test_recuperacion_solo_con_flag,
              test_loss_sin_flag_no_lleva_recuperacion,
              test_win_no_lleva_recuperacion, test_precios_cinco_decimales,
-             test_disclaimer_resultado, test_hora_operacion_relaciona_resultado]
+             test_disclaimer_resultado, test_nula_sin_precios_no_crashea,
+             test_hora_operacion_relaciona_resultado]
     for t in tests:
         t()
         print(f"  OK  {t.__name__}")

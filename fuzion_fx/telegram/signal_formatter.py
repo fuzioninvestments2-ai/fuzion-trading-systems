@@ -25,7 +25,8 @@ class SignalCardFormatter:
         "CALL": "🟩 CALL (poner ARRIBA)",
         "PUT": "🟥 PUT (poner ABAJO)",
     }
-    ICONS_RESULT = {"win": "✅ WIN", "loss": "❌ LOSS", "tie": "➖ EMPATE"}
+    ICONS_RESULT = {"win": "✅ WIN", "loss": "❌ LOSS", "tie": "➖ EMPATE",
+                    "nula": "⚪ NULA (sin dato real)"}
 
     # Reglas de la estrella y de la muestra (POR PAR).
     # PORQUE: el backtest sobre 20.000+ operaciones mide ~50% (moneda al aire). Un
@@ -145,13 +146,22 @@ class SignalCardFormatter:
         # señal. Solo se muestra si el bot la provee.
         hora_op = str(d.get("hora_operacion", "") or "")
         linea_hora = f"⌛ Operación: {hora_op}\n" if hora_op else ""
+        # NULA: no hay vela real -> no hay precios. Se muestra el motivo en vez de
+        # la linea Entrada->Cierre (no se inventan numeros).
+        es_nula = d["resultado"] == "nula"
+        if es_nula or d.get("entrada") is None or d.get("cierre") is None:
+            linea_precios = ("No llegó la vela real de PO para medir esta señal "
+                             "(no cuenta como WIN ni LOSS).\n")
+        else:
+            linea_precios = (f"Entrada: {float(d['entrada']):.5f}  →  "
+                             f"Cierre: {float(d['cierre']):.5f}\n")
 
         txt = (
             f"🏁 *{bot_name}* · *{par_txt}*{label_txt}\n"
             f"Resultado: *{icono}*\n"
             f"Direccion: {d['direccion']}\n"
             f"{linea_hora}"
-            f"Entrada: {float(d['entrada']):.5f}  →  Cierre: {float(d['cierre']):.5f}\n"
+            f"{linea_precios}"
             f"⚠️ Demo · resultado educativo · el acierto no esta garantizado")
         if d.get("modo_recuperacion"):
             txt += ("\n🔁 Correccion: el par entra en RECUPERACION — la proxima "

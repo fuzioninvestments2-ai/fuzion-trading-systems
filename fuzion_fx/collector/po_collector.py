@@ -52,7 +52,13 @@ TIMEFRAMES = [5, 10, 15, 30, 60, 120, 180, 300, 600, 900, 1800, 3600]
 TF_VIVO = [tf for tf in TIMEFRAMES if tf <= 300]
 # Periodos que se piden por HISTORIAL real a PO en cada rotacion (los que PO sirve
 # como velas; las cortas <60s vienen de ticks en vivo).
-HISTORIAL_TF = [120, 180, 300, 600, 900, 1800, 3600]
+# Se pide historial de TODOS los tf operables, INCLUIDO 60 (M1). PORQUE: el M1
+# venia solo por la suscripcion (set_asset 60); si el colector estaba en otro par
+# cuando PO cerraba la vela M1 de una operacion, esa vela no quedaba en
+# candles_real y la señal de 1m no se podia liquidar (quedaba pendiente y despues
+# NULA). Pidiendo el historial M1 en cada visita, la vela operada se captura y el
+# resultado del 1m llega.
+HISTORIAL_TF = [60, 120, 180, 300, 600, 900, 1800, 3600]
 SEGUNDOS_POR_PAR = 8                                        # ventana de escucha por par
 DB_PATH = os.path.join(ROOT, "data", "db", "po_candles.db")
 

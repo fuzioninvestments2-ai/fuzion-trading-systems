@@ -215,6 +215,35 @@ def test_entry_show_ts_persiste_y_vuelve() -> None:
     assert p["entry_ts"] == 1_008_200 and p["entry_show_ts"] == 1_001_000
 
 
+def test_nula_avisa_no_desaparece_en_silencio() -> None:
+    """Una señal que vence SIN vela real (pasado el margen) se resuelve NULA y AVISA
+    (antes se resolvia NULL en silencio y el humano no recibia resultado)."""
+    import bots.base_bot as bb
+    tf = 60
+    bot = _bot(_FeedLiquidacion({}))                # feed sin ninguna vela real
+    bot.timeframe_seconds = tf
+    bot.null_grace_seconds = 0                       # sin margen -> NULA al vencer
+    bot.store.save_signal({"ts": 1000, "pair": "EUR/USD", "timeframe": "1m",
+                           "direction": "CALL", "setup_id": "s", "confirmations": 2,
+                           "price": 1.10, "atr": 0.001, "entry_ts": 1200,
+                           "entry_show_ts": 1200})
+    capturado = []
+
+    class _FakeNotifier:
+        def send_text(self, t):
+            capturado.append(t)
+
+    bot.notifier = _FakeNotifier()
+    orig = bb.control.telegram_activo
+    bb.control.telegram_activo = lambda _id: True
+    try:
+        n = bot.resolve_pending(now=2000.0)          # 2000 >> expiry 1260
+    finally:
+        bb.control.telegram_activo = orig
+    assert n == 0                                    # NULA no cuenta como resuelta real
+    assert capturado and "NULA" in capturado[0]      # pero SI avisa
+
+
 def _run_all() -> None:
     tests = [test_liquida_contra_entry_ts_guardado_no_recalculado,
              test_call_gana_si_sube_pierde_si_baja,
@@ -225,7 +254,8 @@ def _run_all() -> None:
              test_entry_border_anclado_a_grilla_de_po,
              test_entry_border_reloj_local_adelantado_no_elige_pasado,
              test_tarjeta_muestra_hora_local_no_el_grid_de_po,
-             test_entry_show_ts_persiste_y_vuelve]
+             test_entry_show_ts_persiste_y_vuelve,
+             test_nula_avisa_no_desaparece_en_silencio]
     for t in tests:
         t()
         print(f"  OK  {t.__name__}")
