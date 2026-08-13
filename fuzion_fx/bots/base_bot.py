@@ -403,18 +403,32 @@ class BaseBot:
             # interviene (cae al motor de una tf, no bloquea al arranque).
             conv = self.convergencia(pair)
             conv_detalle = ""
+            fuerza = None
             politica = getattr(self, "_conv_politica", "no_contradice")
-            if conv is not None and conv["total"] >= self.min_tf_convergencia:
-                opuesta = (conv["signal"] != NEUTRAL
-                           and conv["signal"] != result["signal"])
-                frena = ((politica == "confirma"
-                          and conv["signal"] != result["signal"])
-                         or (politica == "no_contradice" and opuesta))
+            if conv is not None:
+                sig = conv["signal"]                     # CALL/PUT/NEUTRAL (segun umbral)
+                apoya = sig == result["signal"]          # la foto va a favor
+                opuesta = sig != NEUTRAL and not apoya    # la foto va en CONTRA
+                if politica == "confirma":
+                    # exige que la foto CONFIRME y con datos suficientes (calidad).
+                    frena = not (apoya and conv["total"] >= self.min_tf_convergencia)
+                elif politica == "no_contradice":
+                    # NUNCA operar contra la foto: bloquea CUALQUIER foto opuesta,
+                    # sin importar cuantos tiempos voten (cierra el agujero: antes un
+                    # solo tiempo opuesto se colaba por total < min_tf).
+                    frena = opuesta
+                else:                                     # "info": no frena
+                    frena = False
                 if frena:
                     self.log.info("Foto completa frena %s %s (modo=%s, conv=%s, %s)",
                                   pair, result["signal"], self._modo_actual,
-                                  conv["signal"], conv["detalle"])
+                                  sig, conv["detalle"])
                     continue
+                # FUERZA DIRECCIONAL: solo cuenta si la foto APOYA la direccion; si
+                # es neutra u opuesta, no hay confluencia a favor -> fuerza 0 (evita
+                # badgear 🔥 una señal que la foto no respalda, y no ensucia la
+                # medicion de acierto por fuerza).
+                fuerza = conv["convergencia"] if apoya else 0.0
                 if conv["detalle"]:
                     conv_detalle = (f"{conv['alineadas']}/{conv['total']} tiempos "
                                     f"({conv['detalle']}) conv {conv['convergencia']:.0%}")
@@ -430,7 +444,7 @@ class BaseBot:
             emitido = time.time()
             tf = self.timeframe_seconds
             entry_border = int(emitido) - (int(emitido) % tf) + tf
-            fuerza = conv["convergencia"] if conv is not None else None
+            # fuerza (direccional) ya calculada en el gate de convergencia arriba.
 
             # Emitir: persistir + notificar (tarjeta + grafico) + contadores.
             rec = {"ts": int(emitido), "pair": pair, "timeframe": self.timeframe,

@@ -46,9 +46,10 @@ def _bot():
     bot.signal_cooldown = 0
     bot._schedule_enabled = False
     # Este test valida el ANTI-DUPLICADO, no la foto completa ni el modo. Se
-    # neutraliza aplicar_modo (que en cada pasada resetearia min_tf_convergencia) y
-    # se sube el minimo de tiempos para que el gate de convergencia no intervenga.
+    # neutraliza aplicar_modo (que en cada pasada resetearia la politica) y se pone
+    # la convergencia en modo "info" (nunca frena) para que el gate no intervenga.
     bot.aplicar_modo = lambda: "test"
+    bot._conv_politica = "info"
     bot.min_tf_convergencia = 99
     bot.engine = _FixedEngine(CALL)
     return bot

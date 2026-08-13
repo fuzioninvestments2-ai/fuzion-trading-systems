@@ -171,13 +171,13 @@ class DailyReport:
                    else "s/resueltas")
         recup = (", ".join(stats["recuperacion"]) if stats["recuperacion"] else "no")
         ac = stats["acumulado"]
+        lf = self._linea_fuerza(stats.get("por_fuerza"))       # una sola vez
         return (
             f"📋 *Resumen {fecha}* · {stats['bot_name']}\n"
             f"Señales: *{stats['total']}*  ·  Pares: {len(stats['pares'])}\n"
             f"Acierto del día: *{acierto}*  ({stats['wins']}W/{stats['losses']}L)"
             + (f"  ·  {stats['nulas']} nulas" if stats.get("nulas") else "") + "\n"
-            + (self._linea_fuerza(stats.get("por_fuerza")) + "\n"
-               if self._linea_fuerza(stats.get("por_fuerza")) else "")
+            + (lf + "\n" if lf else "")
             + f"Mejor: {self._par_txt(stats, stats['best'])}\n"
             f"Peor: {self._par_txt(stats, stats['worst'])}\n"
             f"Recuperación: {recup}\n"
@@ -202,8 +202,11 @@ class DailyReport:
         de = pf.get("debiles", {})
         if int(fu.get("trades", 0)) + int(de.get("trades", 0)) == 0:
             return ""
-        return (f"Por fuerza: 🔥 {fu.get('win_pct', 0):.0f}% ({fu.get('trades', 0)}) "
-                f"·  ➖ {de.get('win_pct', 0):.0f}% ({de.get('trades', 0)})")
+        # 'acumulado' explicito: estos numeros son de TODA la historia con fuerza,
+        # no solo del dia (win_rate_by_fuerza recorre todas las resueltas).
+        return (f"Por fuerza (acumulado): 🔥 {fu.get('win_pct', 0):.0f}% "
+                f"({fu.get('trades', 0)}) ·  ➖ {de.get('win_pct', 0):.0f}% "
+                f"({de.get('trades', 0)})")
 
     @staticmethod
     def _linea_acumulado(ac: Dict[str, Any]) -> str:

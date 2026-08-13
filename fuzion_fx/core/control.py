@@ -89,23 +89,36 @@ def get_modo(path: Optional[str] = None) -> str:
 
 
 # ---------------------------------------- candado de emision (una a la vez, global)
+# Se guarda en un archivo PROPIO (no en control.json): asi el escribir frecuente
+# del candado (cada señal, desde 4 procesos) NO pisa el estado del panel (modo,
+# pausa, telegram) por un read-modify-write concurrente. Se escribe ATOMICO
+# (archivo temporal + os.replace) para que un lector nunca vea medio archivo.
+EMISION_LOCK_PATH = os.path.join(ROOT, "config", "emision.lock")
+
+
 def get_emitir_despues_de(path: Optional[str] = None) -> float:
     """
     Epoch a partir del cual se puede emitir la PROXIMA señal. Compartido por los 4
     bots: mientras hay una señal en curso + el descanso, todos callan (señales
     ORDENADAS, de a una). 0 = libre.
     """
+    p = path or EMISION_LOCK_PATH
     try:
-        return float(leer_control(path).get("emitir_despues_de", 0) or 0)
-    except (ValueError, TypeError):
+        with open(p, "r", encoding="utf-8") as f:
+            return float((f.read() or "0").strip() or 0)
+    except (OSError, ValueError):
         return 0.0
 
 
 def set_emitir_despues_de(ts: float, path: Optional[str] = None) -> None:
-    """Fija cuando se habilita la proxima emision (sin pisar el resto del estado)."""
-    data = leer_control(path)
-    data["emitir_despues_de"] = float(ts)
-    _escribir(data, path)
+    """Fija cuando se habilita la proxima emision. Escritura ATOMICA (os.replace),
+    en archivo propio: no toca ni puede corromper el estado del panel."""
+    p = path or EMISION_LOCK_PATH
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    tmp = f"{p}.{os.getpid()}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(str(float(ts)))
+    os.replace(tmp, p)                              # atomico: nadie ve medio archivo
 
 
 def set_modo(valor: str, path: Optional[str] = None) -> None:

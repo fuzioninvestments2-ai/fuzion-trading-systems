@@ -147,7 +147,7 @@ def test_acierto_por_fuerza_en_resumen() -> None:
     assert s["por_fuerza"]["fuertes"]["win_pct"] == 100.0
     assert s["por_fuerza"]["debiles"]["win_pct"] == 0.0
     tg = rep.to_telegram(s, "2026-08-13")
-    assert "Por fuerza:" in tg and "🔥 100%" in tg and "➖ 0%" in tg
+    assert "Por fuerza (acumulado):" in tg and "🔥 100%" in tg and "➖ 0%" in tg
 
 
 def _run_all() -> None:

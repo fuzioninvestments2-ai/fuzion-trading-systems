@@ -69,6 +69,13 @@ datos/raw/*.csv.gz
 # Estado runtime del dashboard (lo escribe el bot)
 dashboards/estado.json
 
+# Estado de CONTROL del panel (pausa, modo, telegram) y candado de emision: son
+# runtime, los escribe el bot/panel. NO versionar -> asi `git reset --hard` (en
+# ACTUALIZAR.bat) no borra la configuracion que dejaste en el panel.
+fuzion_fx/config/control.json
+fuzion_fx/config/emision.lock
+*.lock
+
 # Estado de descarga (runtime)
 datasets/real/download_status.json
 

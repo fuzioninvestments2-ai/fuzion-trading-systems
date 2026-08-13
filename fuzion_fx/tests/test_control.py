@@ -61,6 +61,7 @@ def test_bot_no_emite_en_pausa() -> None:
                                      for k in ("open", "high", "low", "close")})
         bot = BaseBot("f1_m1", price_feed=feed, store=ResultsStore(":memory:"))
         bot.pairs = ["AUD/CAD"]; bot.prefilter_seconds = 0; bot._schedule_enabled = False
+        bot.signal_cooldown = 0            # este test valida la PAUSA, no el candado
         bot.engine = _FakeEngine()
         control.set_pausado(True, tmp.name)
         assert bot.scan_once(now=1000.0) == []                 # pausado -> no emite
