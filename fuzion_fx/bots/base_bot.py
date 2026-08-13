@@ -234,6 +234,34 @@ class BaseBot:
             return None
         return self.mtf.analizar(velas)
 
+    # -------------------------------------------------------- ancla de tiempo
+    def _entry_border(self, candles: Optional[Dict[str, Any]],
+                      emitido: float) -> int:
+        """
+        Borde de la vela de ENTRADA (epoch, multiplo de tf) ANCLADO a la grilla de
+        PO. Toma el ts de la ULTIMA vela conocida (reloj de PO, via colector) y
+        devuelve la SIGUIENTE (ultimo+tf): la vela que el humano opera de open a
+        close. Asi la hora anunciada y la vela liquidada usan el MISMO reloj y no
+        se desfasan aunque el reloj del PC este corrido.
+
+        Fallback (tests/feed sin 'ts' o vacio): grilla del reloj local, como antes.
+        """
+        tf = self.timeframe_seconds
+        epoch = int(emitido)
+        borde_local = epoch - (epoch % tf) + tf if tf > 0 else epoch
+        ts_list = candles.get("ts") if isinstance(candles, dict) else None
+        if ts_list:
+            ultimo = int(ts_list[-1])
+            # Normaliza por si el ultimo ts no cayera exacto en la grilla.
+            base = ultimo - (ultimo % tf) if tf > 0 else ultimo
+            borde_po = base + tf                 # siguiente vela en el reloj de PO
+            # MAX de ambos: nunca antes de la vela siguiente a la ultima real (para
+            # que la liquidacion tenga dato pronto y no se resuelva 'en el pasado')
+            # ni antes del proximo borde local. Cubre reloj adelantado/atrasado y
+            # colector con lag, manteniendo todo en la MISMA grilla.
+            return max(borde_local, borde_po)
+        return borde_local
+
     # ------------------------------------------------------------- tarjeta rica
     def build_card(self, pair: str, result: Dict[str, Any],
                    payout: Optional[float] = None,
@@ -433,17 +461,15 @@ class BaseBot:
                     conv_detalle = (f"{conv['alineadas']}/{conv['total']} tiempos "
                                     f"({conv['detalle']}) conv {conv['convergencia']:.0%}")
 
-            # Borde de entrada = proximo borde de vela DESDE EL INSTANTE DE EMISION
-            # (tras el pre-filtro de 10s, que es cuando el humano recibe la tarjeta y
-            # entra). Se calcula UNA sola vez, se guarda y lo usan TANTO la tarjeta
-            # como la liquidacion -> operan EXACTAMENTE la misma vela. Antes la
-            # tarjeta lo derivaba de datetime.now() y resolve_pending lo recalculaba
-            # desde ts (inicio del escaneo, ~10s+ antes): si un borde caia en el
-            # medio, anunciaba una vela y liquidaba otra (horarios y win/loss
-            # cruzados, justo lo que se veia mal).
+            # Borde de entrada ANCLADO A LA GRILLA DE PO (no al reloj del PC). PORQUE:
+            # si el reloj de la maquina esta corrido respecto a PO (pasa seguido),
+            # calcular el borde con time.time() anunciaba una hora y liquidaba otra
+            # vela -> "tiempo desfasado sin relacion". Se toma la ULTIMA vela real
+            # conocida (ts de PO) y se opera la SIGUIENTE (ultimo+tf): asi la hora
+            # anunciada, la vela operada y la liquidacion viven en el MISMO reloj (PO).
             emitido = time.time()
             tf = self.timeframe_seconds
-            entry_border = int(emitido) - (int(emitido) % tf) + tf
+            entry_border = self._entry_border(candles, emitido)
             # fuerza (direccional) ya calculada en el gate de convergencia arriba.
 
             # Emitir: persistir + notificar (tarjeta + grafico) + contadores.
@@ -674,6 +700,17 @@ class BaseBot:
         """
         pair = s["pair"]
         modo_recuperacion = (result == "loss" and self.risk.in_recovery(pair))
+        # HORA de la operacion (misma que anuncio la señal): el resultado la repite
+        # para que el humano RELACIONE cada WIN/LOSS con su señal (antes el
+        # resultado no traia hora -> con varias en vuelo no se sabia cual era).
+        from datetime import datetime
+        tf = self.timeframe_seconds
+        eb = s.get("entry_ts")
+        hora_op = ""
+        if eb is not None:
+            ent = datetime.fromtimestamp(int(eb)).astimezone()
+            ven = datetime.fromtimestamp(int(eb) + tf).astimezone()
+            hora_op = f"{ent.strftime('%H:%M')}→{ven.strftime('%H:%M')}"
         d = {
             "bot_name": self.name,
             "card_label": self.card_label or self.name,
@@ -683,6 +720,7 @@ class BaseBot:
             "resultado": result,
             "entrada": entry,
             "cierre": exit_price,
+            "hora_operacion": hora_op,         # "11:59→12:00" para relacionar
             "modo_recuperacion": modo_recuperacion,
         }
         txt = self.formatter.format_result(d)

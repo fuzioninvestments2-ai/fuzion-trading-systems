@@ -156,13 +156,44 @@ def test_fallback_legado_sin_entry_ts() -> None:
     assert n == 1 and bot.store.win_rate("EUR/USD")["win_pct"] == 100.0
 
 
+def test_entry_border_anclado_a_grilla_de_po() -> None:
+    """El borde de entrada se ancla a la ULTIMA vela real (reloj de PO), no al
+    reloj del PC. Si el PC va atrasado, igual se opera la vela siguiente a la
+    ultima real -> hora anunciada y vela liquidada en el MISMO reloj (sin desfase).
+    """
+    tf = 60
+    bot = _bot(_FeedLiquidacion({}))
+    bot.timeframe_seconds = tf
+    # Ultima vela real conocida en PO: bucket 6000 (cerrada). PC atrasado: emitido
+    # cae en la grilla 3000 (borde local 3060), MUY por detras de PO.
+    candles = {"ts": [5880, 5940, 6000], "close": [1.1, 1.1, 1.1]}
+    eb = bot._entry_border(candles, emitido=3000.0)
+    assert eb == 6060                              # 6000 + tf (siguiente a la real)
+    # Sin 'ts' (feed viejo/tests): cae a la grilla del reloj local.
+    eb2 = bot._entry_border({"close": [1.1]}, emitido=3000.0)
+    assert eb2 == 3060                             # 3000 - 0 + 60
+
+
+def test_entry_border_reloj_local_adelantado_no_elige_pasado() -> None:
+    """Si el borde local es mayor que el de PO (reloj adelantado o colector con
+    lag), toma el MAX -> nunca anuncia una vela anterior al proximo borde local."""
+    tf = 60
+    bot = _bot(_FeedLiquidacion({}))
+    bot.timeframe_seconds = tf
+    # Ultima real vieja (bucket 1000); borde local 9060 -> gana el local.
+    candles = {"ts": [1000], "close": [1.1]}
+    assert bot._entry_border(candles, emitido=9000.0) == 9060
+
+
 def _run_all() -> None:
     tests = [test_liquida_contra_entry_ts_guardado_no_recalculado,
              test_call_gana_si_sube_pierde_si_baja,
              test_put_gana_si_baja,
              test_sin_vela_real_no_resuelve_pasado_grace_nula,
              test_no_resuelve_antes_de_vencer,
-             test_fallback_legado_sin_entry_ts]
+             test_fallback_legado_sin_entry_ts,
+             test_entry_border_anclado_a_grilla_de_po,
+             test_entry_border_reloj_local_adelantado_no_elige_pasado]
     for t in tests:
         t()
         print(f"  OK  {t.__name__}")

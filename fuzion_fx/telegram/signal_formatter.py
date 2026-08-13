@@ -147,11 +147,16 @@ class SignalCardFormatter:
         card_label = d.get("card_label", "")
         label_txt = f" ({card_label})" if card_label else ""
         par_txt = f"{d['par']} OTC" if d.get("es_otc") else str(d["par"])
+        # Hora de la operacion (misma que la señal): relaciona el resultado con su
+        # señal. Solo se muestra si el bot la provee.
+        hora_op = str(d.get("hora_operacion", "") or "")
+        linea_hora = f"⌛ Operación: {hora_op}\n" if hora_op else ""
 
         txt = (
             f"🏁 *{bot_name}* · *{par_txt}*{label_txt}\n"
             f"Resultado: *{icono}*\n"
             f"Direccion: {d['direccion']}\n"
+            f"{linea_hora}"
             f"Entrada: {float(d['entrada']):.5f}  →  Cierre: {float(d['cierre']):.5f}\n"
             f"⚠️ Demo · resultado educativo · el acierto no esta garantizado")
         if d.get("modo_recuperacion"):

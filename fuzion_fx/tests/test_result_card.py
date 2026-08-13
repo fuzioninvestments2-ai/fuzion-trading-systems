@@ -80,12 +80,22 @@ def test_disclaimer_resultado() -> None:
     assert "Demo · resultado educativo · el acierto no esta garantizado" in txt
 
 
+def test_hora_operacion_relaciona_resultado() -> None:
+    # El resultado repite la hora de la operacion (misma que la señal) para
+    # relacionarlo; si no se provee, no aparece la linea.
+    fmt = SignalCardFormatter()
+    con = fmt.format_result(_base(hora_operacion="11:59→12:00"))
+    assert "Operación: 11:59→12:00" in con
+    sin = fmt.format_result(_base())
+    assert "Operación:" not in sin
+
+
 def _run_all() -> None:
     tests = [test_icono_win, test_icono_loss, test_icono_empate,
              test_recuperacion_solo_con_flag,
              test_loss_sin_flag_no_lleva_recuperacion,
              test_win_no_lleva_recuperacion, test_precios_cinco_decimales,
-             test_disclaimer_resultado]
+             test_disclaimer_resultado, test_hora_operacion_relaciona_resultado]
     for t in tests:
         t()
         print(f"  OK  {t.__name__}")
