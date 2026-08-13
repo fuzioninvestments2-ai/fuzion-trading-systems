@@ -25,7 +25,7 @@ if _RAIZ not in sys.path:
     sys.path.insert(0, _RAIZ)
 
 from scripts.ml_direccion import (construir_features, _logistica_numpy,  # noqa: E402
-                                  evaluar, TRAIN_FRAC)
+                                  evaluar_roi, TRAIN_FRAC)
 
 
 def _ohlc_desde_retornos(ret: np.ndarray):
@@ -43,7 +43,8 @@ def _acc_fuera_de_muestra(o, h, l, c, ts, horizonte=1):
     X, y = construir_features(o, h, l, c, ts, horizonte)
     corte = int(len(y) * TRAIN_FRAC)
     prob = _logistica_numpy(X[:corte], y[:corte], X[corte:])
-    return evaluar(prob, y[corte:])[0]["acc"]
+    pred = (prob > 0.5).astype(int)
+    return 100.0 * (pred == y[corte:]).mean()
 
 
 def test_detecta_borde_si_hay_memoria() -> None:
@@ -82,9 +83,23 @@ def test_features_sin_nan_y_alineadas() -> None:
     assert set(np.unique(y)).issubset({0, 1})
 
 
+def test_roi_positivo_solo_si_gana_de_verdad() -> None:
+    # 60% de aciertos con pago 0.80: ROI = 0.6*0.80 - 0.4*1 = +0.08 (da plata).
+    # 50% con pago 0.80: ROI = 0.5*0.80 - 0.5 = -0.10 (pierde, aunque "acierte la
+    # mitad"): esto es lo que el usuario NO ve sin la metrica de ROI.
+    reg_gana = ([(0.9, 1, 0.80, f % 5) for f in range(60)]
+                + [(0.9, 0, 0.80, f % 5) for f in range(40)])
+    reg_pierde = ([(0.9, 1, 0.80, f % 5) for f in range(50)]
+                  + [(0.9, 0, 0.80, f % 5) for f in range(50)])
+    g = evaluar_roi(reg_gana)[0]; p = evaluar_roi(reg_pierde)[0]
+    assert g["roi"] > 0 and abs(g["roi"] - 0.08) < 1e-6
+    assert p["roi"] < 0 and abs(p["roi"] + 0.10) < 1e-6
+
+
 def _run_all() -> None:
     tests = [test_detecta_borde_si_hay_memoria, test_ruido_puro_da_cerca_de_50,
-             test_features_sin_nan_y_alineadas]
+             test_features_sin_nan_y_alineadas,
+             test_roi_positivo_solo_si_gana_de_verdad]
     for t in tests:
         t()
         print(f"  OK  {t.__name__}")

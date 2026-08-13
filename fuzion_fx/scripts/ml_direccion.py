@@ -166,42 +166,83 @@ def _modelo(Xtr, ytr, Xte):
         return _logistica_numpy(Xtr, ytr, Xte), "LogisticaNumpy"
 
 
-# --------------------------------------------------------------- evaluacion
-def evaluar(prob, yte, margenes=(0.0, 0.05, 0.10, 0.15)):
-    """Acierto fuera de muestra a distintos umbrales de confianza (|prob-0.5|>=m)
-    con su cobertura. Predice 1 si prob>0.5. Devuelve lista de dicts."""
-    pred = (prob > 0.5).astype(int)
-    ok = (pred == yte)
+# --------------------------------------------------------------- walk-forward
+FOLDS = 5                              # ventanas de validacion (no un solo corte)
+MARGENES = (0.0, 0.05, 0.10, 0.15)
+
+
+def walkforward_par(o, h, l, c, ts, horizonte, payout_frac, folds=FOLDS):
+    """
+    Validacion WALK-FORWARD: en vez de un corte 70/30, hace `folds` ventanas. En
+    cada una entrena con TODO lo anterior y predice el bloque siguiente (que nunca
+    vio). Devuelve una lista de (prob, y, payout_frac, fold) juntando todas las
+    predicciones fuera de muestra. Esto es mas robusto: un solo corte puede caer en
+    un tramo suertudo; 5 ventanas muestran si el borde se sostiene o fue una.
+    """
+    X, y = construir_features(o, h, l, c, ts, horizonte)
+    n = len(y)
+    if n < MIN_VELAS // 2:
+        return []
+    bordes = np.linspace(0, n, folds + 2, dtype=int)   # folds+1 tramos
+    out = []
+    for f in range(folds):
+        tr_end = bordes[f + 1]; te_end = bordes[f + 2]
+        Xtr, ytr = X[:tr_end], y[:tr_end]
+        Xte, yte = X[tr_end:te_end], y[tr_end:te_end]
+        if len(np.unique(ytr)) < 2 or len(yte) < 20:
+            continue
+        prob, _ = _modelo(Xtr, ytr, Xte)
+        for p, yy in zip(prob, yte):
+            out.append((float(p), int(yy), float(payout_frac), f))
+    return out
+
+
+def evaluar_roi(reg):
+    """
+    Sobre las predicciones fuera de muestra (reg = lista de (prob,y,payout,fold)),
+    calcula por umbral de confianza:
+      - acierto,
+      - ROI POR OPERACION (gana payout si acierta, pierde 1 si falla): la metrica
+        HONESTA de si da plata con TU pago real, no un acierto contra un break-even
+        fijo,
+      - estabilidad: en cuantas de las `folds` ventanas el ROI fue positivo.
+    Un borde de verdad tiene ROI>0 y es positivo en la MAYORIA de las ventanas
+    (no cargado por una sola).
+    """
+    if not reg:
+        return []
+    prob = np.array([r[0] for r in reg]); y = np.array([r[1] for r in reg])
+    pay = np.array([r[2] for r in reg]); fold = np.array([r[3] for r in reg])
+    pred = (prob > 0.5).astype(int); win = (pred == y)
     conf = np.abs(prob - 0.5)
     filas = []
-    for m in margenes:
+    for m in MARGENES:
         sel = conf >= m
         n = int(sel.sum())
-        acc = 100.0 * ok[sel].mean() if n else 0.0
-        filas.append({"margen": m, "n": n, "acc": acc,
-                      "cobertura": 100.0 * n / len(yte) if len(yte) else 0.0})
+        if n == 0:
+            continue
+        roi = float(np.where(win[sel], pay[sel], -1.0).mean())      # ROI/operacion
+        acc = 100.0 * float(win[sel].mean())
+        pos = tot = 0
+        for ff in np.unique(fold):
+            fs = sel & (fold == ff)
+            if fs.sum() >= 20:
+                tot += 1
+                if np.where(win[fs], pay[fs], -1.0).mean() > 0:
+                    pos += 1
+        filas.append({"margen": m, "n": n, "acc": acc, "roi": roi,
+                      "cob": 100.0 * n / len(y), "folds_pos": pos, "folds": tot})
     return filas
 
 
-def correr_par(conn, pair, horizonte):
+def _serie(conn, pair):
     rows = conn.execute(
         """SELECT open, high, low, close, ts FROM candles_real
            WHERE pair=? AND tf=? ORDER BY ts ASC""", (pair, BASE_TF)).fetchall()
     if len(rows) < MIN_VELAS:
         return None
-    o = [r[0] for r in rows]; h = [r[1] for r in rows]
-    l = [r[2] for r in rows]; c = [r[3] for r in rows]; ts = [r[4] for r in rows]
-    X, y = construir_features(o, h, l, c, ts, horizonte)
-    if len(y) < MIN_VELAS // 2:
-        return None
-    corte = int(len(y) * TRAIN_FRAC)
-    Xtr, ytr = X[:corte], y[:corte]
-    Xte, yte = X[corte:], y[corte:]
-    if len(np.unique(ytr)) < 2 or len(yte) < 50:
-        return None
-    prob, modelo = _modelo(Xtr, ytr, Xte)
-    return {"pair": pair, "n_test": len(yte), "modelo": modelo,
-            "eval": evaluar(prob, yte)}
+    return ([r[0] for r in rows], [r[1] for r in rows], [r[2] for r in rows],
+            [r[3] for r in rows], [r[4] for r in rows])
 
 
 def main() -> None:
@@ -215,64 +256,73 @@ def main() -> None:
         print(f"No existe la base {DB}. Arranca el colector para juntar historial.")
         return
     conn = sqlite3.connect(DB)
+    # Payout REAL por par (el break-even depende de esto): para un par que paga 70%
+    # hay que acertar >58.8%, no 55.6%. Se usa el pago que guardo el colector.
+    from collector.candle_store import CandleStore
+    store = CandleStore(DB)
 
-    print("ML DIRECCION — inteligencia externa sobre tu historial real")
-    print(f"Split cronologico 70/30 (entrena pasado, mide futuro) · horizonte "
-          f"{horizonte} vela(s) · break-even {BREAKEVEN:.1f}% (payout 80%)")
-    print("=" * 68)
-    print(f"{'PAR':10} {'n_test':>7} {'acc':>7} {'acc>0.10':>9} {'cob':>6}  modelo")
+    print("ML DIRECCION v2 — validacion DURA (walk-forward + ROI con tu pago real)")
+    print(f"{FOLDS} ventanas (entrena pasado, mide el bloque siguiente) · horizonte "
+          f"{horizonte} vela(s)")
+    print("Metrica: ROI por operacion (gana pago si acierta, pierde 1 si falla). "
+          "ROI>0 = da plata.")
+    print("=" * 72)
 
-    # Pool global: junta las features de todos los pares (mas muestra, un modelo).
-    Xall_tr = []; yall_tr = []; Xall_te = []; yall_te = []
+    reg_pool = []
+    print(f"{'PAR':10} {'pago':>5} {'be%':>6} {'acc(c>=.10)':>12} {'ROI/op':>8}")
     for pair in pares:
-        r = correr_par(conn, pair, horizonte)
-        if r is None:
-            print(f"{pair:10} {'-':>7}  (sin muestra suficiente)")
+        s = _serie(conn, pair)
+        pago = store.get_payout(pair)
+        if s is None or pago is None:
+            print(f"{pair:10} {'-':>5}  (sin muestra o sin pago)")
             continue
-        base = r["eval"][0]; conf10 = r["eval"][2]
-        print(f"{pair:10} {r['n_test']:>7} {base['acc']:>6.1f}% "
-              f"{conf10['acc']:>8.1f}% {conf10['cobertura']:>5.0f}%  {r['modelo']}")
+        pf = float(pago) / 100.0
+        be = 100.0 / (1.0 + pf)                     # break-even real de ESE pago
+        reg = walkforward_par(*s, horizonte, pf)
+        reg_pool.extend(reg)
+        ev = evaluar_roi(reg)
+        c10 = next((x for x in ev if x["margen"] == 0.10), None)
+        if c10:
+            print(f"{pair:10} {int(pago):>4}% {be:>5.1f}% {c10['acc']:>11.1f}% "
+                  f"{c10['roi']:>+7.3f}")
 
-    # Modelo POOL (todos los pares juntos, split cronologico por par y concatenado).
-    for pair in pares:
-        rows = conn.execute(
-            """SELECT open, high, low, close, ts FROM candles_real
-               WHERE pair=? AND tf=? ORDER BY ts ASC""", (pair, BASE_TF)).fetchall()
-        if len(rows) < MIN_VELAS:
-            continue
-        o = [r[0] for r in rows]; h = [r[1] for r in rows]
-        l = [r[2] for r in rows]; c = [r[3] for r in rows]; ts = [r[4] for r in rows]
-        X, y = construir_features(o, h, l, c, ts, horizonte)
-        if len(y) < MIN_VELAS // 2:
-            continue
-        corte = int(len(y) * TRAIN_FRAC)
-        Xall_tr.append(X[:corte]); yall_tr.append(y[:corte])
-        Xall_te.append(X[corte:]); yall_te.append(y[corte:])
+    print("=" * 72)
+    ev = evaluar_roi(reg_pool)
+    if not ev:
+        print("Sin muestra suficiente. Deja correr el colector mas tiempo.")
+        conn.close(); return
 
-    print("=" * 68)
-    if Xall_tr:
-        Xtr = np.vstack(Xall_tr); ytr = np.concatenate(yall_tr)
-        Xte = np.vstack(Xall_te); yte = np.concatenate(yall_te)
-        prob, modelo = _modelo(Xtr, ytr, Xte)
-        filas = evaluar(prob, yte)
-        print(f"POOL (todos los pares) · {modelo} · {len(yte)} de prueba")
-        for f in filas:
-            marca = " <- cruza break-even" if f["acc"] >= BREAKEVEN and f["n"] else ""
-            print(f"  confianza>= {f['margen']:.2f} : acierto {f['acc']:.1f}%  "
-                  f"(cobertura {f['cobertura']:.0f}%, n={f['n']}){marca}")
-        mejor = max(filas, key=lambda x: x["acc"] if x["n"] >= 50 else 0)
-        print("-" * 68)
-        if mejor["acc"] >= BREAKEVEN and mejor["n"] >= 50:
-            print(f"HAY BORDE: al {mejor['acc']:.1f}% (confianza>={mejor['margen']:.2f}, "
-                  f"cobertura {mejor['cobertura']:.0f}%) SUPERA el break-even "
-                  f"{BREAKEVEN:.1f}%. Vale integrarlo como filtro.")
-        else:
-            print(f"NO hay borde: el mejor caso ({mejor['acc']:.1f}%) NO cruza el "
-                  f"break-even {BREAKEVEN:.1f}%. El modelo aprende del pasado pero el "
-                  f"futuro a este horizonte es ~50/50. Honesto: no integrar (seria "
-                  f"vender una ventaja que no existe).")
+    modelo = "GradientBoosting(sklearn)"
+    try:
+        import sklearn  # noqa: F401
+    except ImportError:
+        modelo = "LogisticaNumpy (instala scikit-learn para el modelo fuerte)"
+    print(f"POOL (todos los pares) · {modelo} · {len(reg_pool)} operaciones")
+    for x in ev:
+        estab = f"{x['folds_pos']}/{x['folds']} ventanas+" if x["folds"] else "s/ventanas"
+        marca = "  <- da plata" if x["roi"] > 0 else ""
+        print(f"  confianza>= {x['margen']:.2f} : acierto {x['acc']:.1f}%  "
+              f"ROI {x['roi']:+.3f}/op  (n={x['n']}, {estab}){marca}")
+
+    # VEREDICTO honesto: borde REAL = ROI>0 con muestra decente (n>=200) Y positivo
+    # en la MAYORIA de las ventanas (>=ceil(folds*0.6)). Un ROI>0 cargado por una
+    # sola ventana NO cuenta (es suerte de tramo, no un borde que se sostenga).
+    print("-" * 72)
+    candidatos = [x for x in ev if x["roi"] > 0 and x["n"] >= 200
+                  and x["folds"] and x["folds_pos"] >= max(3, int(np.ceil(x["folds"] * 0.6)))]
+    if candidatos:
+        b = max(candidatos, key=lambda x: x["roi"])
+        print(f"BORDE ROBUSTO: confianza>={b['margen']:.2f} da ROI {b['roi']:+.3f} por "
+              f"operacion (acierto {b['acc']:.1f}%, n={b['n']}, positivo en "
+              f"{b['folds_pos']}/{b['folds']} ventanas). Se SOSTIENE. Vale integrarlo "
+              f"como filtro y confirmar en papel antes de arriesgar.")
     else:
-        print("Sin muestra suficiente en ningun par. Deja correr el colector.")
+        mejor = max(ev, key=lambda x: x["roi"])
+        print(f"NO se sostiene: el mejor ROI ({mejor['roi']:+.3f}/op, "
+              f"confianza>={mejor['margen']:.2f}) no cumple ROI>0 estable en la "
+              f"mayoria de ventanas con muestra suficiente. El susurro de borde no "
+              f"aguanta la validacion dura. Honesto: NO integrar todavia; junta mas "
+              f"historial (dias) y volve a correr.")
     conn.close()
 
 
