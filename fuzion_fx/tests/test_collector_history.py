@@ -41,12 +41,12 @@ def test_match_pair_robusto_por_formato() -> None:
     tmp.close()
     try:
         col = _colector(tmp.name)
-        # Cualquier formato del MISMO mercado configurado mapea al par (CAD/JPY es
-        # uno de los 22 pares del bot).
+        # Cualquier formato del MISMO mercado configurado mapea al par (USD/JPY es
+        # uno de los 8 pares liquidos del bot).
         if col.mercado == "real":
-            assert col._match_pair("CADJPY") == "CAD/JPY"
-            assert col._match_pair("cad/jpy") == "CAD/JPY"
-            assert col._match_pair("CAD-JPY") == "CAD/JPY"
+            assert col._match_pair("USDJPY") == "USD/JPY"
+            assert col._match_pair("usd/jpy") == "USD/JPY"
+            assert col._match_pair("USD-JPY") == "USD/JPY"
             # En real se IGNORA el simbolo OTC (otra serie de precio).
             assert col._match_pair("CADJPY_otc") is None
         else:

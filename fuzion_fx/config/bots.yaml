@@ -30,7 +30,13 @@ bots:
     timeframe: "1m"
     timeframe_seconds: 60
     card_label: "1 min - M1"
-    pairs: [AUD/CAD, AUD/JPY, AUD/NZD, AUD/USD, CAD/JPY, CHF/JPY, EUR/AUD, EUR/CAD, EUR/CHF, EUR/GBP, EUR/JPY, EUR/USD, GBP/AUD, GBP/CAD, GBP/CHF, GBP/JPY, GBP/USD, NZD/JPY, NZD/USD, USD/CAD, USD/CHF, USD/JPY]
+    # 8 pares LIQUIDOS (antes 22). PORQUE: el colector escucha de a UN par 8s (PO
+    # transmite uno a la vez); con 22 la vuelta era 176s (~3 min) y cada par tenia
+    # data fresca solo 8s de cada 3 min -> el analisis corria sobre velas viejas y
+    # la señal demoraba. Con 8, la vuelta es 64s (~1 min): data fresca cada minuto,
+    # que es lo que necesita el bot de 1m para engranar. Para agregar mas pares,
+    # sumalos aca (cuesta velocidad: cada par extra suma 8s a la vuelta).
+    pairs: [EUR/USD, GBP/USD, USD/JPY, AUD/USD, USD/CAD, USD/CHF, EUR/JPY, GBP/JPY]
     indicators: {ema_fast: 9, ema_slow: 21, rsi_period: 14, rsi_oversold: 40, rsi_overbought: 60, macd_fast: 12, macd_slow: 26, macd_signal: 9, bb_period: 20, bb_std: 2.0, atr_period: 14}
     signal: {min_confirmations: 2, max_signals_per_hour: 10}
     risk: {max_daily_trades_per_pair: 10, max_daily_loss_pct: 5.0, recovery_after_consecutive_losses: 3, news_buffer_minutes: 5, default_stake_pct: 1.0}
@@ -44,7 +50,13 @@ bots:
     timeframe: "2m"
     timeframe_seconds: 120
     card_label: "2 min - M2"
-    pairs: [AUD/CAD, AUD/JPY, AUD/NZD, AUD/USD, CAD/JPY, CHF/JPY, EUR/AUD, EUR/CAD, EUR/CHF, EUR/GBP, EUR/JPY, EUR/USD, GBP/AUD, GBP/CAD, GBP/CHF, GBP/JPY, GBP/USD, NZD/JPY, NZD/USD, USD/CAD, USD/CHF, USD/JPY]
+    # 8 pares LIQUIDOS (antes 22). PORQUE: el colector escucha de a UN par 8s (PO
+    # transmite uno a la vez); con 22 la vuelta era 176s (~3 min) y cada par tenia
+    # data fresca solo 8s de cada 3 min -> el analisis corria sobre velas viejas y
+    # la señal demoraba. Con 8, la vuelta es 64s (~1 min): data fresca cada minuto,
+    # que es lo que necesita el bot de 1m para engranar. Para agregar mas pares,
+    # sumalos aca (cuesta velocidad: cada par extra suma 8s a la vuelta).
+    pairs: [EUR/USD, GBP/USD, USD/JPY, AUD/USD, USD/CAD, USD/CHF, EUR/JPY, GBP/JPY]
     indicators: {ema_fast: 9, ema_slow: 21, rsi_period: 14, rsi_oversold: 40, rsi_overbought: 60, macd_fast: 12, macd_slow: 26, macd_signal: 9, bb_period: 20, bb_std: 2.0, atr_period: 14}
     signal: {min_confirmations: 2, max_signals_per_hour: 8}
     risk: {max_daily_trades_per_pair: 10, max_daily_loss_pct: 5.0, recovery_after_consecutive_losses: 3, news_buffer_minutes: 5, default_stake_pct: 1.0}
@@ -58,7 +70,13 @@ bots:
     timeframe: "3m"
     timeframe_seconds: 180
     card_label: "3 min - M3"
-    pairs: [AUD/CAD, AUD/JPY, AUD/NZD, AUD/USD, CAD/JPY, CHF/JPY, EUR/AUD, EUR/CAD, EUR/CHF, EUR/GBP, EUR/JPY, EUR/USD, GBP/AUD, GBP/CAD, GBP/CHF, GBP/JPY, GBP/USD, NZD/JPY, NZD/USD, USD/CAD, USD/CHF, USD/JPY]
+    # 8 pares LIQUIDOS (antes 22). PORQUE: el colector escucha de a UN par 8s (PO
+    # transmite uno a la vez); con 22 la vuelta era 176s (~3 min) y cada par tenia
+    # data fresca solo 8s de cada 3 min -> el analisis corria sobre velas viejas y
+    # la señal demoraba. Con 8, la vuelta es 64s (~1 min): data fresca cada minuto,
+    # que es lo que necesita el bot de 1m para engranar. Para agregar mas pares,
+    # sumalos aca (cuesta velocidad: cada par extra suma 8s a la vuelta).
+    pairs: [EUR/USD, GBP/USD, USD/JPY, AUD/USD, USD/CAD, USD/CHF, EUR/JPY, GBP/JPY]
     indicators: {ema_fast: 9, ema_slow: 21, rsi_period: 14, rsi_oversold: 40, rsi_overbought: 60, macd_fast: 12, macd_slow: 26, macd_signal: 9, bb_period: 20, bb_std: 2.0, atr_period: 14}
     signal: {min_confirmations: 2, max_signals_per_hour: 6}
     risk: {max_daily_trades_per_pair: 8, max_daily_loss_pct: 4.0, recovery_after_consecutive_losses: 2, news_buffer_minutes: 5, default_stake_pct: 1.0}
@@ -72,7 +90,13 @@ bots:
     timeframe: "5m"
     timeframe_seconds: 300
     card_label: "5 min - M5"
-    pairs: [AUD/CAD, AUD/JPY, AUD/NZD, AUD/USD, CAD/JPY, CHF/JPY, EUR/AUD, EUR/CAD, EUR/CHF, EUR/GBP, EUR/JPY, EUR/USD, GBP/AUD, GBP/CAD, GBP/CHF, GBP/JPY, GBP/USD, NZD/JPY, NZD/USD, USD/CAD, USD/CHF, USD/JPY]
+    # 8 pares LIQUIDOS (antes 22). PORQUE: el colector escucha de a UN par 8s (PO
+    # transmite uno a la vez); con 22 la vuelta era 176s (~3 min) y cada par tenia
+    # data fresca solo 8s de cada 3 min -> el analisis corria sobre velas viejas y
+    # la señal demoraba. Con 8, la vuelta es 64s (~1 min): data fresca cada minuto,
+    # que es lo que necesita el bot de 1m para engranar. Para agregar mas pares,
+    # sumalos aca (cuesta velocidad: cada par extra suma 8s a la vuelta).
+    pairs: [EUR/USD, GBP/USD, USD/JPY, AUD/USD, USD/CAD, USD/CHF, EUR/JPY, GBP/JPY]
     # rsi 40/60 (como los otros 3): con la resolucion honesta ya activa (velas
     # reales de PO + liquidacion contra la vela operada), se afloja el RSI para que
     # emita sobre los pares con buen pago. El win-rate real se mide ahora sobre

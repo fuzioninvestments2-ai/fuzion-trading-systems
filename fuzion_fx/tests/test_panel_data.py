@@ -87,7 +87,7 @@ def test_escaner_estructura_y_orden() -> None:
     cdb = _db("po_candles.db")
     _seed_candles(cdb, pair="EUR/USD", tf=60)
     rows = panel_data.escaner(60, db_candles=cdb)
-    assert len(rows) == 22                          # los 22 pares
+    assert len(rows) == 8                           # los 8 pares liquidos
     for r in rows:
         for k in ("pair", "signal", "confirmations", "payout", "estado"):
             assert k in r

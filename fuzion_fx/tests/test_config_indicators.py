@@ -33,7 +33,10 @@ def test_config_bots() -> None:
     # 3 emite 0.6% de los patrones, 4 el 0%, 2 el 73%). 2 = mayoria simple. Ver
     # test_integracion_e2e (cadena completa colector->bot->emite->resuelve).
     assert b["signal"]["min_confirmations"] == 2
-    assert len(b["pairs"]) == 22
+    # 8 pares liquidos (antes 22): el colector escucha de a uno, menos pares =
+    # vuelta mas corta = data fresca por par (ver bots.yaml).
+    assert len(b["pairs"]) == 8
+    assert "EUR/USD" in b["pairs"] and "USD/JPY" in b["pairs"]
     assert os.path.isabs(b["db_path"])
 
 
