@@ -609,12 +609,16 @@ class BaseBot:
 
             # PRE-FILTRO: recalcular tras `prefilter_seconds`; emitir SOLO si la
             # direccion se mantiene (descarta setups que se dan vuelta al toque).
-            confirmado = self._prefiltro(pair, result["signal"])
-            if confirmado is None or confirmado["signal"] != result["signal"]:
-                self.log.info("Pre-filtro descarta %s %s (cambio en %ds)",
-                              pair, result["signal"], self.prefilter_seconds)
-                continue
-            result = confirmado                # usar la lectura fresca confirmada
+            # EN HIBRIDO NO se re-verifica: la reversion es una decision PUNTUAL sobre
+            # el pico de la vela recien cerrada; 10s despues el pico ya no esta y el
+            # re-chequeo la descartaria SIEMPRE (era la causa del silencio de f3/f4).
+            if self.motor != "hibrido":
+                confirmado = self._prefiltro(pair, result["signal"])
+                if confirmado is None or confirmado["signal"] != result["signal"]:
+                    self.log.info("Pre-filtro descarta %s %s (cambio en %ds)",
+                                  pair, result["signal"], self.prefilter_seconds)
+                    continue
+                result = confirmado            # usar la lectura fresca confirmada
 
             # GATE DE FOTO COMPLETA. En cuantico el motor YA hizo los 7 tiempos y su
             # veredicto: no se re-filtra; la fuerza es la alineacion. En simple, el
@@ -1013,9 +1017,9 @@ class BaseBot:
         """
         self._running = True
         modo = self.aplicar_modo()                 # fija exigencia y cadencia inicial
-        self.log.info("%s arrancado (%d pares, modo '%s', tf %ds). Feed: %s | "
-                      "Telegram: %s", self.name, len(self.pairs), modo,
-                      self.timeframe_seconds, type(self.feed).__name__,
+        self.log.info("%s arrancado (%d pares, modo '%s', MOTOR '%s', tf %ds). "
+                      "Feed: %s | Telegram: %s", self.name, len(self.pairs), modo,
+                      self.motor, self.timeframe_seconds, type(self.feed).__name__,
                       "ON" if self.notifier else "DRY-RUN")
         self._notificar_salud("arranque")          # el bot avisa que está vivo
         ultimo_latido = time.time()
