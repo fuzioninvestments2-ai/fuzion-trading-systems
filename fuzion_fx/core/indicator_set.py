@@ -95,12 +95,16 @@ def _voto(direccion: int, fuerza: float) -> Dict[str, float]:
 
 # ----------------------------------------------------------------- indicadores
 def ind_rsi(o, h, l, c, v) -> Dict[str, float]:
-    """Reversion. RSI<50 sesga CALL (sobreventa -> rebote), >50 sesga PUT. La
-    FUERZA crece con la distancia a 50 (RSI 20 -> ~0.9; RSI 45 -> ~0.15)."""
+    """Reversion — SOLO en extremos (regla literal del doc): RSI<30 -> CALL
+    (sobreventa, rebote), RSI>70 -> PUT (sobrecompra, caida). En la banda 30-70 es
+    NEUTRAL (no arrastra: un RSI de 55 en tendencia sana NO es senal de reversion).
+    FUERZA crece hacia el extremo (RSI 20 -> ~0.9)."""
     r = float(_rsi(c)[-1])
-    direccion = CALL if r < 50 else PUT
-    fuerza = abs(50.0 - r) / 33.33          # 30/33.33=0.9 ; 5/33.33=0.15
-    return _voto(direccion, fuerza)
+    if r < 30:
+        return _voto(CALL, (30.0 - r) / 11.0)       # RSI 20 -> ~0.9
+    if r > 70:
+        return _voto(PUT, (r - 70.0) / 11.0)
+    return _voto(NEUTRAL, 0.0)
 
 
 def ind_macd(o, h, l, c, v) -> Dict[str, float]:
@@ -126,10 +130,16 @@ def ind_bollinger(o, h, l, c, v) -> Dict[str, float]:
     if ancho < 1e-12:
         return _voto(NEUTRAL, 0.0)
     pos = (float(c[-1]) - float(mid[-1])) / (0.5 * ancho)   # -1 abajo, +1 arriba
-    direccion = CALL if pos < 0 else PUT
-    fuerza = abs(pos)
-    # squeeze: ancho chico respecto al precio -> reversion menos fiable.
-    if ancho / float(c[-1]) < 0.001:
+    # Reversion SOLO cerca de las bandas (|pos|>=0.85). En el centro, NEUTRAL (no
+    # opone a la tendencia). Precio en banda inferior -> CALL; superior -> PUT.
+    if pos <= -0.85:
+        direccion, mag = CALL, abs(pos)
+    elif pos >= 0.85:
+        direccion, mag = PUT, abs(pos)
+    else:
+        return _voto(NEUTRAL, 0.0)
+    fuerza = min(1.0, (mag - 0.6) / 0.4)                    # 0.85->0.625 ; 1.0->1.0
+    if ancho / float(c[-1]) < 0.001:                        # squeeze: menos fiable
         fuerza *= 0.5
     return _voto(direccion, fuerza)
 
@@ -159,14 +169,17 @@ def ind_estocastico(o, h, l, c, v) -> Dict[str, float]:
     rango = np.where(hh - ll == 0, 1e-12, hh - ll)
     k_raw = 100.0 * (c - ll) / rango
     k = _sma(k_raw, 3); d = _sma(k, 3)
-    kk = float(k[-1])
-    direccion = CALL if kk < 50 else PUT
-    extrem = (50.0 - kk) / 50.0 if direccion == CALL else (kk - 50.0) / 50.0
     cruce_up = k[-2] < d[-2] and k[-1] >= d[-1]
     cruce_dn = k[-2] > d[-2] and k[-1] <= d[-1]
-    refuerzo = 1.0 if ((cruce_up and direccion == CALL) or
-                       (cruce_dn and direccion == PUT)) else 0.6
-    return _voto(direccion, extrem * refuerzo * 1.4)
+    # SOLO cruce desde zona extrema (regla del doc): %K cruza arriba de %D viniendo
+    # de <20 -> CALL; cruza abajo viniendo de >80 -> PUT. Si no, NEUTRAL (no opone
+    # a la tendencia por estar simplemente en un lado).
+    reciente_min = float(min(k[-3:])); reciente_max = float(max(k[-3:]))
+    if cruce_up and reciente_min < 25:
+        return _voto(CALL, min(1.0, (25.0 - reciente_min) / 25.0 + 0.4))
+    if cruce_dn and reciente_max > 75:
+        return _voto(PUT, min(1.0, (reciente_max - 75.0) / 25.0 + 0.4))
+    return _voto(NEUTRAL, 0.0)
 
 
 def ind_donchian(o, h, l, c, v) -> Dict[str, float]:

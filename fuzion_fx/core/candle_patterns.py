@@ -80,3 +80,43 @@ def detectar(candles: Dict[str, Sequence[float]], doji_ratio: float = 0.1,
     elif put > call:
         res["lean"] = PUT
     return res
+
+
+# patron -> (direccion, magnitud del ajuste) segun el doc fuente de Alex. El
+# envolvente pesa mas (+15%) que el marubozu (+12%) que el martillo/estrella
+# (+10%). El doji se maneja aparte (-20% e indecision).
+_AJUSTE = {
+    "martillo":           (CALL, 0.10),
+    "estrella":           (PUT, 0.10),
+    "marubozu_alcista":   (CALL, 0.12),
+    "marubozu_bajista":   (PUT, 0.12),
+    "envolvente_alcista": (CALL, 0.15),
+    "envolvente_bajista": (PUT, 0.15),
+}
+CONTRADICTORIO = -0.15          # patron que va CONTRA la direccion de la senal
+DOJI_PENAL = -0.20             # indecision: debilita cualquier direccion
+
+
+def ajuste_confianza(candles: Dict[str, Sequence[float]], direccion: int) -> Dict[str, Any]:
+    """
+    Cuanto ajusta el FACTOR DE CONFIANZA del motor la vela actual, dada la
+    `direccion` propuesta (CALL/PUT). Reglas del doc fuente:
+      - Doji                       -> -0.20 e indecision (si la prob es floja, NO OPERAR).
+      - Patron a FAVOR de la senal -> +0.10/+0.12/+0.15 (segun patron).
+      - Patron en CONTRA           -> -0.15 (contradictorio).
+      - Sin patron                 -> 0.0.
+    Devuelve {factor, patron, indecision}.
+    """
+    det = detectar(candles)
+    if det["indecision"]:
+        return {"factor": DOJI_PENAL, "patron": "doji", "indecision": True}
+    # Elige el patron de mayor magnitud presente (envolvente > marubozu > martillo).
+    mejor = None; mejor_mag = -1.0
+    for p in det["patrones"]:
+        if p in _AJUSTE and _AJUSTE[p][1] > mejor_mag:
+            mejor = p; mejor_mag = _AJUSTE[p][1]
+    if mejor is None:
+        return {"factor": 0.0, "patron": None, "indecision": False}
+    pat_dir, mag = _AJUSTE[mejor]
+    factor = mag if pat_dir == direccion else CONTRADICTORIO
+    return {"factor": factor, "patron": mejor, "indecision": False}
