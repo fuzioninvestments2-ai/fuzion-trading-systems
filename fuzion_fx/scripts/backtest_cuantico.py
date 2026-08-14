@@ -100,6 +100,18 @@ def _ruta_tf(par: str, tf: int, permitir_otc: bool) -> List[str]:
     return cands
 
 
+def pares_reales_disponibles() -> List[str]:
+    """Lista los pares con base 1m real (datasets/real/*__M1.csv.gz o
+    datos/raw/*_1m.csv), para orientar cuando el par pedido no esta."""
+    import glob
+    pares = set()
+    for ruta in glob.glob(os.path.join(_REPO, "datasets", "real", "*__M1.csv.gz")):
+        pares.add(os.path.basename(ruta).split("__", 1)[0])
+    for ruta in glob.glob(os.path.join(_REPO, "datos", "raw", "*_1m.csv")):
+        pares.add(os.path.basename(ruta).rsplit("_1m.csv", 1)[0])
+    return sorted(pares)
+
+
 def cargar(par: str, tfs: Sequence[int], permitir_otc: bool
            ) -> Dict[int, Dict[str, np.ndarray]]:
     """Carga los timeframes disponibles del par. Los que no tengan fuente real se
@@ -137,10 +149,10 @@ def backtest(par: str, tfs: Sequence[int], pago: float = 85.0,
     """Corre el walk-forward. Devuelve el reporte (operaciones, win-rate, etc.)."""
     datos = cargar(par, tfs, permitir_otc)
     if 60 not in datos:
-        pista = "" if permitir_otc else " Use --permitir-otc solo para probar mecanica."
-        return {"error": f"sin base 1m real para {par} (busque en datasets/real y "
-                         f"datos/raw).{pista}",
-                "tfs_cargados": sorted(datos)}
+        pista = "" if permitir_otc else " (--permitir-otc prueba mecanica con OTC)."
+        return {"error": f"sin base 1m real para {par} en datasets/real ni datos/raw.{pista}",
+                "tfs_cargados": sorted(datos),
+                "pares_disponibles": pares_reales_disponibles()}
 
     base = datos[60]
     n_base = len(base["close"])
@@ -198,6 +210,12 @@ def _imprimir(rep: Dict[str, Any]) -> None:
     if "error" in rep:
         print(f"ERROR: {rep['error']}")
         print(f"       tfs cargados: {rep.get('tfs_cargados')}")
+        disp = rep.get("pares_disponibles")
+        if disp:
+            print(f"       pares reales disponibles: {', '.join(disp)}")
+        elif disp is not None:
+            print("       no hay pares reales en datasets/real ni datos/raw "
+                  "(baja historial con Dukascopy en tu PC).")
         return
     print("=" * 60)
     print(f"Backtest cuantico · {rep['par']}"
