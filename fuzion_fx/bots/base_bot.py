@@ -28,6 +28,7 @@ from core.results_store import ResultsStore
 from core.risk_manager import RiskManager
 from core.signal_engine import SignalEngine, NEUTRAL
 from core import quantum_engine, indicator_set
+from core import reversion
 from core.multi_timeframe import MultiTimeframeAnalyzer, TF_SEGUNDOS
 from core.learning_engine import LearningEngine
 from core import news_guard
@@ -74,10 +75,22 @@ class BaseBot:
         self.store = store or ResultsStore(cfg["db_path"])
         self.risk = RiskManager(cfg["risk"])
         self.engine = SignalEngine(cfg["indicators"], cfg["signal"])
-        # MOTOR: "simple" (el de una tf, 4 indicadores) o "cuantico" (los 8
-        # indicadores + ADX + patrones + 7 tiempos, la estrategia de Alex). Default
-        # simple para no cambiar el comportamiento probado; se activa por config.
+        # MOTOR: "simple" (una tf, 4 indicadores), "cuantico" (8 indicadores + ADX +
+        # patrones + 7 tiempos) o "hibrido" (reversion tras pico como GENERADOR —el
+        # unico borde probado OOS en 23 anios— y el cuantico como FILTRO: veta si
+        # apunta fuerte en contra). Default simple para no cambiar lo probado.
         self.motor = str(cfg.get("motor", "simple")).lower()
+        # Tabla de reversion por par (reversion_tabla.json, opcional). Si no esta, el
+        # generador usa la tabla global OOS incorporada. Se busca en ROOT (fuzion_fx/)
+        # y en la raiz del repo (un nivel arriba).
+        _rev_paths = [os.path.join(ROOT, "reversion_tabla.json"),
+                      os.path.join(os.path.dirname(ROOT), "reversion_tabla.json")]
+        self._rev_tabla = None
+        for _rp in _rev_paths:
+            _t = reversion.cargar_tabla(_rp)
+            if _t:
+                self._rev_tabla = _t
+                break
         # LA FOTO COMPLETA: analizador de convergencia multi-temporalidad. El motor
         # de una sola tf da el disparo de ENTRADA; la convergencia confirma que TODA
         # la foto (corto/medio/largo) apoya la direccion. Solo se aplica como filtro
@@ -270,6 +283,72 @@ class BaseBot:
             "probabilidad": qr["probabilidad"], "alineacion": qr["alineacion"],
             "veredicto": qr["veredicto"], "modo_mkt": base.get("modo"),
             "patron": base.get("patron"), "n_alineados": qr["n_alineados"],
+        }
+
+    # ------------------------------------------------------- motor hibrido
+    def analisis_hibrido(self, pair: str,
+                         candles: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        HIBRIDO (Opcion C): la reversion tras pico GENERA (unico borde OOS probado),
+        el motor cuantico FILTRA. El pico se mide sobre 1m (la vela de 1m es la que
+        revierte); la opcion vence en la tf del bot (expiry_min). Se VETA si el
+        cuantico apunta FUERTE en contra (prob>=75% y alineacion>=60%). Devuelve el
+        result para el pipeline, o None si no hay reversion o el cuantico la veta.
+        """
+        try:
+            c1 = self.feed.get_candles(pair, 60)          # cierres de 1m para el pico
+        except Exception:
+            c1 = None
+        closes = c1.get("close") if c1 else None
+        expiry = max(1, self.timeframe_seconds // 60)
+        par_key = pair.replace("/", "").upper()
+        rev = reversion.senal(closes, par_key, expiry_min=expiry, tabla=self._rev_tabla)
+        if not rev.get("operar"):
+            return None
+        d_rev = indicator_set.CALL if rev["direccion"] == "CALL" else indicator_set.PUT
+        # FILTRO cuantico: solo veta contradiccion FUERTE (si no hay datos, no veta).
+        qr = self.analisis_cuantico(pair)
+        if (qr is not None and qr["direccion"] != indicator_set.NEUTRAL
+                and qr["direccion"] != d_rev
+                and qr["probabilidad"] >= quantum_engine.UMBRAL_OPCIONAL
+                and qr["alineacion"] >= quantum_engine.ALINEACION_OPCIONAL):
+            self.log.info("Cuantico VETA reversion %s %s (motor %s prob %.0f%% alin %.0f%%)",
+                          pair, rev["direccion"],
+                          "CALL" if qr["direccion"] == indicator_set.CALL else "PUT",
+                          qr["probabilidad"] * 100, qr["alineacion"] * 100)
+            return None
+        return self._result_desde_reversion(pair, candles, rev, qr)
+
+    def _result_desde_reversion(self, pair: str, candles: Dict[str, Any],
+                                rev: Dict[str, Any],
+                                qr: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Traduce la senal de reversion (ya no vetada) al dict `result` del pipeline.
+        La direccion/probabilidad salen de la reversion (borde OOS); la alineacion del
+        cuantico se guarda como fuerza informativa para la tarjeta."""
+        import numpy as _np
+        d = indicator_set.CALL if rev["direccion"] == "CALL" else indicator_set.PUT
+        signal = "CALL" if d == indicator_set.CALL else "PUT"
+        votos = indicator_set.votar(candles)
+        confirming = [n for n, v in votos.items()
+                      if n != "momentum" and v.get("dir") == d]
+        votes = {n: int(v.get("dir", 0)) for n, v in votos.items()}
+        atr = float(indicator_set._atr(
+            _np.asarray(candles["high"], float), _np.asarray(candles["low"], float),
+            _np.asarray(candles["close"], float))[-1])
+        prob = float(rev["probabilidad"]) / 100.0         # % OOS -> 0..1
+        alin = float(qr["alineacion"]) if qr else 0.0
+        return {
+            "signal": signal,
+            "setup_id": f"{signal}|H|{rev['expiry_min']}m",
+            "confirming": confirming, "confirmations": len(confirming),
+            "confirmations_list": confirming,
+            "price": float(candles["close"][-1]), "atr": atr,
+            "votes": votes, "readings": {},
+            "probabilidad": prob, "alineacion": alin,
+            "veredicto": "OPERAR",
+            "modo_mkt": "reversion", "patron": None,
+            "n_alineados": qr["n_alineados"] if qr else 0,
+            "pico_pips": rev.get("pips"), "rev_motivo": rev.get("motivo"),
         }
 
     def _filtro_convergencia_simple(self, pair: str, result: Dict[str, Any]):
@@ -479,6 +558,12 @@ class BaseBot:
                     self._last_dir[pair] = None
                     continue
                 result = self._result_desde_cuantico(pair, candles, qr)
+            elif self.motor == "hibrido":
+                # Reversion GENERA + cuantico FILTRA (veta contradiccion fuerte).
+                result = self.analisis_hibrido(pair, candles)
+                if result is None:
+                    self._last_dir[pair] = None
+                    continue
             else:
                 result = self.engine.analyze(candles)
                 if result["signal"] == NEUTRAL:
@@ -534,14 +619,21 @@ class BaseBot:
             # GATE DE FOTO COMPLETA. En cuantico el motor YA hizo los 7 tiempos y su
             # veredicto: no se re-filtra; la fuerza es la alineacion. En simple, el
             # filtro de convergencia clasico (puede FRENAR).
-            if self.motor == "cuantico":
+            if self.motor in ("cuantico", "hibrido"):
                 fuerza = result.get("alineacion")
-                conv_detalle = (f"{result.get('n_alineados', 0)} tiempos · "
-                                f"prob {result.get('probabilidad', 0):.0%} · "
-                                f"alin {result.get('alineacion', 0):.0%} · "
-                                f"modo {result.get('modo_mkt', '')}")
-                if result.get("patron"):
-                    conv_detalle += f" · patron {result['patron']}"
+                if self.motor == "hibrido":
+                    # En hibrido la fuerza/tarjeta describe el pico y el acierto OOS;
+                    # el cuantico ya vetó o dejó pasar (no re-filtra aca).
+                    conv_detalle = (f"pico {result.get('pico_pips', 0)} pips · "
+                                    f"acierto OOS {result.get('probabilidad', 0):.1%} · "
+                                    f"cuantico no contradice")
+                else:
+                    conv_detalle = (f"{result.get('n_alineados', 0)} tiempos · "
+                                    f"prob {result.get('probabilidad', 0):.0%} · "
+                                    f"alin {result.get('alineacion', 0):.0%} · "
+                                    f"modo {result.get('modo_mkt', '')}")
+                    if result.get("patron"):
+                        conv_detalle += f" · patron {result['patron']}"
             else:
                 gate = self._filtro_convergencia_simple(pair, result)
                 if gate is None:                          # la foto FRENA la señal
@@ -637,6 +729,9 @@ class BaseBot:
             if qr is None or qr["veredicto"] not in self._veredictos_ok():
                 return None
             return self._result_desde_cuantico(pair, candles, qr)
+        if self.motor == "hibrido":
+            # Re-verifica: el pico debe seguir dando reversion y el cuantico no vetar.
+            return self.analisis_hibrido(pair, candles)
         return self.engine.analyze(candles)
 
     def _schedule_checkpoint(self, pair: str, direccion: str, expiry_ts: int,
