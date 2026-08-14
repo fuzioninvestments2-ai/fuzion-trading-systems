@@ -417,6 +417,13 @@ class BaseBot:
             "atr": atr_pips,
             "confluencia": confluencia,        # foto completa (multi-temporalidad)
             "fuerza": fuerza,                  # convergencia 0..1 (para el badge FUERZA)
+            # Motor cuantico: probabilidad y alineacion para mostrarlas prominentes
+            # (formato de la tarjeta de Alex). None en motor simple -> no se muestran.
+            "probabilidad": result.get("probabilidad"),
+            "alineacion": result.get("alineacion"),
+            "n_alineados": result.get("n_alineados"),
+            "modo_mkt": result.get("modo_mkt"),
+            "patron": result.get("patron"),
         }
         return self.formatter.format_signal(d)
 

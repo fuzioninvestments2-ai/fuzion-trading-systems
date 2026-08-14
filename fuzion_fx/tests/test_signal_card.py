@@ -128,6 +128,18 @@ def test_confirmaciones_cuenta_por_lista() -> None:
     assert "Confirmaciones: 4 (ema, macd, rsi, bollinger)" in txt
 
 
+def test_probabilidad_y_alineacion_motor_cuantico() -> None:
+    # Con datos del motor cuantico, la tarjeta muestra Probabilidad y Alineacion
+    # prominentes; sin ellos (motor simple), no aparece la linea.
+    fmt = SignalCardFormatter()
+    con = fmt.format_signal(_base(probabilidad=0.92, alineacion=0.80,
+                                  n_alineados=5, modo_mkt="slide", patron="martillo"))
+    assert "Probabilidad: *92%*" in con
+    assert "Alineación: 5/7" in con and "Modo: slide" in con
+    sin = fmt.format_signal(_base())
+    assert "Probabilidad:" not in sin
+
+
 def test_zona_horaria_y_disclaimer() -> None:
     fmt = SignalCardFormatter()
     txt = fmt.format_signal(_base(tz_offset=-5))
@@ -143,7 +155,7 @@ def _run_all() -> None:
              test_mercado_por_hora_utc_fallback, test_divisa_sin_barra,
              test_divisa_otc_muestra_sufijo,
              test_bot_name_de_yaml, test_confirmaciones_cuenta_por_lista,
-             test_zona_horaria_y_disclaimer]
+             test_probabilidad_y_alineacion_motor_cuantico, test_zona_horaria_y_disclaimer]
     for t in tests:
         t()
         print(f"  OK  {t.__name__}")

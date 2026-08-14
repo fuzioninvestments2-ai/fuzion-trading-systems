@@ -112,11 +112,25 @@ class SignalCardFormatter:
                       for k, v in votos.items()]
             linea_ind = f"🎛️ Indicadores: {'  '.join(partes)}\n"
 
+        # Motor cuantico: Probabilidad y Alineacion prominentes (formato de Alex).
+        # Solo si el bot las provee (motor cuantico); en simple no aparecen.
+        prob = d.get("probabilidad")
+        linea_prob = ""
+        if prob is not None:
+            n_al = d.get("n_alineados")
+            alin = d.get("alineacion") or 0.0
+            extra = f"{n_al}/7" if n_al is not None else f"{alin:.0%}"
+            modo_txt = f"  ·  Modo: {d['modo_mkt']}" if d.get("modo_mkt") else ""
+            patron_txt = f"  ·  Patrón: {d['patron']}" if d.get("patron") else ""
+            linea_prob = (f"🧮 Probabilidad: *{prob:.0%}*  ·  Alineación: {extra} "
+                          f"({alin:.0%}){modo_txt}{patron_txt}\n")
+
         return (
             f"🤖 *{bot_name}*{estrella}\n"
             f"🌐 Zona Horaria: UTC{off:+d}:00\n"
             f"📊 DIVISA: *{pair_txt}*\n"
             f"{arrow}\n"
+            f"{linea_prob}"
             f"⏰ HORA DE ENTRADA: *{d['hora_entrada']}*\n"
             f"⌛ VENCE: {d['hora_vencimiento']}{label_txt}\n"
             f"🌍 Mercado: {mercado}\n"
