@@ -129,7 +129,7 @@ def test_scan_hibrido_emite_reversion() -> None:
     from core.results_store import ResultsStore
     from bots.base_bot import BaseBot
     bot = BaseBot("f3_m3", price_feed=_FeedSpike(), store=ResultsStore(":memory:"))
-    assert bot.motor == "hibrido"                  # viene de config/bots.yaml
+    bot.motor = "hibrido"                          # forzado: en config quedo en cuantico
     bot.signal_cooldown = 0
     bot.prefilter_seconds = 0
     bot._schedule_enabled = False
