@@ -27,6 +27,7 @@ from core.config import get_bot_config, load_config, ROOT
 from core.results_store import ResultsStore
 from core.risk_manager import RiskManager
 from core.signal_engine import SignalEngine, NEUTRAL
+from core import quantum_engine, indicator_set
 from core.multi_timeframe import MultiTimeframeAnalyzer, TF_SEGUNDOS
 from core.learning_engine import LearningEngine
 from core import news_guard
@@ -73,6 +74,10 @@ class BaseBot:
         self.store = store or ResultsStore(cfg["db_path"])
         self.risk = RiskManager(cfg["risk"])
         self.engine = SignalEngine(cfg["indicators"], cfg["signal"])
+        # MOTOR: "simple" (el de una tf, 4 indicadores) o "cuantico" (los 8
+        # indicadores + ADX + patrones + 7 tiempos, la estrategia de Alex). Default
+        # simple para no cambiar el comportamiento probado; se activa por config.
+        self.motor = str(cfg.get("motor", "simple")).lower()
         # LA FOTO COMPLETA: analizador de convergencia multi-temporalidad. El motor
         # de una sola tf da el disparo de ENTRADA; la convergencia confirma que TODA
         # la foto (corto/medio/largo) apoya la direccion. Solo se aplica como filtro
@@ -216,6 +221,89 @@ class BaseBot:
         return modo
 
     # ------------------------------------------------------------- foto completa
+    # ------------------------------------------------------- motor cuantico
+    def _veredictos_ok(self) -> set:
+        """Que veredictos habilitan emitir. En modo 'rapido' se acepta tambien
+        OPCIONAL (mas señales); en normal/lento solo OPERAR (mas estricto)."""
+        if getattr(self, "_modo_actual", "normal") == "rapido":
+            return {"OPERAR", "OPCIONAL"}
+        return {"OPERAR"}
+
+    def analisis_cuantico(self, pair: str) -> Optional[Dict[str, Any]]:
+        """Corre el motor cuantico sobre los 7 tiempos del par (los que el feed
+        tenga con velas suficientes). None si no hay datos."""
+        velas: Dict[int, Any] = {}
+        for tf in quantum_engine.PESO_TF:
+            try:
+                c = self.feed.get_candles(pair, tf)
+            except Exception:
+                c = None
+            if c and len(c.get("close", [])) >= indicator_set.MIN_VELAS:
+                velas[tf] = c
+        if not velas:
+            return None
+        return quantum_engine.analizar(velas)
+
+    def _result_desde_cuantico(self, pair: str, candles: Dict[str, Any],
+                               qr: Dict[str, Any]) -> Dict[str, Any]:
+        """Traduce el veredicto cuantico al dict `result` que espera el pipeline
+        (build_card, rec, aprendizaje). La direccion y la probabilidad salen del
+        motor; los indicadores del tf base alimentan la tarjeta."""
+        d = qr["direccion"]
+        signal = "CALL" if d == indicator_set.CALL else "PUT"
+        base = qr["por_tf"].get(self.timeframe_seconds) or next(iter(qr["por_tf"].values()))
+        votos = indicator_set.votar(candles)
+        confirming = [n for n, v in votos.items()
+                      if n != "momentum" and v.get("dir") == d]
+        votes = {n: int(v.get("dir", 0)) for n, v in votos.items()}
+        import numpy as _np
+        atr = float(indicator_set._atr(
+            _np.asarray(candles["high"], float), _np.asarray(candles["low"], float),
+            _np.asarray(candles["close"], float))[-1])
+        return {
+            "signal": signal,
+            "setup_id": f"{signal}|Q|{base.get('modo', 'na')}",
+            "confirming": confirming, "confirmations": len(confirming),
+            "confirmations_list": confirming,
+            "price": float(candles["close"][-1]), "atr": atr,
+            "votes": votes, "readings": {},
+            "probabilidad": qr["probabilidad"], "alineacion": qr["alineacion"],
+            "veredicto": qr["veredicto"], "modo_mkt": base.get("modo"),
+            "patron": base.get("patron"), "n_alineados": qr["n_alineados"],
+        }
+
+    def _filtro_convergencia_simple(self, pair: str, result: Dict[str, Any]):
+        """
+        Filtro de convergencia del motor SIMPLE (la foto completa segun la politica
+        del modo). Devuelve (fuerza, detalle) para el registro/tarjeta, o None si la
+        foto FRENA la señal. Extraido de scan_once para separar del motor cuantico.
+        """
+        conv = self.convergencia(pair)
+        if conv is None:
+            return (None, "")
+        sig = conv["signal"]                             # CALL/PUT/NEUTRAL (segun umbral)
+        apoya = sig == result["signal"]
+        opuesta = sig != NEUTRAL and not apoya
+        politica = getattr(self, "_conv_politica", "no_contradice")
+        if politica == "confirma":
+            frena = not (apoya and conv["total"] >= self.min_tf_convergencia)
+        elif politica == "no_contradice":
+            frena = opuesta                              # nunca operar contra la foto
+        else:                                            # "info": no frena
+            frena = False
+        if frena:
+            self.log.info("Foto completa frena %s %s (modo=%s, conv=%s, %s)",
+                          pair, result["signal"], getattr(self, "_modo_actual", "?"),
+                          sig, conv["detalle"])
+            return None
+        # Fuerza direccional: solo si la foto APOYA la direccion; si no, 0.
+        fuerza = conv["convergencia"] if apoya else 0.0
+        detalle = ""
+        if conv["detalle"]:
+            detalle = (f"{conv['alineadas']}/{conv['total']} tiempos "
+                       f"({conv['detalle']}) conv {conv['convergencia']:.0%}")
+        return (fuerza, detalle)
+
     def convergencia(self, pair: str) -> Optional[Dict[str, Any]]:
         """
         Lee las velas de TODAS las temporalidades disponibles (5s..1h) del par y
@@ -375,11 +463,21 @@ class BaseBot:
             if not candles or len(candles.get("close", [])) < 2:
                 continue
 
-            result = self.engine.analyze(candles)
-            if result["signal"] == NEUTRAL:
-                # Sin senal: se resetea el par para que una nueva CALL/PUT avise.
-                self._last_dir[pair] = None
-                continue
+            # MOTOR CUANTICO: la direccion y la probabilidad las decide el motor
+            # sobre los 7 tiempos; solo se emite si el veredicto habilita (OPERAR, o
+            # OPCIONAL en modo rapido). El motor SIMPLE (de una tf) es el fallback.
+            if self.motor == "cuantico":
+                qr = self.analisis_cuantico(pair)
+                if qr is None or qr["veredicto"] not in self._veredictos_ok():
+                    self._last_dir[pair] = None
+                    continue
+                result = self._result_desde_cuantico(pair, candles, qr)
+            else:
+                result = self.engine.analyze(candles)
+                if result["signal"] == NEUTRAL:
+                    # Sin senal: se resetea el par para que una nueva CALL/PUT avise.
+                    self._last_dir[pair] = None
+                    continue
 
             # ANTI-DUPLICADO (re-armado): direccion OPUESTA -> avisa al toque;
             # MISMA direccion -> re-avisa solo si la senal anterior YA vencio (paso
@@ -426,44 +524,22 @@ class BaseBot:
                 continue
             result = confirmado                # usar la lectura fresca confirmada
 
-            # FOTO COMPLETA (convergencia multi-temporalidad). Cuanto MANDA depende
-            # del MODO (self._conv_politica), no siempre bloquea:
-            #   info          -> nunca frena; solo muestra la confluencia (rapido).
-            #   no_contradice -> frena solo si la foto va en direccion OPUESTA.
-            #   confirma      -> exige que la foto apoye la MISMA direccion (lento).
-            # Solo se evalua con datos de >= min_tf_convergencia tiempos; si no, no
-            # interviene (cae al motor de una tf, no bloquea al arranque).
-            conv = self.convergencia(pair)
-            conv_detalle = ""
-            fuerza = None
-            politica = getattr(self, "_conv_politica", "no_contradice")
-            if conv is not None:
-                sig = conv["signal"]                     # CALL/PUT/NEUTRAL (segun umbral)
-                apoya = sig == result["signal"]          # la foto va a favor
-                opuesta = sig != NEUTRAL and not apoya    # la foto va en CONTRA
-                if politica == "confirma":
-                    # exige que la foto CONFIRME y con datos suficientes (calidad).
-                    frena = not (apoya and conv["total"] >= self.min_tf_convergencia)
-                elif politica == "no_contradice":
-                    # NUNCA operar contra la foto: bloquea CUALQUIER foto opuesta,
-                    # sin importar cuantos tiempos voten (cierra el agujero: antes un
-                    # solo tiempo opuesto se colaba por total < min_tf).
-                    frena = opuesta
-                else:                                     # "info": no frena
-                    frena = False
-                if frena:
-                    self.log.info("Foto completa frena %s %s (modo=%s, conv=%s, %s)",
-                                  pair, result["signal"], self._modo_actual,
-                                  sig, conv["detalle"])
+            # GATE DE FOTO COMPLETA. En cuantico el motor YA hizo los 7 tiempos y su
+            # veredicto: no se re-filtra; la fuerza es la alineacion. En simple, el
+            # filtro de convergencia clasico (puede FRENAR).
+            if self.motor == "cuantico":
+                fuerza = result.get("alineacion")
+                conv_detalle = (f"{result.get('n_alineados', 0)} tiempos · "
+                                f"prob {result.get('probabilidad', 0):.0%} · "
+                                f"alin {result.get('alineacion', 0):.0%} · "
+                                f"modo {result.get('modo_mkt', '')}")
+                if result.get("patron"):
+                    conv_detalle += f" · patron {result['patron']}"
+            else:
+                gate = self._filtro_convergencia_simple(pair, result)
+                if gate is None:                          # la foto FRENA la señal
                     continue
-                # FUERZA DIRECCIONAL: solo cuenta si la foto APOYA la direccion; si
-                # es neutra u opuesta, no hay confluencia a favor -> fuerza 0 (evita
-                # badgear 🔥 una señal que la foto no respalda, y no ensucia la
-                # medicion de acierto por fuerza).
-                fuerza = conv["convergencia"] if apoya else 0.0
-                if conv["detalle"]:
-                    conv_detalle = (f"{conv['alineadas']}/{conv['total']} tiempos "
-                                    f"({conv['detalle']}) conv {conv['convergencia']:.0%}")
+                fuerza, conv_detalle = gate
 
             # DOS bordes de la MISMA vela operada:
             #  - entry_border (grid de PO): para LIQUIDAR contra la vela real. El
@@ -547,6 +623,13 @@ class BaseBot:
         candles = self.feed.get_candles(pair, self.timeframe_seconds)
         if not candles or len(candles.get("close", [])) < 2:
             return None
+        # En cuantico, re-verificar con el motor cuantico (misma exigencia de
+        # veredicto); si ya no habilita o cambio de direccion, el caller descarta.
+        if self.motor == "cuantico":
+            qr = self.analisis_cuantico(pair)
+            if qr is None or qr["veredicto"] not in self._veredictos_ok():
+                return None
+            return self._result_desde_cuantico(pair, candles, qr)
         return self.engine.analyze(candles)
 
     def _schedule_checkpoint(self, pair: str, direccion: str, expiry_ts: int,
