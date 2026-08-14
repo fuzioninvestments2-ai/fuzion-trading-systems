@@ -163,6 +163,11 @@ def backtest(par: str, tfs: Sequence[int], pago: float = 85.0,
     ties = 0
     probas: List[float] = []
     por_veredicto: Dict[str, int] = {}
+    # DIAGNOSTICO: para saber POR QUE hay pocas/ninguna operacion se tallan TODOS
+    # los veredictos (no solo los operables) y la probabilidad de TODAS las barras.
+    hist_veredicto: Dict[str, int] = {}
+    prob_todas: List[float] = []
+    tfs_por_barra: List[int] = []
 
     for i in range(ini, n_base - 1, max(1, paso)):
         t = int(base["ts"][i])
@@ -174,14 +179,17 @@ def backtest(par: str, tfs: Sequence[int], pago: float = 85.0,
         if not velas:
             continue
         qr = quantum_engine.analizar(velas)
-        # Umbral: OPERAR siempre; OPCIONAL cuenta como operacion tambien (el bot en
-        # modo rapido la emite). Se registra el veredicto para desglosar.
-        if qr["veredicto"] not in ("OPERAR", "OPCIONAL"):
+        ver = qr["veredicto"]
+        hist_veredicto[ver] = hist_veredicto.get(ver, 0) + 1
+        prob_todas.append(qr["probabilidad"])
+        tfs_por_barra.append(len(velas))
+        # Umbral: OPERAR siempre; OPCIONAL cuenta como operacion (modo rapido).
+        if ver not in ("OPERAR", "OPCIONAL"):
             continue
         d = qr["direccion"]
         entrada = float(base["close"][i])
         cierre = float(base["close"][i + 1])          # vela SIGUIENTE (no vista)
-        por_veredicto[qr["veredicto"]] = por_veredicto.get(qr["veredicto"], 0) + 1
+        por_veredicto[ver] = por_veredicto.get(ver, 0) + 1
         probas.append(qr["probabilidad"])
         if cierre == entrada:
             ties += 1
@@ -203,6 +211,12 @@ def backtest(par: str, tfs: Sequence[int], pago: float = 85.0,
         "borde": win_rate - break_even,                # >0 = borde sobre break-even
         "prob_media": float(np.mean(probas)) if probas else 0.0,
         "por_veredicto": por_veredicto,
+        # diagnostico
+        "barras_analizadas": len(prob_todas),
+        "hist_veredicto": hist_veredicto,
+        "prob_media_global": float(np.mean(prob_todas)) if prob_todas else 0.0,
+        "prob_max_global": float(np.max(prob_todas)) if prob_todas else 0.0,
+        "tfs_medios_por_barra": float(np.mean(tfs_por_barra)) if tfs_por_barra else 0.0,
     }
 
 
@@ -230,8 +244,14 @@ def _imprimir(rep: Dict[str, Any]) -> None:
     borde = rep["borde"]
     signo = "BORDE +" if borde > 0 else "SIN BORDE "
     print(f"  {signo}{borde:+.2f} pts sobre break-even")
-    print(f"  Probabilidad media: {rep['prob_media']:.0%}")
+    print(f"  Probabilidad media: {rep['prob_media']:.0%}  (solo operaciones)")
     print(f"  Por veredicto     : {rep['por_veredicto']}")
+    print("  --- diagnostico (por que dispara poco/nada) ---")
+    print(f"  Barras analizadas : {rep.get('barras_analizadas', 0)}")
+    print(f"  tf medios/barra   : {rep.get('tfs_medios_por_barra', 0):.1f} de 7")
+    print(f"  Prob media GLOBAL : {rep.get('prob_media_global', 0):.1%}"
+          f"   (max {rep.get('prob_max_global', 0):.1%})")
+    print(f"  Veredictos (todos): {rep.get('hist_veredicto', {})}")
     if rep["fuente_otc"]:
         print("  NOTA: datos OTC sinteticos; este numero NO mide el mercado real.")
     print("=" * 60)
