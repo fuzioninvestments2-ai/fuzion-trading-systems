@@ -74,6 +74,7 @@ def test_cadena_completa_emite_y_resuelve() -> None:
         bot = BaseBot("f1_m1", price_feed=CandleStoreFeed(tmp.name),
                       store=ResultsStore(":memory:"))     # sin notifier -> dry-run
         bot.pairs = ["EUR/USD"]
+        bot.motor = "simple"          # este e2e valida el pipeline del motor simple
         bot.timeframe_seconds = tf
         bot.timeframe = "1m"
         bot.prefilter_seconds = 0
@@ -116,6 +117,7 @@ def test_cadena_bloquea_por_pago_fuera_de_banda() -> None:
         bot = BaseBot("f1_m1", price_feed=CandleStoreFeed(tmp.name),
                       store=ResultsStore(":memory:"))
         bot.pairs = ["EUR/USD"]
+        bot.motor = "simple"          # este e2e valida el pipeline del motor simple
         bot.timeframe_seconds = tf
         bot.prefilter_seconds = 0
         bot.signal_cooldown = 0
@@ -137,6 +139,7 @@ def test_tarjeta_salud_refleja_estado() -> None:
         bot = BaseBot("f1_m1", price_feed=CandleStoreFeed(tmp.name),
                       store=ResultsStore(":memory:"))
         bot.pairs = ["EUR/USD"]
+        bot.motor = "simple"          # este e2e valida el pipeline del motor simple
         bot.timeframe_seconds = tf
 
         # Sin nada aun: sin datos.

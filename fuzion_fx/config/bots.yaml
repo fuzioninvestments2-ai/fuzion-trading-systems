@@ -10,6 +10,14 @@
 # market=otc.
 market: real
 
+# MOTOR de analisis (aplica a los 4 bots salvo que uno lo pise):
+#   cuantico = 8 indicadores (RSI, MACD, Bollinger, EMA 9/21/55, Estocastico,
+#     Donchian, VWAP, momentum) + arbitro ADX (Slide/Oscillate) + 5 patrones de
+#     vela + convergencia de los 7 tiempos (1m-30m). Emite solo con veredicto
+#     OPERAR (o OPCIONAL en modo rapido). Es la estrategia completa de Alex.
+#   simple = motor de una sola tf (4 indicadores, votacion 2 de 4). El anterior.
+motor: cuantico
+
 # Filtro de PAGO (payout) real de Pocket Option, aplicado a los 4 bots. El usuario
 # opera la banda 53%-92%: emite solo si el pago del activo esta en ese rango, y
 # PRIORIZA el de mayor pago (scan_once ordena los pares por pago desc). require=true:

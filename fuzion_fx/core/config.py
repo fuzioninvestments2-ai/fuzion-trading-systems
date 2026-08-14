@@ -71,6 +71,9 @@ def get_bot_config(bot_id: str, path: str = None) -> Dict[str, Any]:
     # Filtro de pago: default global (top-level 'payout') salvo que el bot lo pise.
     # El usuario exige emitir solo en activos con pago real >= 72%.
     bot["payout"] = bot.get("payout", cfg.get("payout", {}))
+    # Motor: 'simple' (una tf) o 'cuantico' (8 indicadores + ADX + patrones + 7
+    # tiempos). Default global (top-level) salvo que el bot lo pise.
+    bot["motor"] = bot.get("motor", cfg.get("motor", "simple"))
     if "db_path" in bot and not os.path.isabs(bot["db_path"]):
         bot["db_path"] = os.path.join(ROOT, bot["db_path"])
     return bot

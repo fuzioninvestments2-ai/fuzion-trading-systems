@@ -66,6 +66,7 @@ def _feed():
 def _bot(engine, notif=None):
     bot = BaseBot("f1_m1", price_feed=_feed(), store=ResultsStore(":memory:"),
                   notifier=notif)
+    bot.motor = "simple"              # el checkpoint se prueba con el motor simple
     bot.pairs = ["EUR/USD"]
     bot.prefilter_seconds = 0
     bot.signal_cooldown = 0            # sin esperas reales

@@ -41,6 +41,7 @@ def _bot():
     feed.set_candles("EUR/USD", {"open": c, "high": [x + 0.0002 for x in c],
                                  "low": [x - 0.0002 for x in c], "close": c})
     bot = BaseBot("f1_m1", price_feed=feed, store=ResultsStore(":memory:"))
+    bot.motor = "simple"              # valida el anti-duplicado del motor simple
     bot.pairs = ["EUR/USD"]
     bot.prefilter_seconds = 0
     bot.signal_cooldown = 0
