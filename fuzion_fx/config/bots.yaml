@@ -78,10 +78,10 @@ bots:
     timeframe: "3m"
     timeframe_seconds: 180
     card_label: "3 min - M3"
-    # Motor cuantico (hereda el global). El motor 'hibrido' de reversion quedo en el
-    # codigo pero NO se usa en vivo: se midio que la reversion tras pico NO dispara
-    # en el mercado real (0 senales en el periodo de deploy; los picos de 4-5 pips en
-    # un solo minuto son demasiado raros). El cuantico SI emite en las 4 tf.
+    # MOTOR HIBRIDO (Opcion C): reversion tras pico GENERA + cuantico FILTRA. Se
+    # prueba en vivo con mercado ABIERTO (el intento anterior fue con mercado cerrado
+    # -> 0 picos posibles, medicion invalida). f1/f2 quedan en cuantico (flujo seguro).
+    motor: hibrido
     # 8 pares LIQUIDOS (antes 22). PORQUE: el colector escucha de a UN par 8s (PO
     # transmite uno a la vez); con 22 la vuelta era 176s (~3 min) y cada par tenia
     # data fresca solo 8s de cada 3 min -> el analisis corria sobre velas viejas y
@@ -102,8 +102,9 @@ bots:
     timeframe: "5m"
     timeframe_seconds: 300
     card_label: "5 min - M5"
-    # Motor cuantico (hereda el global). Ver nota en f3_m3: el hibrido de reversion
-    # no dispara en vivo; cuantico es el que emite.
+    # MOTOR HIBRIDO (Opcion C): 5m es la celda con borde mas fuerte (5m/Cierre). Ver
+    # nota en f3_m3. Reversion genera, cuantico filtra.
+    motor: hibrido
     # 8 pares LIQUIDOS (antes 22). PORQUE: el colector escucha de a UN par 8s (PO
     # transmite uno a la vez); con 22 la vuelta era 176s (~3 min) y cada par tenia
     # data fresca solo 8s de cada 3 min -> el analisis corria sobre velas viejas y
