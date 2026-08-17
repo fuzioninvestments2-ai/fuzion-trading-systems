@@ -69,6 +69,19 @@ class ResultsStore:
             if "entry_show_ts" not in cols:
                 self.conn.execute(
                     "ALTER TABLE signals ADD COLUMN entry_show_ts INTEGER")
+            # tg_message_id = id del mensaje de la SEÑAL en Telegram. Se guarda para
+            # colgar el RESULTADO (WIN/LOSS) COMO RESPUESTA justo debajo de su señal.
+            if "tg_message_id" not in cols:
+                self.conn.execute(
+                    "ALTER TABLE signals ADD COLUMN tg_message_id INTEGER")
+            self.conn.commit()
+
+    def set_message_id(self, signal_id: int, message_id: int) -> None:
+        """Guarda el message_id de Telegram de una señal ya emitida (para responderle
+        el resultado debajo)."""
+        with self._lock:
+            self.conn.execute("UPDATE signals SET tg_message_id=? WHERE id=?",
+                              (int(message_id), int(signal_id)))
             self.conn.commit()
 
     def save_signal(self, rec: Dict[str, Any]) -> int:
@@ -114,12 +127,12 @@ class ResultsStore:
         with self._lock:
             rows = self.conn.execute(
                 """SELECT id, pair, timeframe, direction, price, ts, entry_ts,
-                          entry_show_ts
+                          entry_show_ts, tg_message_id
                    FROM signals WHERE resolved=0 AND ts <= ?
                    ORDER BY ts ASC""", (int(cutoff_ts),)).fetchall()
         return [{"id": r[0], "pair": r[1], "timeframe": r[2], "direction": r[3],
                  "price": r[4], "ts": r[5], "entry_ts": r[6],
-                 "entry_show_ts": r[7]} for r in rows]
+                 "entry_show_ts": r[7], "tg_message_id": r[8]} for r in rows]
 
     def setup_stats(self, setup_id: str) -> Dict[str, Any]:
         """{trades, wins, losses, win_pct} de un setup ya resuelto."""

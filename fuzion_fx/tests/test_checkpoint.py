@@ -45,14 +45,14 @@ class _Notif:
         self.texts = []
         self.alerts = []
 
-    def send(self, msg, photo_buffer=None):
-        self.texts.append(msg); return True
+    def send(self, msg, photo_buffer=None, parse_mode="Markdown", reply_to=None):
+        self.texts.append(msg); return 111
 
-    def send_text(self, msg, parse_mode="Markdown"):
-        self.texts.append(msg); return True
+    def send_text(self, msg, parse_mode="Markdown", reply_to=None):
+        self.texts.append(msg); return 111
 
-    def send_alert(self, msg, parse_mode="Markdown"):
-        self.alerts.append(msg); return True
+    def send_alert(self, msg, parse_mode="Markdown", reply_to=None):
+        self.alerts.append(msg); return 111
 
 
 def _feed():

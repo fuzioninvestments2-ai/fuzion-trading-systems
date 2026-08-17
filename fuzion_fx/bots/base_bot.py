@@ -695,9 +695,15 @@ class BaseBot:
                         result["signal"], entry_price=result["price"])
                 except Exception:
                     img = None
-                # 1) Al DUENO: respeta su toggle de Telegram por temporalidad.
+                # 1) Al DUENO: respeta su toggle de Telegram por temporalidad. Se
+                #    guarda el message_id para colgar el RESULTADO debajo de la señal.
                 if control.telegram_activo(self.id):
-                    self.notifier.send(card, photo_buffer=img)
+                    mid = self.notifier.send(card, photo_buffer=img)
+                    if isinstance(mid, int):
+                        try:
+                            self.store.set_message_id(sid, mid)
+                        except Exception:
+                            pass
                 # 2) A los AFILIADOS activos suscriptos a esta temporalidad. En bytes
                 #    (no BytesIO) para reenviar la misma foto a muchos sin consumirla.
                 img_bytes = img.getvalue() if img is not None else None
@@ -950,7 +956,11 @@ class BaseBot:
         }
         txt = self.formatter.format_result(d)
         if self.notifier and control.telegram_activo(self.id):
-            self.notifier.send_text(txt)
+            # El resultado va COMO RESPUESTA al mensaje de la señal (queda JUSTO
+            # debajo, en hilo). Si no hay message_id (señal vieja / envio fallido),
+            # se manda suelto igual.
+            reply_to = s.get("tg_message_id")
+            self.notifier.send_text(txt, reply_to=reply_to)
         else:
             self.log.info("[DRY-RUN resultado] %s", txt.replace("\n", " | "))
 

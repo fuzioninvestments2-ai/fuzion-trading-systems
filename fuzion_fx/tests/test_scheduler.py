@@ -51,7 +51,7 @@ class _Notif:
     def __init__(self):
         self.textos = []
 
-    def send_text(self, msg, parse_mode="Markdown"):
+    def send_text(self, msg, parse_mode="Markdown", reply_to=None):
         self.textos.append(msg); return True
 
 

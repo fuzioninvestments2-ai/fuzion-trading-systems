@@ -230,7 +230,7 @@ def test_nula_avisa_no_desaparece_en_silencio() -> None:
     capturado = []
 
     class _FakeNotifier:
-        def send_text(self, t):
+        def send_text(self, t, parse_mode="Markdown", reply_to=None):
             capturado.append(t)
 
     bot.notifier = _FakeNotifier()
