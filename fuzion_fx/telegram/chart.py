@@ -24,7 +24,9 @@ _ROJO = "#ef5350"
 
 def render_candles(candles: Dict[str, Sequence[float]], title: str,
                    direction: str = "", n: int = 40,
-                   entry_price: Optional[float] = None) -> Optional[io.BytesIO]:
+                   entry_price: Optional[float] = None,
+                   entry_show_ts: Optional[int] = None,
+                   tf_seconds: Optional[int] = None) -> Optional[io.BytesIO]:
     """
     PNG de las ultimas `n` velas COORDINADO con la senal: marca la DIRECCION
     (flecha ARRIBA para CALL, ABAJO para PUT) en el borde derecho, donde entra la
@@ -77,6 +79,26 @@ def render_candles(candles: Dict[str, Sequence[float]], title: str,
                     arrowprops=dict(arrowstyle="-|>", color=col_dir, linewidth=2))
         ax.text(0.015, 0.94, etiqueta, transform=ax.transAxes, color=col_dir,
                 fontsize=10, fontweight="bold", va="top")
+
+    # EJE DE TIEMPO (hora local): antes el eje X era solo indice de vela -> el
+    # grafico "no tenia hora". Con entry_show_ts (borde LOCAL de la vela de entrada)
+    # y tf se etiqueta cada vela con su HORA real: la ultima vela dibujada es la
+    # recien cerrada (entry_show - tf) y hacia atras -tf. Asi el grafico dice la
+    # MISMA hora que la tarjeta, sin desfase de PO.
+    if entry_show_ts is not None and tf_seconds:
+        from datetime import datetime
+        m = len(c)
+        # hora de la vela i = entrada - tf*(m - i)  (i=m-1 -> entrada - tf)
+        idx = list(range(0, m, max(1, m // 6)))          # ~6 marcas
+        ax.set_xticks(idx)
+        ax.set_xticklabels(
+            [datetime.fromtimestamp(
+                int(entry_show_ts) - int(tf_seconds) * (m - i)).astimezone().strftime("%H:%M")
+             for i in idx], rotation=0)
+        # Marca la vela de ENTRADA (la siguiente al ultimo cierre) al borde derecho.
+        ent_h = datetime.fromtimestamp(int(entry_show_ts)).astimezone().strftime("%H:%M")
+        ax.text(0.985, 0.06, f"entrada {ent_h}", transform=ax.transAxes,
+                color=col_dir, fontsize=8, ha="right", va="bottom")
 
     ax.set_title(title, color=col_dir, fontsize=10, loc="left")
     ax.tick_params(colors="#888", labelsize=7)

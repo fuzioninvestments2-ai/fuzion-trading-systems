@@ -692,7 +692,8 @@ class BaseBot:
                     velas_grafico = self.feed.get_candles(pair, self.timeframe_seconds) or candles
                     img = render_candles(
                         velas_grafico, f"{self.name} · {pair} · {self.card_label}",
-                        result["signal"], entry_price=result["price"])
+                        result["signal"], entry_price=result["price"],
+                        entry_show_ts=entry_show, tf_seconds=self.timeframe_seconds)
                 except Exception:
                     img = None
                 # 1) Al DUENO: respeta su toggle de Telegram por temporalidad. Se
