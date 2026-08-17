@@ -81,6 +81,20 @@ def test_scan_emite_en_operar() -> None:
     assert emitidas and emitidas[0]["direction"] == "CALL"
 
 
+def test_entrada_con_anticipacion_minima() -> None:
+    # La hora de entrada NUNCA debe quedar a menos de LEAD_MIN segundos de la emision
+    # (si no, el card llega "fuera de hora"). Se corre a la vela siguiente.
+    bot = _bot(+1)
+    bot.analisis_cuantico = lambda pair: {
+        "veredicto": "OPERAR", "direccion": 1, "probabilidad": 0.93,
+        "alineacion": 0.80, "n_alineados": 5,
+        "por_tf": {60: {"modo": "slide", "patron": None}}}
+    emitidas = bot.scan_once(now=1000.0)
+    assert emitidas
+    r = emitidas[0]
+    assert r["entry_show_ts"] - r["ts"] >= bot.LEAD_MIN     # entrada con margen real
+
+
 def test_scan_no_emite_en_no_operar() -> None:
     bot = _bot(+1)
     bot.analisis_cuantico = lambda pair: {
@@ -101,6 +115,7 @@ def test_result_desde_cuantico_tiene_prob_y_direccion() -> None:
 
 def _run_all() -> None:
     tests = [test_analisis_cuantico_junta_tiempos, test_scan_emite_en_operar,
+             test_entrada_con_anticipacion_minima,
              test_scan_no_emite_en_no_operar,
              test_result_desde_cuantico_tiene_prob_y_direccion]
     for t in tests:

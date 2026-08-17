@@ -152,7 +152,14 @@ class BaseBot:
         # - checkpoint: X seg antes del cierre revisa si la direccion se dio vuelta;
         #   si cambio, manda una ALERTA de autocorreccion (informa, no opera).
         self.checkpoint_offset = int(cfg.get("checkpoint_offset", 20))
-        self.prefilter_seconds = 10
+        # Prefiltro 10->3s: dormia 10s por señal (bloqueaba la pasada y descartaba de
+        # mas -> POCAS señales y tarde). 3s sigue filtrando el que se da vuelta al
+        # toque, pero deja pasar mas y antes. Configurable por si se quiere afinar.
+        self.prefilter_seconds = int(cfg.get("prefilter_seconds", 3))
+        # Anticipacion minima de la hora de entrada (seg): margen para que el card
+        # llegue y el humano entre. Si la vela siguiente esta mas cerca, se corre a la
+        # posterior (ver scan_once). Fin de las señales "fuera de hora".
+        self.LEAD_MIN = int(cfg.get("lead_min_seconds", 20))
         self._schedule_enabled = True          # los tests lo apagan
         self._timers: List[threading.Timer] = []
         self._running = False
@@ -654,6 +661,16 @@ class BaseBot:
             tf = self.timeframe_seconds
             entry_border = self._entry_border(candles, emitido)
             entry_show = int(emitido) - (int(emitido) % tf) + tf
+            # ANTICIPACION MINIMA (fin del "fuera de hora"): si la vela de entrada
+            # esta a menos de LEAD_MIN segundos, no da tiempo a que llegue el card y
+            # el humano entre -> se corre a la vela SIGUIENTE. Se avanzan AMBOS bordes
+            # el mismo numero de pasos para que sigan siendo la MISMA vela (mostrar y
+            # liquidar alineados).
+            saltos = 0
+            while entry_show - emitido < self.LEAD_MIN:
+                entry_show += tf
+                saltos += 1
+            entry_border += saltos * tf
             # fuerza (direccional) ya calculada en el gate de convergencia arriba.
 
             # Emitir: persistir + notificar (tarjeta + grafico) + contadores.
@@ -705,11 +722,13 @@ class BaseBot:
             expiry = entry_border + tf
             self._schedule_checkpoint(pair, result["signal"], expiry, result, emitido)
 
-            # EMISION ORDENADA: fija el candado GLOBAL (los 4 bots lo respetan) hasta
-            # que esta señal VENZA + el descanso, y CORTA la pasada: una sola señal
-            # por ventana, no una rafaga de pares. Con cooldown<=0 (tests) no aplica.
+            # EMISION ESPACIADA: candado GLOBAL (los 4 bots lo respetan) por el
+            # DESCANSO desde que se emite — NO hasta que la señal venza. Antes esperaba
+            # el vencimiento (5-10 min de una señal larga) + descanso -> ~7 min mudo
+            # tras cada señal = MUY pocas. Ahora solo separa por `signal_cooldown` (las
+            # señales pueden solaparse; mas volumen). Con cooldown<=0 (tests) no aplica.
             if self.signal_cooldown > 0:
-                control.set_emitir_despues_de(expiry + self.signal_cooldown)
+                control.set_emitir_despues_de(emitido + self.signal_cooldown)
                 break
 
         return emitidas
