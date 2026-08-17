@@ -717,9 +717,10 @@ class BaseBot:
             self.log.info("Senal emitida: %s %s (setup %s)", pair,
                           result["signal"], result["setup_id"])
 
-            # CHECKPOINT: agendar revision X seg antes del CIERRE de la vela operada
-            # (entry_border..entry_border+tf), la misma que se liquida.
-            expiry = entry_border + tf
+            # CHECKPOINT: agendar revision X seg antes del CIERRE de la vela operada.
+            # Usa el reloj LOCAL (entry_show + tf): con el grid de PO (entry_border,
+            # +2h) el timer esperaria 2h y la autocorreccion llegaba 2h tarde.
+            expiry = entry_show + tf
             self._schedule_checkpoint(pair, result["signal"], expiry, result, emitido)
 
             # EMISION ESPACIADA: candado GLOBAL (los 4 bots lo respetan) por el
@@ -857,25 +858,26 @@ class BaseBot:
             entry_border = s.get("entry_ts")
             entry_border = int(entry_border) if entry_border is not None else (
                 ts - (ts % tf) + tf)
-            expiry = entry_border + tf
-            # NO resolver antes de que la vela operada CIERRE: si PO ya mando la
-            # vela EN FORMACION, real_candle_at devolveria un cierre de mitad de
-            # vela (resultado prematuro, puede no coincidir con el cierre real).
-            # Se espera a que venza (now >= expiry) y recien ahi se liquida.
-            if now < expiry:
+            # GATE "¿ya cerro?" con el reloj LOCAL real (entry_show_ts), NO con el grid
+            # de PO. entry_border (PO) va ADELANTADO ~2h -> si el gate usara PO, la
+            # señal se resolveria 2h TARDE (bug real: el WIN/LOSS llegaba 2h despues).
+            # El lookup de la vela SI usa entry_border (asi guarda el colector).
+            show = s.get("entry_show_ts")
+            expiry_local = (int(show) + tf) if show is not None else (entry_border + tf)
+            if now < expiry_local:
                 continue
             vela = real_candle_at(s["pair"], tf, entry_border)
             if vela is None:
                 # Sin vela real de la operacion: esperar dentro del margen; pasado
                 # el margen, NULA (no se inventa un cierre).
-                if now - expiry < self.null_grace_seconds:
+                if now - expiry_local < self.null_grace_seconds:
                     continue
                 self.store.resolve_signal(s["id"], "NULL", 0.0)
                 nulas += 1
                 self.log.info("Senal NULA %s %s: sin vela real de la operacion "
                               "(borde %d, +%ds). No cuenta en win-rate ni aprendizaje.",
                               s["pair"], s["direction"], entry_border,
-                              int(now - expiry))
+                              int(now - expiry_local))
                 # AVISAR la NULA: antes se resolvia NULL en silencio y el humano se
                 # quedaba sin resultado (parecia que la señal "no mando nada"). Ahora
                 # se le dice que no se pudo medir (no cuenta como win ni loss).
