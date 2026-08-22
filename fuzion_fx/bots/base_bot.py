@@ -1053,16 +1053,13 @@ class BaseBot:
                       "Feed: %s | Telegram: %s", self.name, len(self.pairs), modo,
                       self.motor, self.timeframe_seconds, type(self.feed).__name__,
                       "ON" if self.notifier else "DRY-RUN")
-        self._notificar_salud("arranque")          # el bot avisa que está vivo
-        ultimo_latido = time.time()
+        # Tarjetas de SALUD/LATIDO: NO se mandan a Telegram (el usuario las pidio
+        # quitar: saturan el canal y no aportan). El estado queda en el log.
+        self.log.info("[salud] %s", self._tarjeta_salud("arranque").replace("\n", " | "))
         while self._running:
             try:
                 self.resolve_pending()       # aprende de las senales ya vencidas
                 self.scan_once()             # busca nuevas (aplica el modo en vivo)
-                # Latido cada hora: sigue vivo + estado (aunque esté callado).
-                if time.time() - ultimo_latido >= 3600:
-                    self._notificar_salud("latido (1h)")
-                    ultimo_latido = time.time()
             except Exception:
                 self.log.exception("Error en la pasada; el bot sigue vivo")
             # Cadencia segun el modo (rapido=15s .. lento=45s). scan_once() ya llamo
