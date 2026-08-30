@@ -1,0 +1,54 @@
+{
+  "manifest_version": 3,
+  "name": "PO Chart Scanner PRO v4.3 CONTRARIAN ANTI-MANIPULACION",
+  "version": "4.3.0",
+  "description": "v4.3: CAPA CONTRARIAN ANTI-MANIPULACION para OTC - Trap Index (mechas largas), deteccion de FAKEOUT en S/R, reversal ratio, order flow inferido por rango (proxy de pixeles, sin volumen real), penalizacion por senal OBVIA (masa), bonus CONTRARIAN por fakeout a favor y BLOQUEO por masa obvia con trampa en contra; historial separado contrarian vs normal. Hereda v4.2: bloqueo total de contra-estructura (ESPERAR), regla de los 90, score con velas cerradas, backtest maduro (30+); v4.1: techos estructurales 60/55/45; v4.0: motor continuo de 3 fases. SIN auto-trading.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://pocketoption.com/*",
+        "https://app.pocketoption.com/*"
+      ],
+      "js": [
+        "src/config.js",
+        "src/canvasReader.js",
+        "src/indicators.js",
+        "src/patternDetector.js",
+        "src/supportResistance.js",
+        "src/trendAnalyzer.js",
+        "src/candleArchive.js",
+        "src/trapDetector.js",
+        "src/orderFlowDetector.js",
+        "src/crowdBehavior.js",
+        "src/contrarianScoring.js",
+        "src/scoring.js",
+        "src/confirmators.js",
+        "src/adaptiveFormulas.js",
+        "src/areaSelector.js",
+        "src/chartOverlay.js",
+        "src/history.js",
+        "src/alerts.js",
+        "src/panel.js",
+        "content/injector.js"
+      ],
+      "css": [
+        "content/panel.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "PO Chart Scanner PRO v4.3 CONTRARIAN ANTI-MANIPULACION"
+  }
+}
