@@ -1,0 +1,49 @@
+/* ============================================================
+   panel.css - PRO v3.2.0
+   Identidad visual PRO: verde neon (#00ff88), abajo-IZQUIERDA.
+   IDs y clases con prefijo pop- : cero conflicto con v2.0.4.
+   v3.2.0: rejilla 3x2 (con EJEC y ACIERTO), flash de botones,
+   capa SVG de comentarios sobre el grafico.
+   ============================================================ */
+#po-pro-panel {
+  position: fixed; left: 12px; bottom: 12px; width: 300px; z-index: 999999;
+  background: #0a1410; border: 1px solid #00ff88; border-radius: 12px;
+  color: #d8f5e5; font: 12px/1.4 system-ui, sans-serif; padding: 10px;
+  box-shadow: 0 8px 30px rgba(0,255,136,.15);
+}
+.pop-header { display: flex; justify-content: space-between; color: #00ff88; font-weight: 700; }
+.pop-close { cursor: pointer; color: #4b6b58; font-size: 16px; }
+.pop-status { color: #7ea892; margin: 6px 0; }
+.pop-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+.pop-cell { background: #07100b; border: 1px solid #123324; border-radius: 8px; padding: 6px; }
+.pop-cell label { color: #4b6b58; font-size: 10px; display: block; }
+.pop-signal { display: flex; justify-content: space-between; align-items: center;
+  background: #07100b; border: 1px solid #123324; border-radius: 8px;
+  padding: 10px; margin: 8px 0 4px; }
+.pop-dir { font-size: 26px; font-weight: 800; }
+.pop-call { color: #00ff88; } .pop-put { color: #ff5c5c; }
+/* v4.1: senal techada por el filtro estructural = AMARILLO alerta */
+.pop-warn { color: #ffd23f !important; }
+.pop-quality.pop-warn { color: #ffd23f; font-weight: 700; }
+.pop-score { font-size: 20px; font-weight: 700; }
+.pop-quality { text-align: right; color: #7ea892; font-size: 11px; margin-bottom: 6px; }
+.pop-detail { white-space: pre-line; color: #7ea892; min-height: 48px; }
+.pop-btns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 8px; }
+.pop-btn { background: #123324; color: #d8f5e5; border: 0; border-radius: 8px;
+  padding: 9px 4px; cursor: pointer; font-weight: 600; font-size: 11px;
+  transition: filter .15s, transform .1s; }
+.pop-btn:hover { filter: brightness(1.25); }
+.pop-btn:active { transform: scale(.95); }
+.pop-flash { filter: brightness(1.8); transform: scale(.95); }
+.pop-green { background: #00c96b; color: #04150c; }
+.pop-disclaimer { font-size: 9px; color: #33503f; margin-top: 8px; }
+#po-pro-overlay { position: fixed; inset: 0; z-index: 999998;
+  cursor: crosshair; background: rgba(0,0,0,.15); }
+#po-pro-selectbox { position: fixed; border: 2px dashed #00ff88;
+  background: rgba(0,255,136,.10); pointer-events: none; }
+/* Capa de comentarios sobre el grafico (flechas, lineas S/R) */
+#po-pro-chart-svg { position: fixed; inset: 0; z-index: 999997;
+  pointer-events: none; }
+/* v4.2: score de una senal BLOQUEADA (ESPERAR) se muestra tachado */
+.pop-score.pop-blocked { text-decoration: line-through; color: #ffd23f; opacity: .8; }
+/* [PO-PRO-OK:panel.css] */
