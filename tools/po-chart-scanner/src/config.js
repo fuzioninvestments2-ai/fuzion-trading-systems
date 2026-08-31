@@ -83,7 +83,7 @@ POScannerPRO._mods = POScannerPRO._mods || [];
 POScannerPRO._mods.push('config');
 
 POScannerPRO.CONFIG = {
-  VERSION: '4.4.2',
+  VERSION: '4.4.3',
 
   // --- Deteccion de color de velas (HSV, robusto a temas) ---
   // v3.5.6: verde LIMA real de las velas PO (medido en video:
@@ -106,8 +106,13 @@ POScannerPRO.CONFIG = {
   },
 
   // --- Duracion en segundos de cada timeframe de PO ---
-  TF_SECONDS: { S5:5, S15:15, S30:30, M1:60, M3:180, M5:300,
-                M15:900, M30:1800, H1:3600, H4:14400, D1:86400 },
+  // v4.4.3: faltaban S10, M2, M10, M20, H2... PO los ofrece y sin
+  // ellos el timeframe se leia mal (un grafico S10 se detectaba
+  // como M30 al caer al primer token que hubiera en la pagina).
+  TF_SECONDS: { S1:1, S2:2, S3:3, S5:5, S10:10, S15:15, S30:30,
+                M1:60, M2:120, M3:180, M5:300, M10:600, M15:900,
+                M20:1200, M30:1800, H1:3600, H2:7200, H4:14400,
+                D1:86400, W1:604800 },
 
   // --- Umbrales de senal (ajustables por el usuario) ---
   SCAN: {

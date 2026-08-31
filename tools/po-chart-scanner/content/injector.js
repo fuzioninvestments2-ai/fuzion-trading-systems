@@ -235,7 +235,9 @@ POScannerPRO._mods.push('injector');
       fase +
       (result.blocked
         ? 'ESPERAR: ' + result.dir + ' BLOQUEADA (' +
-          (result.blockReason === 'masa' ? 'masa obvia + trampa' : 'contra estructura') +
+          (result.blockReason === 'masa' ? 'masa obvia + trampa'
+           : result.blockReason === 'confluencia' ? 'confluencia insuficiente'
+           : 'contra estructura') +
           ', votacion ' + result.rawScore + '%)'
         : result.confirmed
         ? (mode === 'pre' ? result.dir + ' probable' :

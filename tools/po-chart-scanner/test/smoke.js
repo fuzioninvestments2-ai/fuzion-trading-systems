@@ -235,13 +235,14 @@ function nodo(o) {
 }
 function conDom(nodos, fn) {
   const docPrev = sandbox.document, gcsPrev = sandbox.getComputedStyle,
-        iwPrev = sandbox.innerWidth;
+        iwPrev = sandbox.innerWidth, ihPrev = sandbox.innerHeight;
   sandbox.document = { querySelectorAll: () => nodos, querySelector: () => null };
   sandbox.getComputedStyle = n => ({ backgroundColor: (n && n._bg) || TRANSP });
   sandbox.innerWidth = 1900;
+  sandbox.innerHeight = 900;
   try { return fn(); }
   finally { sandbox.document = docPrev; sandbox.getComputedStyle = gcsPrev;
-           sandbox.innerWidth = iwPrev; }
+           sandbox.innerWidth = iwPrev; sandbox.innerHeight = ihPrev; }
 }
 
 const pruebasPrecio = [
@@ -401,6 +402,71 @@ console.log('  SETUP PERFECTO COMPLETO -> perfecto=' + perfOk.perfecto +
 if (!perfOk.perfecto) { console.log('  !! no lo marco como PERFECTO'); fallos++; }
 if (perfOk.score < 90) { console.log('  !! no llego a 90+'); fallos++; }
 if (!perfOk.contrarian) { console.log('  !! no lo marco CONTRARIAN'); fallos++; }
+
+console.log('\n=== v4.4.3 TIMEFRAME ANCLADO AL CHIP ===');
+// Reproduce la pantalla del usuario: chip S10 activo arriba a la
+// izquierda, y la palabra M30 suelta en un menu a la derecha.
+function chip(o) {
+  const n = nodo(o);
+  n.getBoundingClientRect = () => ({ left: o.x, top: o.y,
+                                     width: o.w || 30, height: o.h || 18 });
+  return n;
+}
+const pruebasTf = [
+  ['chip S10 activo vs M30 en un menu lejano',
+    [chip({ text: 'S10', x: 250, y: 140, bg: 'rgb(30, 90, 200)' }),
+     chip({ text: 'M30', x: 1500, y: 300 })],
+    'S10'],
+  ['sin fondo: gana el chip mas pequeno de la zona del grafico',
+    [chip({ text: 'M1', x: 250, y: 140, w: 24, h: 16 }),
+     chip({ text: 'H4', x: 300, y: 140, w: 90, h: 40 })],
+    'M1'],
+  ['elemento grande no es un chip',
+    [chip({ text: 'M30', x: 250, y: 140, w: 200, h: 60 })],
+    null],
+  ['fuera de la zona del grafico (derecha) se ignora',
+    [chip({ text: 'M30', x: 1500, y: 140, bg: 'rgb(1,1,1)' })],
+    null],
+  ['fuera de la zona del grafico (abajo) se ignora',
+    [chip({ text: 'M30', x: 250, y: 700, bg: 'rgb(1,1,1)' })],
+    null]
+];
+pruebasTf.forEach(([nombre, nodos, esperado]) => {
+  const got = conDom(nodos, () => P.Panel.findTimeframe());
+  const ok = got === esperado;
+  console.log('  ' + nombre.padEnd(48) + '-> ' + String(got).padEnd(6) +
+    (ok ? 'OK' : 'FALLO: esperaba ' + esperado));
+  if (!ok) fallos++;
+});
+// Los timeframes cortos de PO deben existir en la tabla
+['S10', 'S15', 'S30', 'M1', 'M2', 'H2'].forEach(k => {
+  if (!P.CONFIG.TF_SECONDS[k]) { console.log('  !! falta TF_SECONDS.' + k); fallos++; }
+});
+console.log('  S10 = ' + P.CONFIG.TF_SECONDS.S10 + 's (antes no existia: se leia M30 = ' +
+  P.CONFIG.TF_SECONDS.M30 + 's)');
+
+// El archivo con la rejilla CORRECTA crece; con la equivocada no.
+const velasArch = casos['RANGO LATERAL (oscila en canal)'];
+// El dano real del timeframe mal leido: con la rejilla equivocada
+// dos escaneos separados en el tiempo caen en los MISMOS huecos y
+// el archivo se sobrescribe a si mismo en vez de crecer. Se simula
+// avanzando el reloj 60s entre escaneo y escaneo.
+function conReloj(ms, fn) {
+  const prev = sandbox.Date;
+  sandbox.Date = { now: () => ms };
+  try { return fn(); } finally { sandbox.Date = prev; }
+}
+const t0 = Date.now();
+const lote = velasArch.slice(0, 40);
+conReloj(t0,         () => P.CandleArchive.add('TF-BIEN', 10, lote));
+const archBien = conReloj(t0 + 60000, () => P.CandleArchive.add('TF-BIEN', 10, lote));
+conReloj(t0,         () => P.CandleArchive.add('TF-MAL', 1800, lote));
+const archMal = conReloj(t0 + 60000, () => P.CandleArchive.add('TF-MAL', 1800, lote));
+console.log('  dos escaneos con 60s de diferencia, 40 velas cada uno:');
+console.log('    rejilla S10 (correcta):   ' + archBien + ' velas archivadas');
+console.log('    rejilla M30 (el bug):     ' + archMal + ' velas archivadas');
+if (archBien <= 40) { console.log('  !! con la rejilla correcta el archivo deberia crecer'); fallos++; }
+if (archMal !== 40) { console.log('  !! con la rejilla de 30 min no deberia crecer'); fallos++; }
 
 console.log('\n=== v4.4.2 HISTORIAL LEGACY SEPARADO ===');
 const bl = P.History.backtests();

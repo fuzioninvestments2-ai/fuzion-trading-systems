@@ -1,4 +1,4 @@
-# PO Chart Scanner PRO v4.4.2 — OPTIMIZACION DE SCORING Y FILTRADO
+# PO Chart Scanner PRO v4.4.3 — OPTIMIZACION DE SCORING Y FILTRADO
 
 Extension de Chrome (Manifest V3) que lee el grafico de Pocket Option **por
 pixeles** y produce una senal CALL/PUT puntuada. No opera sola: `AUTOTRADE`
@@ -57,6 +57,10 @@ node tools/po-chart-scanner/test/smoke.js tools/po-chart-scanner
   de backtest (y dice que condicion falta), y las tres categorias de backtest
   cuadran;
 - v4.4.1: nueve casos de seleccion del precio del eje sobre un DOM simulado;
+- v4.4.3: la deteccion del timeframe elige el chip activo y no el primer
+  token de la pagina (cinco casos), los timeframes cortos existen en la tabla,
+  y dos escaneos separados 60s hacen crecer el archivo con la rejilla correcta
+  (46 velas) mientras que con la rejilla de 30 minutos se queda en 40;
 - v4.4.2: la calibracion del eje traduce pixeles a precio con error nulo,
   rechaza un eje incoherente o invertido en vez de inventar un numero, las
   senales de 6/12 se desbloquean, un setup contrarian perfecto completo llega
@@ -159,6 +163,33 @@ para no exigirla mientras acumulas.
 las senales que este bot emitio y ya vencieron, distinto del backtest de
 `CandleArchive`, que es una simulacion sobre el archivo de velas.
 
+## Diagnostico: el timeframe del panel no coincide con el grafico
+
+La celda TIMEFRAME muestra `<grafico> / <tu orden>`. Si la primera parte no es
+la del chip activo de PO, todo lo que depende de `tfSec` se degrada:
+
+- el archivo de velas se redondea a una rejilla equivocada y **deja de crecer**
+  (escaneos distintos caen en el mismo hueco y se sobrescriben);
+- el contexto MTF y el backtest se calculan sobre esa serie falsa;
+- la cuenta atras EJEC apunta al cierre de una vela que no existe.
+
+Sintoma facil de ver: el contador `Archivo: N velas` se queda clavado en el
+mismo numero escaneo tras escaneo.
+
+Hasta v4.4.2 la deteccion barria **todo el texto de la pagina** buscando el
+primer token tipo `M30`, y `S10` ni siquiera estaba en `TF_SECONDS`. En un
+grafico S10 se leia `M30` (1800s en vez de 10s). Desde v4.4.3 se busca el
+**chip activo** junto al selector de par — elemento pequeno, arriba a la
+izquierda del grafico, texto exactamente un timeframe, preferido el que tiene
+fondo pintado — y el barrido de texto queda solo como ultimo recurso.
+
+Para comprobarlo desde la consola:
+
+```js
+POScannerPRO.Panel.findTimeframe()   // debe devolver lo que marca el chip
+POScannerPRO.Panel.getTfSec()        // segundos correspondientes
+```
+
 ## Diagnostico: `precio: archivo` en la linea de estado
 
 Si el estado del panel termina en `| precio: archivo`, `findCurrentPrice()`
@@ -244,6 +275,18 @@ la confluencia CALL y desinflaba la PUT en cualquier grafico con MACD bajista.
 se habia construido sobre el script original y traia este bug otra vez. Al
 integrarla se conservo la correccion. Por eso el `.ps1` se genera desde el
 repo y no al reves.
+
+### v4.4.3
+
+- `TF_SECONDS` gana los timeframes cortos de PO que faltaban (S1, S2, S3,
+  **S10**, M2, M10, M20, H2, W1). Sin `S10` un grafico de 10 segundos se leia
+  como M30.
+- `findTimeframe()` ancla la deteccion al chip activo del grafico en vez de
+  barrer todo el texto de la pagina.
+- La linea de estado ya distingue el bloqueo por confluencia del bloqueo por
+  contra-estructura (decia "contra estructura" en ambos casos).
+- El mensaje del bloqueo por confluencia cita `rawScore`, el mismo numero que
+  muestra el marcador, en vez del score ya penalizado.
 
 ### v4.4.2
 

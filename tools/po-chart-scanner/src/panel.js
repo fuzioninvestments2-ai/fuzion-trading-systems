@@ -212,6 +212,42 @@ POScannerPRO.Panel = (() => {
   }
 
   // ============================================================
+  // ============================================================
+  // TIMEFRAME DEL GRAFICO - v4.4.3 ANCLADO AL CHIP
+  // Antes se buscaba el primer token tipo M30 en TODO el texto de
+  // la pagina. PO lista los timeframes en menus y en tooltips, asi
+  // que ganaba cualquiera: un grafico S10 se leia como M30, y con
+  // tfSec=1800 el archivo de velas se redondeaba a una rejilla de
+  // media hora, se sobrescribia a si mismo (no crecia) y el
+  // contexto MTF y el backtest salian de una serie falsa.
+  // Ahora se busca el CHIP activo junto al selector de par: un
+  // elemento pequeno, en la zona superior-izquierda del grafico,
+  // cuyo texto es EXACTAMENTE un timeframe. Se prefiere el que
+  // tiene fondo pintado (el chip activo va resaltado).
+  // ============================================================
+  function findTimeframe() {
+    const keys = Object.keys(CFG.TF_SECONDS);
+    let conFondo = null, conFondoArea = Infinity;
+    let sinFondo = null, sinFondoArea = Infinity;
+    document.querySelectorAll('span, div, button, a, li').forEach(el => {
+      if (el.closest && el.closest('#po-pro-panel')) return;
+      if (el.children.length) return;                  // solo hojas
+      const t = (el.textContent || '').trim();
+      if (keys.indexOf(t) < 0) return;
+      let r;
+      try { r = el.getBoundingClientRect(); } catch (e) { return; }
+      if (!r || r.width <= 0 || r.height <= 0) return;
+      if (r.left > innerWidth * 0.6) return;           // zona del grafico
+      if (r.top < 0 || r.top > innerHeight * 0.45) return;
+      const area = r.width * r.height;
+      if (area > 4000) return;                         // no es un chip
+      if (bgPintado(el).bg) {
+        if (area < conFondoArea) { conFondoArea = area; conFondo = t; }
+      } else if (area < sinFondoArea) { sinFondoArea = area; sinFondo = t; }
+    });
+    return conFondo || sinFondo;
+  }
+
   // PRECIO REAL del eje - v4.4.1 ROBUSTO
   // PO dibuja el precio actual en una etiqueta RESALTADA (con
   // fondo pintado) pegada al eje derecho. Ese numero es la unica
@@ -387,7 +423,10 @@ POScannerPRO.Panel = (() => {
     const pair = findActivePair() ||
       (bodyText.match(/[A-Z]{3}\/[A-Z]{3}\s*OTC?/) || [null])[0];
     const payout = findPayout();
-    const tf = (bodyText.match(/\b(S5|S15|S30|M1|M3|M5|M15|M30|H1|H4|D1)\b/) || [null])[0];
+    // v4.4.3: primero el chip del grafico; el barrido del texto
+    // completo queda solo como ultimo recurso (elegia mal).
+    const tf = findTimeframe() ||
+      (bodyText.match(/\b(S5|S10|S15|S30|M1|M2|M3|M5|M15|M30|H1|H2|H4|D1)\b/) || [null])[0];
     const tt = findTradeTime();
     // v3.5.2 ANTI-CUENTA-REGRESIVA: si el valor leido baja justo
     // lo que paso de tiempo real, es el countdown de una operacion
@@ -539,7 +578,7 @@ POScannerPRO.Panel = (() => {
             'broker en contra (fakeout). NO entrar.\n'
           : r.blockReason === 'confluencia'
           ? '[X] BLOQUEADA: solo ' + (d.confluencia || '-') + ' fuentes ' +
-            'coinciden. El ' + r.score + '% mide el reparto de votos, no ' +
+            'coinciden. El ' + r.rawScore + '% mide el reparto de votos, no ' +
             'cuantas fuentes votaron: con tan pocas es ruido. NO entrar.\n'
           : '[X] BLOQUEADA: la votacion interna decia ' + r.dir + ' ' +
             r.rawScore + '/100, pero va CONTRA la estructura del mercado. NO entrar.\n')
@@ -573,8 +612,10 @@ POScannerPRO.Panel = (() => {
       'Contexto MTF: ' + (d.contexto || 'sin datos') + btLine + '\n' +
       btSplit() +
       (blocked
-        ? 'ESPERAR: senal bloqueada (' + (r.blockReason || 'estructura') +
-          '), sin entrada'
+        ? 'ESPERAR: senal bloqueada por ' +
+          (r.blockReason === 'masa' ? 'masa obvia + trampa'
+           : r.blockReason === 'confluencia' ? 'confluencia insuficiente'
+           : 'contra-estructura') + ', sin entrada'
         : (r.confirmed && r.score >= entryMin
           ? 'Entrada: al cierre de esta vela | Expira en: ' + exp.text + exp.warn
           : r.confirmed
@@ -672,6 +713,7 @@ POScannerPRO.Panel = (() => {
            getTfSec: () => tfSec, getTradeSec: () => tradeSec,
            expiryInfo: expiryInfo, findCurrentPrice: findCurrentPrice,
            priceCandidates: priceCandidates, diagPrice: diagPrice,
+           findTimeframe: findTimeframe,
            axisScale: axisScale, priceFromY: priceFromY,
            priceFromCandle: priceFromCandle,
            findTradeTime: findTradeTime };
