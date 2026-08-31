@@ -50,16 +50,20 @@ POScannerPRO.ContrarianScoring = (() => {
     let contrarian = false;
     let bloqueoMasa = false;
     const lines = [];
+    const yaBloqueada = !!o.blocked;   // v4.3.1: senal muerta, no tocar
 
-    // 1) TRAP INDEX alto: mercado barrido, castigo general
-    if (trap.trapIndex >= TRAP_BLOCK) {
+    // 1) TRAP INDEX alto: mercado barrido, castigo general.
+    // v4.3.1: si la senal YA esta bloqueada por estructura, no
+    // se aplica ningun castigo ni bonus (solo se reportan las
+    // metricas). Castigar una senal muerta es ruido doble.
+    if (!yaBloqueada && trap.trapIndex >= TRAP_BLOCK) {
       score -= TRAP_PEN;
       lines.push('Trap Index ' + trap.trapIndex + '% (ALTA manipulacion): -' +
                  TRAP_PEN + ' pts');
     }
 
     // 2) FAKEOUT: trampa de nivel en la ultima vela cerrada
-    if (trap.fakeout && !o.blocked) {
+    if (trap.fakeout && !yaBloqueada) {
       if (trap.fakeout.dir === o.dir) {
         // La trampa va A FAVOR: el broker barrio y el precio
         // volvio = oportunidad contrarian (CASO 2 del examen)
@@ -79,7 +83,7 @@ POScannerPRO.ContrarianScoring = (() => {
                      ') con trampa del broker en contra');
         }
       }
-    } else if (crowd.esObvia) {
+    } else if (crowd.esObvia && !yaBloqueada) {
       // 4) Senal obvia sin trampa clara: castigo moderado
       score -= OBVIO_PEN;
       lines.push('Senal OBVIA (' + crowd.razon + '): la masa ya entro, -' +

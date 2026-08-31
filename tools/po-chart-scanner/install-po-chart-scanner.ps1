@@ -1,5 +1,5 @@
 # ============================================================
-# INSTALADOR - PO Chart Scanner PRO v4.3.0 CONTRARIAN
+# INSTALADOR - PO Chart Scanner PRO v4.3.1 CONTRARIAN
 # ANTI-MANIPULACION (OTC)
 #
 # USO (3 pasos):
@@ -14,7 +14,7 @@
 # No lo edites a mano: edita tools/po-chart-scanner/ y regeneralo.
 # ============================================================
 
-$base = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PO-Chart-Scanner-PRO-v4.3'
+$base = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PO-Chart-Scanner-PRO-v4.3.1'
 Write-Host 'Instalando en:' $base
 
 $files = @{
@@ -551,8 +551,8 @@ POScannerPRO._mods.push('injector');
   'manifest.json' = @'
 {
   "manifest_version": 3,
-  "name": "PO Chart Scanner PRO v4.3 CONTRARIAN ANTI-MANIPULACION",
-  "version": "4.3.0",
+  "name": "PO Chart Scanner PRO v4.3.1 CONTRARIAN ANTI-MANIPULACION",
+  "version": "4.3.1",
   "description": "v4.3: CAPA CONTRARIAN ANTI-MANIPULACION para OTC - Trap Index (mechas largas), deteccion de FAKEOUT en S/R, reversal ratio, order flow inferido por rango (proxy de pixeles, sin volumen real), penalizacion por senal OBVIA (masa), bonus CONTRARIAN por fakeout a favor y BLOQUEO por masa obvia con trampa en contra; historial separado contrarian vs normal. Hereda v4.2: bloqueo total de contra-estructura (ESPERAR), regla de los 90, score con velas cerradas, backtest maduro (30+); v4.1: techos estructurales 60/55/45; v4.0: motor continuo de 3 fases. SIN auto-trading.",
   "permissions": [
     "storage",
@@ -600,7 +600,7 @@ POScannerPRO._mods.push('injector');
     }
   ],
   "action": {
-    "default_title": "PO Chart Scanner PRO v4.3 CONTRARIAN ANTI-MANIPULACION"
+    "default_title": "PO Chart Scanner PRO v4.3.1 CONTRARIAN ANTI-MANIPULACION"
   }
 }
 
@@ -1723,13 +1723,17 @@ POScannerPRO.ChartOverlay = (() => {
 //     bot lee pixeles, NO hay volumen real en la pantalla).
 //   - Historial etiquetado CONTRARIAN/NORMAL + obvia (crowd
 //     loss rate real con muestra).
+// v4.3.1 FIX (videos del usuario): los avisos contrarian ya NO
+//   se mezclan en warning (una senal CONTRARIAN buena salia
+//   etiquetada "CONTRA-ESTRUCTURA - Riesgo Alto"); y las
+//   senales ya bloqueadas no reciben castigos dobles.
 // ============================================================
 window.POScannerPRO = window.POScannerPRO || {};
 POScannerPRO._mods = POScannerPRO._mods || [];
 POScannerPRO._mods.push('config');
 
 POScannerPRO.CONFIG = {
-  VERSION: '4.3.0',
+  VERSION: '4.3.1',
 
   // --- Deteccion de color de velas (HSV, robusto a temas) ---
   // v3.5.6: verde LIMA real de las velas PO (medido en video:
@@ -1938,16 +1942,20 @@ POScannerPRO.ContrarianScoring = (() => {
     let contrarian = false;
     let bloqueoMasa = false;
     const lines = [];
+    const yaBloqueada = !!o.blocked;   // v4.3.1: senal muerta, no tocar
 
-    // 1) TRAP INDEX alto: mercado barrido, castigo general
-    if (trap.trapIndex >= TRAP_BLOCK) {
+    // 1) TRAP INDEX alto: mercado barrido, castigo general.
+    // v4.3.1: si la senal YA esta bloqueada por estructura, no
+    // se aplica ningun castigo ni bonus (solo se reportan las
+    // metricas). Castigar una senal muerta es ruido doble.
+    if (!yaBloqueada && trap.trapIndex >= TRAP_BLOCK) {
       score -= TRAP_PEN;
       lines.push('Trap Index ' + trap.trapIndex + '% (ALTA manipulacion): -' +
                  TRAP_PEN + ' pts');
     }
 
     // 2) FAKEOUT: trampa de nivel en la ultima vela cerrada
-    if (trap.fakeout && !o.blocked) {
+    if (trap.fakeout && !yaBloqueada) {
       if (trap.fakeout.dir === o.dir) {
         // La trampa va A FAVOR: el broker barrio y el precio
         // volvio = oportunidad contrarian (CASO 2 del examen)
@@ -1967,7 +1975,7 @@ POScannerPRO.ContrarianScoring = (() => {
                      ') con trampa del broker en contra');
         }
       }
-    } else if (crowd.esObvia) {
+    } else if (crowd.esObvia && !yaBloqueada) {
       // 4) Senal obvia sin trampa clara: castigo moderado
       score -= OBVIO_PEN;
       lines.push('Senal OBVIA (' + crowd.razon + '): la masa ya entro, -' +
@@ -2860,6 +2868,7 @@ POScannerPRO.Panel = (() => {
         : '') +
       (warn ? '[!] ' + warn + '\n' : '') +
       (r.note ? '[*] ' + r.note + '\n' : '') +
+      (r.contraNote ? '[*] ' + r.contraNote + '\n' : '') +
       (d.trapIndex != null
         ? 'Trap Index: ' + d.trapIndex + '% | Actividad: ' +
           (d.actividad || '-') +
@@ -3339,7 +3348,13 @@ POScannerPRO.Scoring = (() => {
     // estructural: nunca desbloquea una contra-estructura y
     // puede anadir un bloqueo nuevo (masa obvia + trampa).
     // ========================================================
+    // v4.3.1: las lineas de la capa contrarian son INFORMATIVAS
+    // (bonus, castigos anti-masa) y viajan en contraNote. JAMAS
+    // se mezclan en warning: el panel pinta warning como
+    // "CONTRA-ESTRUCTURA - Riesgo Alto" y una senal contrarian
+    // BUENA salia etiquetada como peligrosa (visto en video).
     let contra = null;
+    let contraNote = null;
     if (CFG.CONTRARIAN && CFG.CONTRARIAN.ENABLED !== false &&
         P.ContrarianScoring) {
       try {
@@ -3352,9 +3367,7 @@ POScannerPRO.Scoring = (() => {
           blocked = true;
           blockReason = 'masa';
         }
-        if (contra.lines.length) {
-          warning = (warning ? warning + ' ' : '') + contra.lines.join(' | ');
-        }
+        if (contra.lines.length) contraNote = contra.lines.join(' | ');
       } catch (e) { /* capa contrarian desactivada o incompleta */ }
     }
 
@@ -3400,6 +3413,7 @@ POScannerPRO.Scoring = (() => {
       blockReason: blockReason,       // v4.3: 'estructura' | 'masa' | null
       contrarian: !!(contra && contra.contrarian), // v4.3: fakeout a favor
       esObvia: !!(contra && contra.esObvia),       // v4.3: senal de masa
+      contraNote: contraNote,         // v4.3.1: avisos contrarian (info)
       note: nota90,                   // v4.2: por que no llego a 90+
       detail: {
         rsi: rsi.toFixed(1),

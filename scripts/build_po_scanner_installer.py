@@ -18,10 +18,10 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC = ROOT / "tools" / "po-chart-scanner"
 OUT = ROOT / "tools" / "po-chart-scanner" / "install-po-chart-scanner.ps1"
-FOLDER = "PO-Chart-Scanner-PRO-v4.3"
+FOLDER = "PO-Chart-Scanner-PRO-v4.3.1"
 
 HEADER = f"""# ============================================================
-# INSTALADOR - PO Chart Scanner PRO v4.3.0 CONTRARIAN
+# INSTALADOR - PO Chart Scanner PRO v4.3.1 CONTRARIAN
 # ANTI-MANIPULACION (OTC)
 #
 # USO (3 pasos):

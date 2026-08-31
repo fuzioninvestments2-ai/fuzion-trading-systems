@@ -1,4 +1,4 @@
-# PO Chart Scanner PRO v4.3.0 — CONTRARIAN ANTI-MANIPULACION
+# PO Chart Scanner PRO v4.3.1 — CONTRARIAN ANTI-MANIPULACION
 
 Extension de Chrome (Manifest V3) que lee el grafico de Pocket Option **por
 pixeles** y produce una senal CALL/PUT puntuada. No opera sola: `AUTOTRADE`
@@ -81,11 +81,40 @@ node tools/po-chart-scanner/test/smoke.js tools/po-chart-scanner
 - **`blocked` se decide antes de la capa contrarian.** Un bonus contrarian
   puede dejar el score final por encima de `rawScore`; es intencionado, pero
   significa que `rawScore` es "antes del techo estructural", no "antes de todo".
+- **El castigo de order flow no respeta `yaBloqueada`.** En v4.3.1 los castigos
+  de trap / fakeout / masa se saltan cuando la senal ya esta bloqueada, pero el
+  de order flow (`FLOW_PENALTY`) se sigue aplicando. Sin efecto visible (el
+  panel muestra `rawScore` en las bloqueadas), pero es una inconsistencia con
+  la intencion declarada del fix.
+- **`findCurrentPrice()` puede no encontrar el precio del eje.** Cuando el
+  panel dice `precio: archivo` en la linea de estado, el WIN/LOSS no se juzga
+  con el precio real del DOM sino con la escala en pixeles del archivo, que es
+  bastante menos fiable. Ver la seccion siguiente.
 - **Modulos duplicados.** Si hay otra version del panel PRO activa a la vez,
   esta copia se queda dormida (lo avisa por consola). Desactiva la otra en
   `chrome://extensions`.
 
-## Cambio respecto al script original pegado
+## Diagnostico: `precio: archivo` en la linea de estado
+
+Si el estado del panel termina en `| precio: archivo`, `findCurrentPrice()`
+devolvio `null`: no encontro la etiqueta del precio actual pegada al eje
+derecho. Consecuencia: todas las senales se guardan con `refReal: false` y el
+WIN/LOSS se decide comparando cierres en **pixeles** de la escala del archivo,
+con `EMPATE` para cualquier movimiento menor de 0.5 px. Eso explica una
+proporcion alta de empates en la celda ACIERTO.
+
+Para comprobarlo, en la consola de Pocket Option (F12 -> Console):
+
+```js
+POScannerPRO.Panel.findCurrentPrice()   // null = no lo esta leyendo
+```
+
+El selector busca un nodo hoja con texto tipo `1.2345`, en la franja
+horizontal 55%-95% del ancho, y con fondo pintado en el propio nodo o hasta 3
+niveles por encima. Si PO cambio ese marcado, hay que ajustar la funcion en
+`src/panel.js`.
+
+## Cambios respecto al script original pegado
 
 En `scoring.js`, fuente 5 (histograma MACD), la rama bajista sumaba el punto a
 `putPts` pero contaba la fuente en `callSrc`:
@@ -98,3 +127,16 @@ else if (mf.hist < 0 && !mf.rising) { putPts += 1; putSrc++; }    // ahora
 `callSrc`/`putSrc` alimentan la confluencia, que da hasta +15 puntos de bonus
 y decide la regla de los 90 y la deteccion de senal "obvia". El error inflaba
 la confluencia CALL y desinflaba la PUT en cualquier grafico con MACD bajista.
+
+**Ojo al regenerar desde un script pegado:** la v4.3.1 que llego por PowerShell
+se habia construido sobre el script original y traia este bug otra vez. Al
+integrarla se conservo la correccion. Por eso el `.ps1` se genera desde el
+repo y no al reves.
+
+### v4.3.1 (integrada desde el instalador del usuario)
+
+- Los avisos de la capa contrarian viajan en `contraNote` y ya no se mezclan en
+  `warning`. El panel pinta `warning` como "CONTRA-ESTRUCTURA - Riesgo Alto",
+  asi que una senal CONTRARIAN buena salia marcada como peligrosa.
+- Una senal ya bloqueada por estructura no recibe encima los castigos de trap
+  index, fakeout ni masa obvia (castigo doble sobre una senal ya muerta).

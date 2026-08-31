@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "PO Chart Scanner PRO v4.3 CONTRARIAN ANTI-MANIPULACION",
-  "version": "4.3.0",
+  "name": "PO Chart Scanner PRO v4.3.1 CONTRARIAN ANTI-MANIPULACION",
+  "version": "4.3.1",
   "description": "v4.3: CAPA CONTRARIAN ANTI-MANIPULACION para OTC - Trap Index (mechas largas), deteccion de FAKEOUT en S/R, reversal ratio, order flow inferido por rango (proxy de pixeles, sin volumen real), penalizacion por senal OBVIA (masa), bonus CONTRARIAN por fakeout a favor y BLOQUEO por masa obvia con trampa en contra; historial separado contrarian vs normal. Hereda v4.2: bloqueo total de contra-estructura (ESPERAR), regla de los 90, score con velas cerradas, backtest maduro (30+); v4.1: techos estructurales 60/55/45; v4.0: motor continuo de 3 fases. SIN auto-trading.",
   "permissions": [
     "storage",
@@ -49,6 +49,6 @@
     }
   ],
   "action": {
-    "default_title": "PO Chart Scanner PRO v4.3 CONTRARIAN ANTI-MANIPULACION"
+    "default_title": "PO Chart Scanner PRO v4.3.1 CONTRARIAN ANTI-MANIPULACION"
   }
 }

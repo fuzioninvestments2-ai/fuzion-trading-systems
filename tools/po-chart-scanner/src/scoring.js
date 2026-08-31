@@ -318,7 +318,13 @@ POScannerPRO.Scoring = (() => {
     // estructural: nunca desbloquea una contra-estructura y
     // puede anadir un bloqueo nuevo (masa obvia + trampa).
     // ========================================================
+    // v4.3.1: las lineas de la capa contrarian son INFORMATIVAS
+    // (bonus, castigos anti-masa) y viajan en contraNote. JAMAS
+    // se mezclan en warning: el panel pinta warning como
+    // "CONTRA-ESTRUCTURA - Riesgo Alto" y una senal contrarian
+    // BUENA salia etiquetada como peligrosa (visto en video).
     let contra = null;
+    let contraNote = null;
     if (CFG.CONTRARIAN && CFG.CONTRARIAN.ENABLED !== false &&
         P.ContrarianScoring) {
       try {
@@ -331,9 +337,7 @@ POScannerPRO.Scoring = (() => {
           blocked = true;
           blockReason = 'masa';
         }
-        if (contra.lines.length) {
-          warning = (warning ? warning + ' ' : '') + contra.lines.join(' | ');
-        }
+        if (contra.lines.length) contraNote = contra.lines.join(' | ');
       } catch (e) { /* capa contrarian desactivada o incompleta */ }
     }
 
@@ -379,6 +383,7 @@ POScannerPRO.Scoring = (() => {
       blockReason: blockReason,       // v4.3: 'estructura' | 'masa' | null
       contrarian: !!(contra && contra.contrarian), // v4.3: fakeout a favor
       esObvia: !!(contra && contra.esObvia),       // v4.3: senal de masa
+      contraNote: contraNote,         // v4.3.1: avisos contrarian (info)
       note: nota90,                   // v4.2: por que no llego a 90+
       detail: {
         rsi: rsi.toFixed(1),

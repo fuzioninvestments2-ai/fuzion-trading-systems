@@ -49,13 +49,17 @@
 //     bot lee pixeles, NO hay volumen real en la pantalla).
 //   - Historial etiquetado CONTRARIAN/NORMAL + obvia (crowd
 //     loss rate real con muestra).
+// v4.3.1 FIX (videos del usuario): los avisos contrarian ya NO
+//   se mezclan en warning (una senal CONTRARIAN buena salia
+//   etiquetada "CONTRA-ESTRUCTURA - Riesgo Alto"); y las
+//   senales ya bloqueadas no reciben castigos dobles.
 // ============================================================
 window.POScannerPRO = window.POScannerPRO || {};
 POScannerPRO._mods = POScannerPRO._mods || [];
 POScannerPRO._mods.push('config');
 
 POScannerPRO.CONFIG = {
-  VERSION: '4.3.0',
+  VERSION: '4.3.1',
 
   // --- Deteccion de color de velas (HSV, robusto a temas) ---
   // v3.5.6: verde LIMA real de las velas PO (medido en video:

@@ -364,6 +364,7 @@ POScannerPRO.Panel = (() => {
         : '') +
       (warn ? '[!] ' + warn + '\n' : '') +
       (r.note ? '[*] ' + r.note + '\n' : '') +
+      (r.contraNote ? '[*] ' + r.contraNote + '\n' : '') +
       (d.trapIndex != null
         ? 'Trap Index: ' + d.trapIndex + '% | Actividad: ' +
           (d.actividad || '-') +

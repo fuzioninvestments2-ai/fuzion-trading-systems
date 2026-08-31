@@ -66,6 +66,8 @@ for (const [nombre, velas] of Object.entries(casos)) {
               '  bloqueada=' + r.blocked + (r.blockReason ? '(' + r.blockReason + ')' : ''));
   console.log('  tendencia=' + d.trend + '/' + d.trendStrength + '  RSI=' + d.rsi +
               '  confluencia=' + d.confluencia + '  S/R=' + d.srNear + ' x' + d.srLevels);
+  if (r.contraNote) console.log('  contraNote: ' + r.contraNote);
+  if (r.warning) console.log('  warning: ' + r.warning.slice(0, 110));
   console.log('  trapIndex=' + d.trapIndex + '%  reversalRatio=' + d.reversalRatio +
               '  fakeout=' + d.fakeout + '  actividad=' + d.actividad +
               '  contrarian=' + r.contrarian + '  obvia=' + r.esObvia);
@@ -77,7 +79,15 @@ for (const [nombre, velas] of Object.entries(casos)) {
     ['score <= rawScore + bonus contrarian', r.score <= r.rawScore + P.CONFIG.CONTRARIAN.FAKEOUT_BONUS],
     ['bonus por encima del techo SOLO si es contrarian', r.score <= r.rawScore || r.contrarian],
     ['trapIndex 0..100', d.trapIndex >= 0 && d.trapIndex <= 100],
-    ['bloqueada => no confirmada como entrada util', !(r.blocked && r.score > r.rawScore)]
+    ['bloqueada => no confirmada como entrada util', !(r.blocked && r.score > r.rawScore)],
+    // v4.3.1: los avisos contrarian van en contraNote, NUNCA en warning
+    // (el panel pinta warning como "CONTRA-ESTRUCTURA - Riesgo Alto")
+    ['warning limpio de avisos contrarian',
+      !r.warning || !/CONTRARIAN|Trap Index|MASA OBVIA|Order flow/.test(r.warning)],
+    ['senal contrarian NO se marca contra-estructura', !(r.contrarian && r.warning)],
+    // v4.3.1: una senal ya bloqueada no recibe castigos contrarian encima
+    ['bloqueada => sin castigo contrarian doble',
+      !r.blocked || !r.contraNote || !/pts$|BLOQUEADO: MASA/.test(r.contraNote)]
   ];
   inv.forEach(([k, ok]) => { if (!ok) { console.log('  !! INVARIANTE ROTA: ' + k); fallos++; } });
 }
