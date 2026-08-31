@@ -6,7 +6,7 @@ const BASE = process.argv[2];
 
 const store = {};
 const sandbox = {
-  console,
+  console: Object.assign(Object.create(console), { table: () => {} }),
   localStorage: {
     getItem: k => (k in store ? store[k] : null),
     setItem: (k, v) => { store[k] = String(v); },
@@ -208,6 +208,88 @@ if (bts.contrarian.n !== 1 || bts.normal.n !== 1 || bts.total.n !== 2) {
   console.log('  !! las tres categorias no cuadran'); fallos++;
 }
 if (bts.total.acc !== 50) { console.log('  !! total deberia ser 50%'); fallos++; }
+
+// ============================================================
+// v4.4.1: seleccion del PRECIO REAL del eje (DOM simulado).
+// Es la fuente de verdad del WIN/LOSS: si falla, el historial
+// cae a comparar pixeles del archivo y las estadisticas mienten.
+// ============================================================
+console.log('\n=== v4.4.1 PRECIO REAL DEL EJE ===');
+const TRANSP = 'rgba(0, 0, 0, 0)';
+function nodo(o) {
+  const n = {
+    textContent: o.text,
+    children: o.hijos || [],
+    _bg: o.bg || TRANSP,
+    parentElement: null,
+    getBoundingClientRect: () => ({ left: o.x, top: o.y || 100,
+                                    width: o.w == null ? 60 : o.w, height: 14 }),
+    closest: sel => (sel === '#po-pro-panel' && o.enPanel) ? {} : null
+  };
+  if (o.bgPadre) {                       // fondo pintado en el padre
+    n.parentElement = { _bg: o.bgPadre, parentElement: null,
+                        children: [n], getBoundingClientRect: n.getBoundingClientRect,
+                        closest: () => null };
+  }
+  return n;
+}
+function conDom(nodos, fn) {
+  const docPrev = sandbox.document, gcsPrev = sandbox.getComputedStyle,
+        iwPrev = sandbox.innerWidth;
+  sandbox.document = { querySelectorAll: () => nodos, querySelector: () => null };
+  sandbox.getComputedStyle = n => ({ backgroundColor: (n && n._bg) || TRANSP });
+  sandbox.innerWidth = 1900;
+  try { return fn(); }
+  finally { sandbox.document = docPrev; sandbox.getComputedStyle = gcsPrev;
+           sandbox.innerWidth = iwPrev; }
+}
+
+const pruebasPrecio = [
+  ['etiqueta resaltada vs etiqueta fija del eje',
+    [nodo({ text: '0.55465', x: 1640, bg: 'rgb(46, 125, 90)' }),
+     nodo({ text: '0.55500', x: 1700 })],                      // fija, sin fondo
+    0.55465],
+  ['fondo pintado en el PADRE (pildora de PO)',
+    [nodo({ text: '1.23456', x: 1650, bgPadre: 'rgb(20, 30, 40)' })],
+    1.23456],
+  ['digito animado en un span hijo',
+    [nodo({ text: '0.98765', x: 1660, hijos: [{}], bg: 'rgb(9, 9, 9)' })],
+    0.98765],
+  ['dos resaltadas: gana la mas a la derecha (el eje)',
+    [nodo({ text: '1.11111', x: 1200, bg: 'rgb(1, 1, 1)' }),
+     nodo({ text: '2.22222', x: 1680, bg: 'rgb(2, 2, 2)' })],
+    2.22222],
+  ['sin fondo pintado -> null (mejor que un precio fijo)',
+    [nodo({ text: '0.55465', x: 1640 })],
+    null],
+  ['fuera de la banda derecha -> null',
+    [nodo({ text: '0.55465', x: 200, bg: 'rgb(1, 1, 1)' })],
+    null],
+  ['dentro de nuestro panel -> ignorado',
+    [nodo({ text: '0.55465', x: 1640, bg: 'rgb(1, 1, 1)', enPanel: true })],
+    null],
+  ['coma decimal',
+    [nodo({ text: '1,23456', x: 1650, bg: 'rgb(1, 1, 1)' })],
+    1.23456],
+  ['nada que parezca precio -> null', [], null]
+];
+pruebasPrecio.forEach(([nombre, nodos, esperado]) => {
+  const got = conDom(nodos, () => P.Panel.findCurrentPrice());
+  const ok = got === esperado;
+  console.log('  ' + nombre.padEnd(46) + ' -> ' + String(got).padEnd(9) +
+    (ok ? 'OK' : 'FALLO: esperaba ' + esperado));
+  if (!ok) fallos++;
+});
+// El diagnostico debe contar bien lo que hay
+const d = conDom(
+  [nodo({ text: '0.55465', x: 1640, bg: 'rgb(1, 1, 1)' }),
+   nodo({ text: '0.55500', x: 1700 }),
+   nodo({ text: '9.99999', x: 100, bg: 'rgb(1, 1, 1)' })],
+  () => P.Panel.diagPrice());
+const dOk = d.total === 3 && d.enBanda === 2 && d.conFondo === 1;
+console.log('  diagPrice cuenta total/enBanda/conFondo'.padEnd(48) + '-> ' +
+  d.total + '/' + d.enBanda + '/' + d.conFondo + '  ' + (dOk ? 'OK' : 'FALLO'));
+if (!dOk) fallos++;
 
 console.log('\n===== ' + (fallos ? fallos + ' FALLOS' : 'TODAS LAS COMPROBACIONES OK') + ' =====');
 process.exit(fallos ? 1 : 0);

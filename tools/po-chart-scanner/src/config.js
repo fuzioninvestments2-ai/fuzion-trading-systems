@@ -68,13 +68,22 @@
 //   OJO: subir el score de un setup no lo hace mas acertado.
 //   Lo que cambia el resultado es operar menos y mejor: mide
 //   el backtest CONTRARIAN antes de dar por buena la mejora.
+// v4.4.1 PRECIO REAL: findCurrentPrice() se reescribe. En vivo
+//   devolvia null (el panel decia "precio: archivo") y todo el
+//   WIN/LOSS se juzgaba en pixeles del archivo, con EMPATE para
+//   cualquier movimiento < 0.5 px: de ahi los empates de mas.
+//   Ahora acepta el digito animado en un span hijo, el fondo
+//   pintado en el padre, la coma decimal y toda la mitad
+//   derecha de la pantalla; y elige la etiqueta MAS A LA
+//   DERECHA en vez de la ultima del DOM. Diagnostico desde la
+//   consola: POScannerPRO.Panel.diagPrice()
 // ============================================================
 window.POScannerPRO = window.POScannerPRO || {};
 POScannerPRO._mods = POScannerPRO._mods || [];
 POScannerPRO._mods.push('config');
 
 POScannerPRO.CONFIG = {
-  VERSION: '4.4.0',
+  VERSION: '4.4.1',
 
   // --- Deteccion de color de velas (HSV, robusto a temas) ---
   // v3.5.6: verde LIMA real de las velas PO (medido en video:

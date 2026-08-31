@@ -1,4 +1,4 @@
-# PO Chart Scanner PRO v4.4.0 — OPTIMIZACION DE SCORING Y FILTRADO
+# PO Chart Scanner PRO v4.4.1 — OPTIMIZACION DE SCORING Y FILTRADO
 
 Extension de Chrome (Manifest V3) que lee el grafico de Pocket Option **por
 pixeles** y produce una senal CALL/PUT puntuada. No opera sola: `AUTOTRADE`
@@ -169,10 +169,19 @@ Para comprobarlo, en la consola de Pocket Option (F12 -> Console):
 POScannerPRO.Panel.findCurrentPrice()   // null = no lo esta leyendo
 ```
 
-El selector busca un nodo hoja con texto tipo `1.2345`, en la franja
-horizontal 55%-95% del ancho, y con fondo pintado en el propio nodo o hasta 3
-niveles por encima. Si PO cambio ese marcado, hay que ajustar la funcion en
-`src/panel.js`.
+En v4.4.1 la funcion se reescribio. Acepta ahora un digito animado envuelto
+en un span hijo, el fondo pintado hasta 4 niveles por encima, la coma decimal
+y toda la mitad derecha de la pantalla (antes 55%-95%), y entre varios
+candidatos se queda con el **mas a la derecha** — el del eje de precio — en
+vez de con el ultimo que apareciera en el DOM.
+
+Lo que **no** cambia: se sigue exigiendo el fondo pintado. Sin el no hay forma
+de distinguir el precio actual de una etiqueta fija del eje, y devolver una
+fija seria peor que devolver `null`: mediria siempre lo mismo y todas las
+senales saldrian EMPATE.
+
+Si aun asi devuelve `null`, `diagPrice()` dice en cual de los tres filtros se
+cae, y con esa salida se puede afinar el selector.
 
 ## Cambios respecto al script original pegado
 
@@ -192,6 +201,14 @@ la confluencia CALL y desinflaba la PUT en cualquier grafico con MACD bajista.
 se habia construido sobre el script original y traia este bug otra vez. Al
 integrarla se conservo la correccion. Por eso el `.ps1` se genera desde el
 repo y no al reves.
+
+### v4.4.1
+
+`findCurrentPrice()` reescrito (ver la seccion de diagnostico) mas
+`priceCandidates()` y `diagPrice()` expuestos para depurar desde la consola.
+El arnes cubre la seleccion con un DOM simulado: nueve casos, incluidos los
+tres que la version anterior fallaba (fondo en el padre, digito animado en un
+hijo, y elegir la etiqueta correcta entre varias).
 
 ### v4.4.0
 

@@ -566,7 +566,7 @@ POScannerPRO._mods.push('injector');
 {
   "manifest_version": 3,
   "name": "PO Chart Scanner PRO v4.4 OPTIMIZACION DE SCORING Y FILTRADO",
-  "version": "4.4.0",
+  "version": "4.4.1",
   "description": "v4.4: setup CONTRARIAN PERFECTO (+15 y piso 90 con las 6 condiciones), umbral de confluencia 7/12 (6/12 si es perfecto), etiqueta de accion OPERAR/NO OPERAR por rango de score, sin flecha de entrada bajo 75 y backtest separado contrarian/normal/total. v4.3: CAPA CONTRARIAN ANTI-MANIPULACION para OTC - Trap Index (mechas largas), deteccion de FAKEOUT en S/R, reversal ratio, order flow inferido por rango (proxy de pixeles, sin volumen real), penalizacion por senal OBVIA (masa), bonus CONTRARIAN por fakeout a favor y BLOQUEO por masa obvia con trampa en contra; historial separado contrarian vs normal. Hereda v4.2: bloqueo total de contra-estructura (ESPERAR), regla de los 90, score con velas cerradas, backtest maduro (30+); v4.1: techos estructurales 60/55/45; v4.0: motor continuo de 3 fases. SIN auto-trading.",
   "permissions": [
     "storage",
@@ -1769,13 +1769,22 @@ POScannerPRO.ChartOverlay = (() => {
 //   OJO: subir el score de un setup no lo hace mas acertado.
 //   Lo que cambia el resultado es operar menos y mejor: mide
 //   el backtest CONTRARIAN antes de dar por buena la mejora.
+// v4.4.1 PRECIO REAL: findCurrentPrice() se reescribe. En vivo
+//   devolvia null (el panel decia "precio: archivo") y todo el
+//   WIN/LOSS se juzgaba en pixeles del archivo, con EMPATE para
+//   cualquier movimiento < 0.5 px: de ahi los empates de mas.
+//   Ahora acepta el digito animado en un span hijo, el fondo
+//   pintado en el padre, la coma decimal y toda la mitad
+//   derecha de la pantalla; y elige la etiqueta MAS A LA
+//   DERECHA en vez de la ultima del DOM. Diagnostico desde la
+//   consola: POScannerPRO.Panel.diagPrice()
 // ============================================================
 window.POScannerPRO = window.POScannerPRO || {};
 POScannerPRO._mods = POScannerPRO._mods || [];
 POScannerPRO._mods.push('config');
 
 POScannerPRO.CONFIG = {
-  VERSION: '4.4.0',
+  VERSION: '4.4.1',
 
   // --- Deteccion de color de velas (HSV, robusto a temas) ---
   // v3.5.6: verde LIMA real de las velas PO (medido en video:
@@ -2872,31 +2881,90 @@ POScannerPRO.Panel = (() => {
     return best;
   }
 
-  // PRECIO REAL del eje (v3.5.1): PO dibuja una etiqueta con el
-  // precio actual RESALTADA (fondo de color) pegada al eje
-  // derecho del grafico. Evaluar el WIN/LOSS con este precio
-  // real evita el bug del eje-Y (cambia con zoom/auto-scroll y
-  // producia el 0% falso de acierto con 465L).
-  function findCurrentPrice() {
-    let best = null;
-    document.querySelectorAll('span, div').forEach(el => {
+  // ============================================================
+  // PRECIO REAL del eje - v4.4.1 ROBUSTO
+  // PO dibuja el precio actual en una etiqueta RESALTADA (con
+  // fondo pintado) pegada al eje derecho. Ese numero es la unica
+  // fuente de verdad para el WIN/LOSS: los pixeles-Y se re-escalan
+  // con el zoom y el auto-scroll.
+  //
+  // Si esto devuelve null, el panel avisa "precio: archivo" y el
+  // historial pasa a comparar cierres en la escala del archivo,
+  // que es MUCHO menos fiable (de ahi los empates de mas).
+  //
+  // La v3.5.2 fallaba por cuatro motivos, corregidos aqui:
+  //   1) exigia el nodo SIN hijos; PO envuelve digitos en spans
+  //      para animar el ultimo decimal -> se permite 1 hijo y se
+  //      lee tambien el texto propio del nodo.
+  //   2) solo miraba de 0.55 a 0.95 del ancho; con el panel
+  //      movido o pantallas anchas el eje cae fuera -> 0.5 a 1.0.
+  //   3) se quedaba con el ULTIMO que casara en orden de DOM
+  //      (arbitrario) -> ahora gana el mas a la DERECHA, que es
+  //      el del eje de precio.
+  //   4) 'rgba(x,y,z,0)' es transparente pero no era descartado.
+  // Se sigue EXIGIENDO el fondo pintado: sin el no se distingue
+  // el precio actual de una etiqueta fija del eje, y devolver una
+  // fija seria peor que devolver null (mediria siempre lo mismo).
+  // ============================================================
+  const PRICE_RE = /^\d{1,7}[.,]\d{2,6}$/;
+
+  function bgPintado(el) {
+    let node = el;
+    for (let up = 0; up < 4 && node; up++) {
+      let b = '';
+      try { b = getComputedStyle(node).backgroundColor || ''; } catch (e) { b = ''; }
+      const transparente = !b || b === 'transparent' ||
+        /^rgba\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*,\s*0\s*\)$/.test(b);
+      if (!transparente) return { bg: b, depth: up };
+      node = node.parentElement;
+    }
+    return { bg: '', depth: -1 };
+  }
+
+  // Todos los nodos que parecen un precio, con sus coordenadas.
+  // Expuesto para diagnosticar desde la consola:
+  //   POScannerPRO.Panel.priceCandidates()
+  function priceCandidates() {
+    const out = [];
+    document.querySelectorAll('span, div, td, b').forEach(el => {
       if (el.closest && el.closest('#po-pro-panel')) return;
+      if (el.children.length > 1) return;         // 1 hijo: digito animado
       const t = (el.textContent || '').trim();
-      if (!/^\d{1,7}\.\d{2,5}$/.test(t)) return;   // formato precio
-      if (el.children.length) return;              // solo hojas
-      const r = el.getBoundingClientRect();
-      if (r.left < innerWidth * 0.55 || r.left > innerWidth * 0.95) return;
-      // v3.5.2: el fondo pintado suele estar en el PADRE de la
-      // etiqueta-pildora; subir hasta 3 niveles buscandolo
-      let node = el, bg = '';
-      for (let up = 0; up < 3 && node; up++) {
-        const b = getComputedStyle(node).backgroundColor;
-        if (b && b !== 'rgba(0, 0, 0, 0)' && b !== 'transparent') { bg = b; break; }
-        node = node.parentElement;
-      }
-      if (bg) best = parseFloat(t);
+      if (!PRICE_RE.test(t)) return;
+      let r;
+      try { r = el.getBoundingClientRect(); } catch (e) { return; }
+      if (!r || r.width <= 0 || r.height <= 0) return;
+      const p = bgPintado(el);
+      out.push({
+        text: t, value: parseFloat(t.replace(',', '.')),
+        x: Math.round(r.left), y: Math.round(r.top),
+        w: Math.round(r.width), bg: p.bg, depth: p.depth,
+        enBanda: r.left >= innerWidth * 0.5
+      });
     });
-    return best;
+    return out.sort((a, b) => b.x - a.x);
+  }
+
+  function findCurrentPrice() {
+    const cands = priceCandidates().filter(c => c.enBanda && c.bg);
+    return cands.length ? cands[0].value : null;   // el mas a la derecha
+  }
+
+  // Diagnostico para la consola: por que no encuentra el precio.
+  //   POScannerPRO.Panel.diagPrice()
+  function diagPrice() {
+    const todos = priceCandidates();
+    const enBanda = todos.filter(c => c.enBanda);
+    const conFondo = enBanda.filter(c => c.bg);
+    console.log('[PO PRO] precio: ' + todos.length + ' nodos con formato de precio, ' +
+      enBanda.length + ' en la banda derecha (x >= ' + Math.round(innerWidth * 0.5) +
+      '), ' + conFondo.length + ' con fondo pintado.');
+    console.log('[PO PRO] findCurrentPrice() =', findCurrentPrice());
+    if (todos.length) console.table(todos.slice(0, 25));
+    else console.log('[PO PRO] Ningun nodo casa con ' + PRICE_RE +
+      '. Puede que PO parta el precio en varios elementos.');
+    return { total: todos.length, enBanda: enBanda.length,
+             conFondo: conFondo.length, candidatos: todos.slice(0, 25) };
   }
 
   // Lee activo, payout, timeframe y tu Time del DOM de PO
@@ -3184,6 +3252,7 @@ POScannerPRO.Panel = (() => {
            showHistory: showHistory, setVisible: setVisible,
            getTfSec: () => tfSec, getTradeSec: () => tradeSec,
            expiryInfo: expiryInfo, findCurrentPrice: findCurrentPrice,
+           priceCandidates: priceCandidates, diagPrice: diagPrice,
            findTradeTime: findTradeTime };
 })();
 // [PO-PRO-OK:panel]
