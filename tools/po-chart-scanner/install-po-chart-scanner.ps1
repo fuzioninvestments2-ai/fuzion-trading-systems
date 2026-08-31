@@ -1,6 +1,6 @@
 # ============================================================
-# INSTALADOR - PO Chart Scanner PRO v4.3.1 CONTRARIAN
-# ANTI-MANIPULACION (OTC)
+# INSTALADOR - PO Chart Scanner PRO v4.4.0 OPTIMIZACION
+# DE SCORING Y FILTRADO (OTC)
 #
 # USO (3 pasos):
 #   1) Copia TODO este texto (Ctrl+A, Ctrl+C)
@@ -14,7 +14,7 @@
 # No lo edites a mano: edita tools/po-chart-scanner/ y regeneralo.
 # ============================================================
 
-$base = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PO-Chart-Scanner-PRO-v4.3.1'
+$base = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PO-Chart-Scanner-PRO-v4.4'
 Write-Host 'Instalando en:' $base
 
 $files = @{
@@ -543,6 +543,20 @@ POScannerPRO._mods.push('injector');
 /* Capa de comentarios sobre el grafico (flechas, lineas S/R) */
 #po-pro-chart-svg { position: fixed; inset: 0; z-index: 999997;
   pointer-events: none; }
+/* v4.4: ETIQUETA DE ACCION por rango de score. Es la linea que
+   decide por ti: verde brillante = operar, rojo = bloqueada. */
+.pop-action { display: block; text-align: center; font-weight: 800;
+  font-size: 13px; letter-spacing: .5px; border-radius: 8px;
+  padding: 5px 4px; margin: 0 0 6px; border: 1px solid transparent; }
+.pop-act-operar   { background: #00ff88; color: #04150c; border-color: #00ff88;
+                    box-shadow: 0 0 12px rgba(0,255,136,.55); }
+.pop-act-cond     { background: #0f3d28; color: #46e39b; border-color: #46e39b; }
+.pop-act-medio    { background: #3a3312; color: #ffd23f; border-color: #ffd23f; }
+.pop-act-no       { background: #3d2410; color: #ff9d3f; border-color: #ff9d3f; }
+.pop-act-bloqueada{ background: #3d1414; color: #ff5c5c; border-color: #ff5c5c; }
+/* v4.4: aviso de senal debil bajo la etiqueta */
+.pop-weak { color: #ffd23f; font-size: 10px; text-align: center;
+  margin: -2px 0 6px; }
 /* v4.2: score de una senal BLOQUEADA (ESPERAR) se muestra tachado */
 .pop-score.pop-blocked { text-decoration: line-through; color: #ffd23f; opacity: .8; }
 /* [PO-PRO-OK:panel.css] */
@@ -551,9 +565,9 @@ POScannerPRO._mods.push('injector');
   'manifest.json' = @'
 {
   "manifest_version": 3,
-  "name": "PO Chart Scanner PRO v4.3.1 CONTRARIAN ANTI-MANIPULACION",
-  "version": "4.3.1",
-  "description": "v4.3: CAPA CONTRARIAN ANTI-MANIPULACION para OTC - Trap Index (mechas largas), deteccion de FAKEOUT en S/R, reversal ratio, order flow inferido por rango (proxy de pixeles, sin volumen real), penalizacion por senal OBVIA (masa), bonus CONTRARIAN por fakeout a favor y BLOQUEO por masa obvia con trampa en contra; historial separado contrarian vs normal. Hereda v4.2: bloqueo total de contra-estructura (ESPERAR), regla de los 90, score con velas cerradas, backtest maduro (30+); v4.1: techos estructurales 60/55/45; v4.0: motor continuo de 3 fases. SIN auto-trading.",
+  "name": "PO Chart Scanner PRO v4.4 OPTIMIZACION DE SCORING Y FILTRADO",
+  "version": "4.4.0",
+  "description": "v4.4: setup CONTRARIAN PERFECTO (+15 y piso 90 con las 6 condiciones), umbral de confluencia 7/12 (6/12 si es perfecto), etiqueta de accion OPERAR/NO OPERAR por rango de score, sin flecha de entrada bajo 75 y backtest separado contrarian/normal/total. v4.3: CAPA CONTRARIAN ANTI-MANIPULACION para OTC - Trap Index (mechas largas), deteccion de FAKEOUT en S/R, reversal ratio, order flow inferido por rango (proxy de pixeles, sin volumen real), penalizacion por senal OBVIA (masa), bonus CONTRARIAN por fakeout a favor y BLOQUEO por masa obvia con trampa en contra; historial separado contrarian vs normal. Hereda v4.2: bloqueo total de contra-estructura (ESPERAR), regla de los 90, score con velas cerradas, backtest maduro (30+); v4.1: techos estructurales 60/55/45; v4.0: motor continuo de 3 fases. SIN auto-trading.",
   "permissions": [
     "storage",
     "activeTab",
@@ -600,7 +614,7 @@ POScannerPRO._mods.push('injector');
     }
   ],
   "action": {
-    "default_title": "PO Chart Scanner PRO v4.3.1 CONTRARIAN ANTI-MANIPULACION"
+    "default_title": "PO Chart Scanner PRO v4.4 OPTIMIZACION DE SCORING Y FILTRADO"
   }
 }
 
@@ -1599,16 +1613,29 @@ POScannerPRO.ChartOverlay = (() => {
     // --- 2) LINEA DE ENTRADA + 3) FLECHA ---
     // v4.2: si la senal esta BLOQUEADA (contra estructura) NO se
     // dibuja entrada ni flecha: solo el aviso ESPERAR en amarillo.
+    // v4.4: lo mismo si el score no llega a FILTER.ENTRY_MIN.
     const cx = X(last.x);
-    if (result.blocked) {
+    // v4.4: la flecha de entrada solo se dibuja si el score llega
+    // a FILTER.ENTRY_MIN. Una senal debil ya no invita a entrar
+    // desde el grafico: se anota en amarillo y se queda ahi.
+    const F = CFG.FILTER || {};
+    const entryMin = F.ENTRY_MIN != null ? F.ENTRY_MIN : 75;
+    const sinEntrada = result.blocked || result.score < entryMin;
+    if (sinEntrada) {
       const tb = el('text', {
         x: cx - 12, y: Y(last.high) - 36, fill: '#ffd23f',
         'font-size': 13, 'font-weight': 'bold', 'text-anchor': 'end',
         stroke: '#04150c', 'stroke-width': 0.4
       });
-      tb.textContent = result.blockReason === 'masa'
+      tb.textContent = !result.blocked
+        ? 'SIN ENTRADA: ' + result.dir + ' ' + result.score + '% (minimo ' +
+          entryMin + ') - senal debil, esperar mejor setup'
+        : result.blockReason === 'masa'
         ? 'ESPERAR: ' + result.dir + ' BLOQUEADO - masa obvia + trampa (' +
           result.rawScore + '% bloqueada)'
+        : result.blockReason === 'confluencia'
+        ? 'ESPERAR: ' + result.dir + ' BLOQUEADO - confluencia insuficiente (' +
+          (result.detail ? result.detail.confluencia : '-') + ')'
         : 'ESPERAR: ' + result.dir + ' contra estructura (' +
           result.rawScore + '% bloqueada)';
       s.appendChild(tb);
@@ -1629,7 +1656,7 @@ POScannerPRO.ChartOverlay = (() => {
         stroke: '#04150c', 'stroke-width': 0.4
       });
       te.textContent = 'ENTRADA ' + result.dir + ' ' + result.score + '%' +
-        (result.contrarian ? ' [CONTRARIAN]' : '') +
+        (result.perfecto ? ' [PERFECTO]' : result.contrarian ? ' [CONTRARIAN]' : '') +
         (result.expiryText ? ' | ' + result.expiryText : '');
       s.appendChild(te);
 
@@ -1727,13 +1754,28 @@ POScannerPRO.ChartOverlay = (() => {
 //   se mezclan en warning (una senal CONTRARIAN buena salia
 //   etiquetada "CONTRA-ESTRUCTURA - Riesgo Alto"); y las
 //   senales ya bloqueadas no reciben castigos dobles.
+// v4.4.0 OPTIMIZACION DE SCORING Y FILTRADO:
+//   - SETUP CONTRARIAN PERFECTO: si se cumplen las 6 condiciones
+//     del doctorado (nivel x3+, fakeout, contrarian, confluencia
+//     8/12, backtest contrarian >65% con muestra, trap <70%) el
+//     score recibe +15 y un piso de 90. El panel dice que
+//     condicion falta cuando no llega.
+//   - UMBRAL DE CONFLUENCIA: menos de 7/12 fuentes = BLOQUEADA
+//     (6/12 si el setup contrarian es perfecto).
+//   - ETIQUETA DE ACCION por rango de score: OPERAR / OPERAR SI
+//     CONTRARIAN / RIESGO MEDIO / NO OPERAR / BLOQUEADO. Debajo
+//     de ENTRY_MIN el grafico NO dibuja flecha de entrada.
+//   - BACKTEST SEPARADO: contrarian / normal / total.
+//   OJO: subir el score de un setup no lo hace mas acertado.
+//   Lo que cambia el resultado es operar menos y mejor: mide
+//   el backtest CONTRARIAN antes de dar por buena la mejora.
 // ============================================================
 window.POScannerPRO = window.POScannerPRO || {};
 POScannerPRO._mods = POScannerPRO._mods || [];
 POScannerPRO._mods.push('config');
 
 POScannerPRO.CONFIG = {
-  VERSION: '4.3.1',
+  VERSION: '4.4.0',
 
   // --- Deteccion de color de velas (HSV, robusto a temas) ---
   // v3.5.6: verde LIMA real de las velas PO (medido en video:
@@ -1811,6 +1853,38 @@ POScannerPRO.CONFIG = {
     OBVIO_PENALTY: 12,     // castigo por senal obvia (masa)
     MASA_BLOCK: true,      // bloquear masa obvia + trampa en contra
     FLOW_PENALTY: 8        // order flow inferido en contra
+  },
+
+  // --- v4.4 FILTRADO AUTOMATICO POR SCORE ---
+  // Rangos de la etiqueta de accion que pinta el panel. Cambia
+  // los numeros si quieres ser mas o menos exigente.
+  FILTER: {
+    OPERAR: 90,              // 90-100: OPERAR (verde brillante)
+    OPERAR_CONTRARIAN: 85,   // 85-89: OPERAR SI CONTRARIAN (verde)
+    RIESGO_MEDIO: 75,        // 75-84: RIESGO MEDIO (amarillo)
+    NO_OPERAR: 60,           // 60-74: NO OPERAR (naranja); <60 rojo
+    ENTRY_MIN: 75,           // debajo: el grafico NO dibuja entrada
+    WEAK_WARN: 85,           // debajo: aviso "senal debil"
+    MIN_CONFLUENCIA: 7,      // <7/12 fuentes = BLOQUEADA
+    MIN_CONFLUENCIA_PERFECTO: 6  // excepcion para contrarian perfecto
+  },
+
+  // --- v4.4 SETUP CONTRARIAN PERFECTO (regla del doctorado) ---
+  // Las 6 condiciones deben cumplirse TODAS. La del backtest usa
+  // el acierto real de TUS senales CONTRARIAN pasadas (history):
+  // no existe un backtest por patron, y inventarlo seria mentir.
+  // Pon REQUIRE_BACKTEST en false si prefieres no exigirla
+  // mientras acumulas muestra.
+  PERFECT: {
+    ENABLED: true,
+    SR_TOUCHES: 3,           // nivel del fakeout con 3+ toques
+    CONFLUENCIA: 8,          // 8/12 fuentes de voto
+    TRAP_MAX: 70,            // trap index por debajo de 70%
+    BONUS: 15,               // puntos extra si se cumple todo
+    MIN_SCORE: 90,           // y piso de 90
+    REQUIRE_BACKTEST: true,  // exigir la condicion del backtest
+    BACKTEST_MIN_N: 10,      // muestra minima de senales contrarian
+    BACKTEST_MIN_ACC: 65     // acierto minimo de esa muestra (%)
   },
 
   // --- Indicadores activos (toggles) ---
@@ -1991,9 +2065,52 @@ POScannerPRO.ContrarianScoring = (() => {
       lines.push('Order flow en contra (mayoria compradora): -' + FLOW_PEN);
     }
 
+    // ========================================================
+    // v4.4 SETUP CONTRARIAN PERFECTO (regla del doctorado).
+    // Las 6 condiciones deben cumplirse TODAS. Si se cumplen,
+    // +BONUS puntos y piso MIN_SCORE (90). Si no, se reporta
+    // QUE condicion falta para que sea auditable en el panel.
+    // La condicion del backtest usa el acierto real de TUS
+    // senales CONTRARIAN pasadas: no existe backtest por patron.
+    // ========================================================
+    const PF = CFG.PERFECT || {};
+    let perfecto = false;
+    const faltan = [];
+    if (PF.ENABLED !== false && !yaBloqueada) {
+      const nivel = trap.fakeout ? trap.fakeout.level : null;
+      const bt = perfBacktest(PF);
+      const cond = [
+        ['nivel S/R x' + (PF.SR_TOUCHES || 3) + '+',
+          !!(nivel && nivel.touches >= (PF.SR_TOUCHES || 3))],
+        ['fakeout detectado', !!trap.fakeout],
+        ['senal contrarian (contra la masa)', contrarian],
+        ['confluencia ' + (PF.CONFLUENCIA || 8) + '/12',
+          o.agree >= (PF.CONFLUENCIA || 8)],
+        ['backtest contrarian >' + (PF.BACKTEST_MIN_ACC || 65) + '%' + bt.nota,
+          bt.ok],
+        ['trap index <' + (PF.TRAP_MAX || 70) + '%',
+          trap.trapIndex < (PF.TRAP_MAX || 70)]
+      ];
+      cond.forEach(c => { if (!c[1]) faltan.push(c[0]); });
+      if (!faltan.length) {
+        perfecto = true;
+        score = Math.max(score + (PF.BONUS != null ? PF.BONUS : 15),
+                         PF.MIN_SCORE != null ? PF.MIN_SCORE : 90);
+        lines.push('SETUP CONTRARIAN PERFECTO: las 6 condiciones se cumplen, ' +
+                   '+' + (PF.BONUS != null ? PF.BONUS : 15) + ' y piso ' +
+                   (PF.MIN_SCORE != null ? PF.MIN_SCORE : 90));
+      } else if (contrarian) {
+        // Solo se explica cuando ya hay algo contrarian en juego:
+        // en una senal normal esta lista seria ruido constante.
+        lines.push('Para PERFECTO (90+) falta: ' + faltan.join(', '));
+      }
+    }
+
     score = Math.max(0, Math.min(97, score));
     return {
       score: score,
+      perfecto: perfecto,
+      faltanPerfecto: faltan,
       contrarian: contrarian,
       bloqueoMasa: bloqueoMasa,
       trapIndex: trap.trapIndex,
@@ -2003,6 +2120,25 @@ POScannerPRO.ContrarianScoring = (() => {
       esObvia: crowd.esObvia,
       lines: lines
     };
+  }
+
+  // Condicion de backtest del setup contrarian. Usa el acierto
+  // REAL de las senales CONTRARIAN ya vencidas de este bot.
+  // Sin muestra suficiente la condicion NO se da por cumplida
+  // (afirmar un 65% con 2 senales seria inventar); pon
+  // PERFECT.REQUIRE_BACKTEST en false para no exigirla.
+  function perfBacktest(PF) {
+    if (PF.REQUIRE_BACKTEST === false) return { ok: true, nota: ' (no exigido)' };
+    const minN = PF.BACKTEST_MIN_N != null ? PF.BACKTEST_MIN_N : 10;
+    const minAcc = PF.BACKTEST_MIN_ACC != null ? PF.BACKTEST_MIN_ACC : 65;
+    try {
+      const H = POScannerPRO.History;
+      const t = H && H.byTag ? H.byTag('CONTRARIAN') : { n: 0, acc: null };
+      if (t.n < minN) {
+        return { ok: false, nota: ' (muestra ' + t.n + '/' + minN + ')' };
+      }
+      return { ok: t.acc > minAcc, nota: ' (' + t.acc + '% en ' + t.n + ')' };
+    } catch (e) { return { ok: false, nota: ' (sin historial)' }; }
   }
 
   return { adjust: adjust };
@@ -2113,6 +2249,9 @@ POScannerPRO.CrowdBehavior = (() => {
 //   3) Si ninguna fuente es confiable: la senal espera; pasado
 //      el tiempo de gracia se marca SIN DATO (no cuenta).
 //   JAMAS se evalua con pixeles-Y crudos de pantalla.
+// v4.4: backtests() devuelve el acierto REAL separado en tres
+//   categorias (contrarian / normal / total): el promedio unico
+//   escondia que las NORMAL arrastran a las CONTRARIAN.
 // v4.3: cada senal se etiqueta tag='CONTRARIAN'|'NORMAL' y con
 //   obvia=true/false (senal de masa) -> estadisticas separadas
 //   (byTag) y crowd loss rate real (crowdBehavior).
@@ -2253,12 +2392,30 @@ POScannerPRO.History = (() => {
     return { n: its.length, acc: its.length ? Math.round(w / its.length * 100) : null };
   }
 
+  // v4.4: BACKTEST SEPARADO en tres categorias. "Backtest" aqui
+  // significa el acierto REAL de las senales que este bot emitio
+  // y que ya vencieron; no es una simulacion sobre el archivo de
+  // velas (eso lo hace CandleArchive.backtest). Separarlos importa
+  // porque el promedio total lo arrastran las senales NORMAL.
+  function backtests() {
+    const c = byTag('CONTRARIAN');
+    const n = byTag('NORMAL');
+    const done = items.filter(i => i.result === 'WIN' || i.result === 'LOSS');
+    const w = done.filter(i => i.result === 'WIN').length;
+    return {
+      contrarian: c,
+      normal: n,
+      total: { n: done.length,
+               acc: done.length ? Math.round(w / done.length * 100) : null }
+    };
+  }
+
   function clear() { items = []; save(); }
 
   function lastItems(n) { return items.slice(-(n || 8)).reverse(); }
 
   return { add: add, update: update, stats: stats, byQuality: byQuality,
-           byTag: byTag,
+           byTag: byTag, backtests: backtests,
            clear: clear, lastItems: lastItems, ready: true };
 })();
 // [PO-PRO-OK:history]
@@ -2567,6 +2724,8 @@ POScannerPRO.Panel = (() => {
       '<span class="pop-dir" data-f="dir">-</span>' +
       '<span class="pop-score" data-f="score">-/100</span>' +
     '</div>' +
+    '<div class="pop-action" data-f="action"></div>' +
+    '<div class="pop-weak" data-f="weak"></div>' +
     '<div class="pop-quality" data-f="quality"></div>' +
     '<div class="pop-detail" data-f="detail">Pulsa ESCANEAR para analizar el grafico.</div>' +
     '<div class="pop-btns">' +
@@ -2804,6 +2963,26 @@ POScannerPRO.Panel = (() => {
     };
   }
 
+  // v4.4 ETIQUETA DE ACCION: traduce el score a una orden clara
+  // para no tener que decidirlo mentalmente. Una senal bloqueada
+  // es BLOQUEADA sea cual sea su puntaje.
+  function actionLabel(r) {
+    const F = CFG.FILTER || {};
+    const OP = F.OPERAR != null ? F.OPERAR : 90;
+    const OPC = F.OPERAR_CONTRARIAN != null ? F.OPERAR_CONTRARIAN : 85;
+    const MED = F.RIESGO_MEDIO != null ? F.RIESGO_MEDIO : 75;
+    const NO = F.NO_OPERAR != null ? F.NO_OPERAR : 60;
+    if (r.blocked) return { text: 'BLOQUEADA - NO OPERAR', cls: 'pop-act-bloqueada' };
+    const s = r.score;
+    if (s >= OP)  return { text: 'OPERAR', cls: 'pop-act-operar' };
+    if (s >= OPC) return { text: r.contrarian ? 'OPERAR (CONTRARIAN)'
+                                              : 'OPERAR SI CONTRARIAN',
+                           cls: 'pop-act-cond' };
+    if (s >= MED) return { text: 'RIESGO MEDIO', cls: 'pop-act-medio' };
+    if (s >= NO)  return { text: 'NO OPERAR', cls: 'pop-act-no' };
+    return { text: 'NO OPERAR - SCORE BAJO', cls: 'pop-act-bloqueada' };
+  }
+
   // Resultado de un escaneo (patrones, S/R, tendencia + entrada sugerida)
   function showResult(r) {
     set('candles', r.detail.velas);
@@ -2821,6 +3000,8 @@ POScannerPRO.Panel = (() => {
       set('score', r.rawScore + '/100');
       set('quality', r.blockReason === 'masa'
         ? '!! BLOQUEADO: MASA OBVIA - TRAMPA PROBABLE !!'
+        : r.blockReason === 'confluencia'
+        ? '!! BLOQUEADA: CONFLUENCIA INSUFICIENTE !!'
         : '!! SENAL BLOQUEADA - CONTRA-ESTRUCTURA !!');
     } else {
       set('dir', r.dir);
@@ -2837,6 +3018,20 @@ POScannerPRO.Panel = (() => {
       : (r.dir === 'CALL' ? 'pop-call' : 'pop-put'));
     const sEl = root.querySelector('[data-f="score"]');
     if (sEl) sEl.className = 'pop-score' + (blocked ? ' pop-blocked' : '');
+    // v4.4: ETIQUETA DE ACCION + aviso de senal debil
+    const act = actionLabel(r);
+    set('action', act.text);
+    const aEl = root.querySelector('[data-f="action"]');
+    if (aEl) aEl.className = 'pop-action ' + act.cls;
+    const F4 = CFG.FILTER || {};
+    const weakWarn = F4.WEAK_WARN != null ? F4.WEAK_WARN : 85;
+    const entryMin = F4.ENTRY_MIN != null ? F4.ENTRY_MIN : 75;
+    set('weak', blocked ? ''
+      : (r.score < entryMin
+          ? 'Sin entrada en el grafico: score bajo ' + entryMin
+          : (r.score < weakWarn
+              ? 'Senal debil, esperar mejor setup'
+              : '')));
     const d = r.detail;
     // Acierto historico real de senales de ESTA calidad (aprendizaje)
     let histLine = '';
@@ -2860,8 +3055,17 @@ POScannerPRO.Panel = (() => {
           ? '[X] BLOQUEADO: MASA OBVIA. La senal ' + r.dir + ' ' +
             r.rawScore + '/100 es la que TODOS ven y hay trampa del ' +
             'broker en contra (fakeout). NO entrar.\n'
+          : r.blockReason === 'confluencia'
+          ? '[X] BLOQUEADA: solo ' + (d.confluencia || '-') + ' fuentes ' +
+            'coinciden. El ' + r.score + '% mide el reparto de votos, no ' +
+            'cuantas fuentes votaron: con tan pocas es ruido. NO entrar.\n'
           : '[X] BLOQUEADA: la votacion interna decia ' + r.dir + ' ' +
             r.rawScore + '/100, pero va CONTRA la estructura del mercado. NO entrar.\n')
+        : '') +
+      (r.perfecto && !blocked
+        ? '[*] SETUP CONTRARIAN PERFECTO: las 6 condiciones del metodo ' +
+          'se cumplen (nivel fuerte, fakeout, contra la masa, confluencia, ' +
+          'backtest y trap bajo).\n'
         : '') +
       (r.contrarian && !blocked
         ? '[!] SENAL CONTRARIAN: fakeout a favor, se opera CONTRA la ruptura falsa.\n'
@@ -2885,10 +3089,15 @@ POScannerPRO.Panel = (() => {
       'Votos CALL: ' + d.votosCALL + ' | Votos PUT: ' + d.votosPUT +
       ' | Confluencia: ' + (d.confluencia || '-') + '\n' +
       'Contexto MTF: ' + (d.contexto || 'sin datos') + btLine + '\n' +
+      btSplit() +
       (blocked
-        ? 'ESPERAR: senal bloqueada por contra-estructura, sin entrada'
-        : (r.confirmed
+        ? 'ESPERAR: senal bloqueada (' + (r.blockReason || 'estructura') +
+          '), sin entrada'
+        : (r.confirmed && r.score >= entryMin
           ? 'Entrada: al cierre de esta vela | Expira en: ' + exp.text + exp.warn
+          : r.confirmed
+          ? 'Senal debil (' + r.score + ' < ' + entryMin +
+            '): sin flecha de entrada, esperar mejor setup'
           : 'Espera: puntaje bajo, sin entrada')) + histLine);
     // Actualizar celda ACIERTO con las estadisticas del historial
     try {
@@ -2896,6 +3105,19 @@ POScannerPRO.Panel = (() => {
       set('acc', s.total ? s.acc + '% (' + s.wins + 'W/' + s.losses + 'L' +
         (s.ties ? '/' + s.ties + 'E' : '') + ')' : '-');
     } catch (e) { /* historial aun no listo */ }
+  }
+
+  // v4.4: BACKTEST SEPARADO contrarian / normal / total. El
+  // promedio unico escondia que las NORMAL arrastran al conjunto.
+  function btSplit() {
+    try {
+      const b = POScannerPRO.History.backtests();
+      const f = x => x.n ? x.acc + '% en ' + x.n : 'sin muestra';
+      if (!b.total.n) return '';
+      return 'Acierto real -> CONTRARIAN: ' + f(b.contrarian) +
+             ' | NORMAL: ' + f(b.normal) +
+             ' | TOTAL: ' + f(b.total) + '\n';
+    } catch (e) { return ''; }
   }
 
   // Vista del HISTORIAL con estadisticas reales
@@ -2914,12 +3136,14 @@ POScannerPRO.Panel = (() => {
     // v4.3: historial separado contrarian vs normal
     let tagLine = '';
     try {
-      const tc = H.byTag('CONTRARIAN'), tn = H.byTag('NORMAL');
-      if (tc.n + tn.n > 0) {
-        tagLine = '\nPor tipo -> Contrarian: ' + (tc.n ? tc.acc + '% en ' + tc.n : 'sin datos') +
-                  ' | Normal: ' + (tn.n ? tn.acc + '% en ' + tn.n : 'sin datos');
+      const b = H.backtests();
+      const f = x => x.n ? x.acc + '% en ' + x.n + ' senales' : 'sin muestra';
+      if (b.total.n) {
+        tagLine = '\nBACKTEST CONTRARIAN: ' + f(b.contrarian) +
+                  '\nBacktest NORMAL: ' + f(b.normal) +
+                  '\nBacktest TOTAL: ' + f(b.total);
       }
-    } catch (e) { /* historial sin byTag aun */ }
+    } catch (e) { /* historial sin backtests aun */ }
     set('detail',
       'Acierto: ' + s.acc + '% (' + s.wins + 'W/' + s.losses + 'L' +
       (s.ties ? '/' + s.ties + 'E' : '') + ') | Pendientes: ' +
@@ -2956,6 +3180,7 @@ POScannerPRO.Panel = (() => {
   }
 
   return { mount: mount, set: set, showResult: showResult, setAuto: setAuto,
+           actionLabel: actionLabel,
            showHistory: showHistory, setVisible: setVisible,
            getTfSec: () => tfSec, getTradeSec: () => tradeSec,
            expiryInfo: expiryInfo, findCurrentPrice: findCurrentPrice,
@@ -3059,6 +3284,12 @@ POScannerPRO.PatternDetector = (() => {
 //   todos ven) y order flow inferido (proxy por rango, el bot
 //   lee pixeles: NO hay volumen real). Fakeout A FAVOR = bonus
 //   CONTRARIAN; masa obvia CON trampa en contra = BLOQUEO.
+// v4.4.0: UMBRAL DE CONFLUENCIA. El score mide el REPARTO de
+//   votos (ganador / total), no cuantas fuentes votaron: 2 de 2
+//   da 100%. Por eso una senal con menos de FILTER.MIN_CONFLUENCIA
+//   fuentes se BLOQUEA aunque su porcentaje sea alto. Un setup
+//   contrarian PERFECTO baja el listado y queda exento de la
+//   regla de los 90 (sus 6 condiciones ya son esa alineacion).
 // ============================================================
 window.POScannerPRO = window.POScannerPRO || {};
 POScannerPRO._mods = POScannerPRO._mods || [];
@@ -3371,14 +3602,35 @@ POScannerPRO.Scoring = (() => {
       } catch (e) { /* capa contrarian desactivada o incompleta */ }
     }
 
+    // ========================================================
+    // v4.4 UMBRAL MINIMO DE CONFLUENCIA. Una senal sostenida por
+    // pocas fuentes es ruido aunque el porcentaje salga alto: el
+    // score mide el REPARTO de votos, no cuantos votaron. Con
+    // menos de MIN_CONFLUENCIA fuentes se bloquea (ESPERAR).
+    // Excepcion: un setup contrarian PERFECTO baja el listado a
+    // MIN_CONFLUENCIA_PERFECTO (su evidencia es de otro tipo).
+    // ========================================================
+    const F = CFG.FILTER || {};
+    const MIN_AGREE = F.MIN_CONFLUENCIA != null ? F.MIN_CONFLUENCIA : 7;
+    const MIN_AGREE_PF = F.MIN_CONFLUENCIA_PERFECTO != null
+      ? F.MIN_CONFLUENCIA_PERFECTO : 6;
+    const perfecto = !!(contra && contra.perfecto);
+    const needAgree = perfecto ? MIN_AGREE_PF : MIN_AGREE;
+    if (!blocked && agree < needAgree) {
+      blocked = true;
+      blockReason = 'confluencia';
+    }
+
     // v4.2: REGLA DE LOS 90 (senal IMPECABLE). Un 90+ solo se
     // permite con TODO alineado: confluencia alta (5+ fuentes) Y
     // al menos UN aliado estructural claro (tendencia a favor,
     // S/R a favor, patron alineado o MTF a favor). Si falta, la
     // senal es buena pero no impecable: se queda en 89.
+    // v4.4: un SETUP CONTRARIAN PERFECTO queda exento: sus 6
+    // condiciones YA son la alineacion que esta regla exige.
     let nota90 = null;
     const MIN90 = CFG.SCAN.SCORE_IMPECCABLE || 90;
-    if (score >= MIN90) {
+    if (score >= MIN90 && !perfecto) {
       const aFavorTendencia =
         (dir === 'CALL' && trend.trend === 'UP'   && trend.strength >= 25) ||
         (dir === 'PUT'  && trend.trend === 'DOWN' && trend.strength >= 25);
@@ -3414,6 +3666,8 @@ POScannerPRO.Scoring = (() => {
       contrarian: !!(contra && contra.contrarian), // v4.3: fakeout a favor
       esObvia: !!(contra && contra.esObvia),       // v4.3: senal de masa
       contraNote: contraNote,         // v4.3.1: avisos contrarian (info)
+      perfecto: perfecto,             // v4.4: setup contrarian perfecto
+      agree: agree,                   // v4.4: fuentes que coincidieron
       note: nota90,                   // v4.2: por que no llego a 90+
       detail: {
         rsi: rsi.toFixed(1),

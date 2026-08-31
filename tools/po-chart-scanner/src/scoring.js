@@ -29,6 +29,12 @@
 //   todos ven) y order flow inferido (proxy por rango, el bot
 //   lee pixeles: NO hay volumen real). Fakeout A FAVOR = bonus
 //   CONTRARIAN; masa obvia CON trampa en contra = BLOQUEO.
+// v4.4.0: UMBRAL DE CONFLUENCIA. El score mide el REPARTO de
+//   votos (ganador / total), no cuantas fuentes votaron: 2 de 2
+//   da 100%. Por eso una senal con menos de FILTER.MIN_CONFLUENCIA
+//   fuentes se BLOQUEA aunque su porcentaje sea alto. Un setup
+//   contrarian PERFECTO baja el listado y queda exento de la
+//   regla de los 90 (sus 6 condiciones ya son esa alineacion).
 // ============================================================
 window.POScannerPRO = window.POScannerPRO || {};
 POScannerPRO._mods = POScannerPRO._mods || [];
@@ -341,14 +347,35 @@ POScannerPRO.Scoring = (() => {
       } catch (e) { /* capa contrarian desactivada o incompleta */ }
     }
 
+    // ========================================================
+    // v4.4 UMBRAL MINIMO DE CONFLUENCIA. Una senal sostenida por
+    // pocas fuentes es ruido aunque el porcentaje salga alto: el
+    // score mide el REPARTO de votos, no cuantos votaron. Con
+    // menos de MIN_CONFLUENCIA fuentes se bloquea (ESPERAR).
+    // Excepcion: un setup contrarian PERFECTO baja el listado a
+    // MIN_CONFLUENCIA_PERFECTO (su evidencia es de otro tipo).
+    // ========================================================
+    const F = CFG.FILTER || {};
+    const MIN_AGREE = F.MIN_CONFLUENCIA != null ? F.MIN_CONFLUENCIA : 7;
+    const MIN_AGREE_PF = F.MIN_CONFLUENCIA_PERFECTO != null
+      ? F.MIN_CONFLUENCIA_PERFECTO : 6;
+    const perfecto = !!(contra && contra.perfecto);
+    const needAgree = perfecto ? MIN_AGREE_PF : MIN_AGREE;
+    if (!blocked && agree < needAgree) {
+      blocked = true;
+      blockReason = 'confluencia';
+    }
+
     // v4.2: REGLA DE LOS 90 (senal IMPECABLE). Un 90+ solo se
     // permite con TODO alineado: confluencia alta (5+ fuentes) Y
     // al menos UN aliado estructural claro (tendencia a favor,
     // S/R a favor, patron alineado o MTF a favor). Si falta, la
     // senal es buena pero no impecable: se queda en 89.
+    // v4.4: un SETUP CONTRARIAN PERFECTO queda exento: sus 6
+    // condiciones YA son la alineacion que esta regla exige.
     let nota90 = null;
     const MIN90 = CFG.SCAN.SCORE_IMPECCABLE || 90;
-    if (score >= MIN90) {
+    if (score >= MIN90 && !perfecto) {
       const aFavorTendencia =
         (dir === 'CALL' && trend.trend === 'UP'   && trend.strength >= 25) ||
         (dir === 'PUT'  && trend.trend === 'DOWN' && trend.strength >= 25);
@@ -384,6 +411,8 @@ POScannerPRO.Scoring = (() => {
       contrarian: !!(contra && contra.contrarian), // v4.3: fakeout a favor
       esObvia: !!(contra && contra.esObvia),       // v4.3: senal de masa
       contraNote: contraNote,         // v4.3.1: avisos contrarian (info)
+      perfecto: perfecto,             // v4.4: setup contrarian perfecto
+      agree: agree,                   // v4.4: fuentes que coincidieron
       note: nota90,                   // v4.2: por que no llego a 90+
       detail: {
         rsi: rsi.toFixed(1),

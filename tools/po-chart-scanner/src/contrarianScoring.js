@@ -99,9 +99,52 @@ POScannerPRO.ContrarianScoring = (() => {
       lines.push('Order flow en contra (mayoria compradora): -' + FLOW_PEN);
     }
 
+    // ========================================================
+    // v4.4 SETUP CONTRARIAN PERFECTO (regla del doctorado).
+    // Las 6 condiciones deben cumplirse TODAS. Si se cumplen,
+    // +BONUS puntos y piso MIN_SCORE (90). Si no, se reporta
+    // QUE condicion falta para que sea auditable en el panel.
+    // La condicion del backtest usa el acierto real de TUS
+    // senales CONTRARIAN pasadas: no existe backtest por patron.
+    // ========================================================
+    const PF = CFG.PERFECT || {};
+    let perfecto = false;
+    const faltan = [];
+    if (PF.ENABLED !== false && !yaBloqueada) {
+      const nivel = trap.fakeout ? trap.fakeout.level : null;
+      const bt = perfBacktest(PF);
+      const cond = [
+        ['nivel S/R x' + (PF.SR_TOUCHES || 3) + '+',
+          !!(nivel && nivel.touches >= (PF.SR_TOUCHES || 3))],
+        ['fakeout detectado', !!trap.fakeout],
+        ['senal contrarian (contra la masa)', contrarian],
+        ['confluencia ' + (PF.CONFLUENCIA || 8) + '/12',
+          o.agree >= (PF.CONFLUENCIA || 8)],
+        ['backtest contrarian >' + (PF.BACKTEST_MIN_ACC || 65) + '%' + bt.nota,
+          bt.ok],
+        ['trap index <' + (PF.TRAP_MAX || 70) + '%',
+          trap.trapIndex < (PF.TRAP_MAX || 70)]
+      ];
+      cond.forEach(c => { if (!c[1]) faltan.push(c[0]); });
+      if (!faltan.length) {
+        perfecto = true;
+        score = Math.max(score + (PF.BONUS != null ? PF.BONUS : 15),
+                         PF.MIN_SCORE != null ? PF.MIN_SCORE : 90);
+        lines.push('SETUP CONTRARIAN PERFECTO: las 6 condiciones se cumplen, ' +
+                   '+' + (PF.BONUS != null ? PF.BONUS : 15) + ' y piso ' +
+                   (PF.MIN_SCORE != null ? PF.MIN_SCORE : 90));
+      } else if (contrarian) {
+        // Solo se explica cuando ya hay algo contrarian en juego:
+        // en una senal normal esta lista seria ruido constante.
+        lines.push('Para PERFECTO (90+) falta: ' + faltan.join(', '));
+      }
+    }
+
     score = Math.max(0, Math.min(97, score));
     return {
       score: score,
+      perfecto: perfecto,
+      faltanPerfecto: faltan,
       contrarian: contrarian,
       bloqueoMasa: bloqueoMasa,
       trapIndex: trap.trapIndex,
@@ -111,6 +154,25 @@ POScannerPRO.ContrarianScoring = (() => {
       esObvia: crowd.esObvia,
       lines: lines
     };
+  }
+
+  // Condicion de backtest del setup contrarian. Usa el acierto
+  // REAL de las senales CONTRARIAN ya vencidas de este bot.
+  // Sin muestra suficiente la condicion NO se da por cumplida
+  // (afirmar un 65% con 2 senales seria inventar); pon
+  // PERFECT.REQUIRE_BACKTEST en false para no exigirla.
+  function perfBacktest(PF) {
+    if (PF.REQUIRE_BACKTEST === false) return { ok: true, nota: ' (no exigido)' };
+    const minN = PF.BACKTEST_MIN_N != null ? PF.BACKTEST_MIN_N : 10;
+    const minAcc = PF.BACKTEST_MIN_ACC != null ? PF.BACKTEST_MIN_ACC : 65;
+    try {
+      const H = POScannerPRO.History;
+      const t = H && H.byTag ? H.byTag('CONTRARIAN') : { n: 0, acc: null };
+      if (t.n < minN) {
+        return { ok: false, nota: ' (muestra ' + t.n + '/' + minN + ')' };
+      }
+      return { ok: t.acc > minAcc, nota: ' (' + t.acc + '% en ' + t.n + ')' };
+    } catch (e) { return { ok: false, nota: ' (sin historial)' }; }
   }
 
   return { adjust: adjust };

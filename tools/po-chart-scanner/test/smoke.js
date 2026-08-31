@@ -21,7 +21,7 @@ vm.createContext(sandbox);
 
 const MODS = ['config','indicators','patternDetector','supportResistance',
   'trendAnalyzer','candleArchive','trapDetector','orderFlowDetector',
-  'crowdBehavior','contrarianScoring','scoring','history'];
+  'crowdBehavior','contrarianScoring','scoring','history','panel'];
 for (const m of MODS) {
   const p = path.join(BASE, 'src', m + '.js');
   vm.runInContext(fs.readFileSync(p, 'utf8'), sandbox, { filename: m + '.js' });
@@ -77,9 +77,12 @@ for (const [nombre, velas] of Object.entries(casos)) {
     ['score numerico', Number.isFinite(r.score)],
     ['dir valido', r.dir === 'CALL' || r.dir === 'PUT'],
     ['score <= rawScore + bonus contrarian', r.score <= r.rawScore + P.CONFIG.CONTRARIAN.FAKEOUT_BONUS],
+    // el techo estructural solo BAJA; un bloqueo por confluencia no techa,
+    // asi que ahi el score si puede superar rawScore (bonus contrarian)
     ['bonus por encima del techo SOLO si es contrarian', r.score <= r.rawScore || r.contrarian],
     ['trapIndex 0..100', d.trapIndex >= 0 && d.trapIndex <= 100],
-    ['bloqueada => no confirmada como entrada util', !(r.blocked && r.score > r.rawScore)],
+    ['bloqueo estructural nunca sube el score',
+      !(r.blocked && r.blockReason === 'estructura' && r.score > r.rawScore)],
     // v4.3.1: los avisos contrarian van en contraNote, NUNCA en warning
     // (el panel pinta warning como "CONTRA-ESTRUCTURA - Riesgo Alto")
     ['warning limpio de avisos contrarian',
@@ -118,6 +121,93 @@ const st = P.History.stats();
 console.log('  historial:', JSON.stringify(st), 'byTag CONTRARIAN:',
   JSON.stringify(P.History.byTag('CONTRARIAN')));
 if (st.wins !== 1) { console.log('  !! el WIN/LOSS con precio real no se evaluo bien'); fallos++; }
+
+// ============================================================
+// v4.4: umbral de confluencia, etiquetas de accion, setup perfecto
+// ============================================================
+console.log('\n=== v4.4 UMBRAL DE CONFLUENCIA ===');
+const F = P.CONFIG.FILTER;
+for (const [nombre, velas] of Object.entries(casos)) {
+  const r = P.Scoring.evaluate(velas, {});
+  const need = r.perfecto ? F.MIN_CONFLUENCIA_PERFECTO : F.MIN_CONFLUENCIA;
+  const conf = parseInt(r.detail.confluencia, 10);
+  const debeBloquear = conf < need;
+  const ok = debeBloquear ? r.blocked : true;   // por debajo del umbral -> bloqueada
+  console.log('  ' + nombre.slice(0, 34).padEnd(34) +
+    ' conf=' + r.detail.confluencia + ' need=' + need +
+    ' blocked=' + r.blocked + (r.blockReason ? '(' + r.blockReason + ')' : '') +
+    (ok ? '  OK' : '  FALLO'));
+  if (!ok) fallos++;
+}
+
+console.log('\n=== v4.4 ETIQUETAS DE ACCION ===');
+const esperado = [
+  [95, false, false, 'OPERAR'],
+  [90, false, false, 'OPERAR'],
+  [89, false, false, 'OPERAR SI CONTRARIAN'],
+  [87, true,  false, 'OPERAR (CONTRARIAN)'],
+  [84, false, false, 'RIESGO MEDIO'],
+  [75, false, false, 'RIESGO MEDIO'],
+  [74, false, false, 'NO OPERAR'],
+  [60, false, false, 'NO OPERAR'],
+  [59, false, false, 'NO OPERAR - SCORE BAJO'],
+  [95, false, true,  'BLOQUEADA - NO OPERAR']   // bloqueada manda sobre el score
+];
+esperado.forEach(([score, contrarian, blocked, txt]) => {
+  const a = P.Panel.actionLabel({ score, contrarian, blocked });
+  const ok = a.text === txt;
+  console.log('  score ' + String(score).padStart(3) +
+    (blocked ? ' bloqueada' : contrarian ? ' contrarian' : '          ') +
+    ' -> ' + a.text.padEnd(24) + '[' + a.cls + ']' + (ok ? ' OK' : ' FALLO: esperaba ' + txt));
+  if (!ok) fallos++;
+});
+
+console.log('\n=== v4.4 SETUP CONTRARIAN PERFECTO ===');
+// Sin muestra de senales CONTRARIAN el backtest NO se da por
+// cumplido: la condicion debe faltar y decirlo, no inventarse.
+const sinMuestra = P.ContrarianScoring.adjust({
+  dir: 'PUT', score: 80, agree: 9, candles: casos['RANGO LATERAL (oscila en canal)'],
+  trend: { trend: 'FLAT', strength: 0 },
+  sr: P.SupportResistance.proximity(casos['RANGO LATERAL (oscila en canal)']),
+  patterns: [], blocked: false
+});
+const pideBacktest = sinMuestra.faltanPerfecto.some(f => /backtest/.test(f));
+console.log('  sin muestra -> perfecto=' + sinMuestra.perfecto +
+  ' | falta: ' + sinMuestra.faltanPerfecto.join(', '));
+if (sinMuestra.perfecto) { console.log('  !! marco PERFECTO sin muestra de backtest'); fallos++; }
+if (!pideBacktest) { console.log('  !! no reporta la condicion de backtest como faltante'); fallos++; }
+
+// Con REQUIRE_BACKTEST desactivado, un setup que cumple el resto
+// SI debe llegar a 90+ con el bonus.
+P.CONFIG.PERFECT.REQUIRE_BACKTEST = false;
+const velasFk = casos['CAIDA + GIRO FINAL (reversion alcista)'];
+const srFk = P.SupportResistance.proximity(velasFk);
+const conBonus = P.ContrarianScoring.adjust({
+  dir: 'PUT', score: 80, agree: 9, candles: velasFk,
+  trend: { trend: 'FLAT', strength: 0 }, sr: srFk, patterns: [], blocked: false
+});
+console.log('  sin exigir backtest -> perfecto=' + conBonus.perfecto +
+  ' score 80 -> ' + conBonus.score + ' | falta: ' +
+  (conBonus.faltanPerfecto.join(', ') || 'nada'));
+if (conBonus.perfecto && conBonus.score < P.CONFIG.PERFECT.MIN_SCORE) {
+  console.log('  !! perfecto pero no llego al piso de 90'); fallos++;
+}
+if (!conBonus.perfecto && !conBonus.faltanPerfecto.length) {
+  console.log('  !! no perfecto pero no dice que falta'); fallos++;
+}
+P.CONFIG.PERFECT.REQUIRE_BACKTEST = true;
+
+console.log('\n=== v4.4 BACKTEST SEPARADO ===');
+P.History.add({ asset: 'X', dir: 'PUT', score: 70, quality: 'MEDIUM',
+  refPrice: 2, refReal: true, refT: Date.now() - 61000, tfSec: 60,
+  deadline: Date.now() - 1000, tag: 'NORMAL' });
+P.History.update(3);                    // subio -> PUT pierde
+const bts = P.History.backtests();
+console.log('  ' + JSON.stringify(bts));
+if (bts.contrarian.n !== 1 || bts.normal.n !== 1 || bts.total.n !== 2) {
+  console.log('  !! las tres categorias no cuadran'); fallos++;
+}
+if (bts.total.acc !== 50) { console.log('  !! total deberia ser 50%'); fallos++; }
 
 console.log('\n===== ' + (fallos ? fallos + ' FALLOS' : 'TODAS LAS COMPROBACIONES OK') + ' =====');
 process.exit(fallos ? 1 : 0);

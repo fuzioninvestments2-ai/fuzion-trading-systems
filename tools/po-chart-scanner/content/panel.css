@@ -44,6 +44,20 @@
 /* Capa de comentarios sobre el grafico (flechas, lineas S/R) */
 #po-pro-chart-svg { position: fixed; inset: 0; z-index: 999997;
   pointer-events: none; }
+/* v4.4: ETIQUETA DE ACCION por rango de score. Es la linea que
+   decide por ti: verde brillante = operar, rojo = bloqueada. */
+.pop-action { display: block; text-align: center; font-weight: 800;
+  font-size: 13px; letter-spacing: .5px; border-radius: 8px;
+  padding: 5px 4px; margin: 0 0 6px; border: 1px solid transparent; }
+.pop-act-operar   { background: #00ff88; color: #04150c; border-color: #00ff88;
+                    box-shadow: 0 0 12px rgba(0,255,136,.55); }
+.pop-act-cond     { background: #0f3d28; color: #46e39b; border-color: #46e39b; }
+.pop-act-medio    { background: #3a3312; color: #ffd23f; border-color: #ffd23f; }
+.pop-act-no       { background: #3d2410; color: #ff9d3f; border-color: #ff9d3f; }
+.pop-act-bloqueada{ background: #3d1414; color: #ff5c5c; border-color: #ff5c5c; }
+/* v4.4: aviso de senal debil bajo la etiqueta */
+.pop-weak { color: #ffd23f; font-size: 10px; text-align: center;
+  margin: -2px 0 6px; }
 /* v4.2: score de una senal BLOQUEADA (ESPERAR) se muestra tachado */
 .pop-score.pop-blocked { text-decoration: line-through; color: #ffd23f; opacity: .8; }
 /* [PO-PRO-OK:panel.css] */

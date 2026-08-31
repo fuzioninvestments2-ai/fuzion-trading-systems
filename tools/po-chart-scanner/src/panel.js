@@ -63,6 +63,8 @@ POScannerPRO.Panel = (() => {
       '<span class="pop-dir" data-f="dir">-</span>' +
       '<span class="pop-score" data-f="score">-/100</span>' +
     '</div>' +
+    '<div class="pop-action" data-f="action"></div>' +
+    '<div class="pop-weak" data-f="weak"></div>' +
     '<div class="pop-quality" data-f="quality"></div>' +
     '<div class="pop-detail" data-f="detail">Pulsa ESCANEAR para analizar el grafico.</div>' +
     '<div class="pop-btns">' +
@@ -300,6 +302,26 @@ POScannerPRO.Panel = (() => {
     };
   }
 
+  // v4.4 ETIQUETA DE ACCION: traduce el score a una orden clara
+  // para no tener que decidirlo mentalmente. Una senal bloqueada
+  // es BLOQUEADA sea cual sea su puntaje.
+  function actionLabel(r) {
+    const F = CFG.FILTER || {};
+    const OP = F.OPERAR != null ? F.OPERAR : 90;
+    const OPC = F.OPERAR_CONTRARIAN != null ? F.OPERAR_CONTRARIAN : 85;
+    const MED = F.RIESGO_MEDIO != null ? F.RIESGO_MEDIO : 75;
+    const NO = F.NO_OPERAR != null ? F.NO_OPERAR : 60;
+    if (r.blocked) return { text: 'BLOQUEADA - NO OPERAR', cls: 'pop-act-bloqueada' };
+    const s = r.score;
+    if (s >= OP)  return { text: 'OPERAR', cls: 'pop-act-operar' };
+    if (s >= OPC) return { text: r.contrarian ? 'OPERAR (CONTRARIAN)'
+                                              : 'OPERAR SI CONTRARIAN',
+                           cls: 'pop-act-cond' };
+    if (s >= MED) return { text: 'RIESGO MEDIO', cls: 'pop-act-medio' };
+    if (s >= NO)  return { text: 'NO OPERAR', cls: 'pop-act-no' };
+    return { text: 'NO OPERAR - SCORE BAJO', cls: 'pop-act-bloqueada' };
+  }
+
   // Resultado de un escaneo (patrones, S/R, tendencia + entrada sugerida)
   function showResult(r) {
     set('candles', r.detail.velas);
@@ -317,6 +339,8 @@ POScannerPRO.Panel = (() => {
       set('score', r.rawScore + '/100');
       set('quality', r.blockReason === 'masa'
         ? '!! BLOQUEADO: MASA OBVIA - TRAMPA PROBABLE !!'
+        : r.blockReason === 'confluencia'
+        ? '!! BLOQUEADA: CONFLUENCIA INSUFICIENTE !!'
         : '!! SENAL BLOQUEADA - CONTRA-ESTRUCTURA !!');
     } else {
       set('dir', r.dir);
@@ -333,6 +357,20 @@ POScannerPRO.Panel = (() => {
       : (r.dir === 'CALL' ? 'pop-call' : 'pop-put'));
     const sEl = root.querySelector('[data-f="score"]');
     if (sEl) sEl.className = 'pop-score' + (blocked ? ' pop-blocked' : '');
+    // v4.4: ETIQUETA DE ACCION + aviso de senal debil
+    const act = actionLabel(r);
+    set('action', act.text);
+    const aEl = root.querySelector('[data-f="action"]');
+    if (aEl) aEl.className = 'pop-action ' + act.cls;
+    const F4 = CFG.FILTER || {};
+    const weakWarn = F4.WEAK_WARN != null ? F4.WEAK_WARN : 85;
+    const entryMin = F4.ENTRY_MIN != null ? F4.ENTRY_MIN : 75;
+    set('weak', blocked ? ''
+      : (r.score < entryMin
+          ? 'Sin entrada en el grafico: score bajo ' + entryMin
+          : (r.score < weakWarn
+              ? 'Senal debil, esperar mejor setup'
+              : '')));
     const d = r.detail;
     // Acierto historico real de senales de ESTA calidad (aprendizaje)
     let histLine = '';
@@ -356,8 +394,17 @@ POScannerPRO.Panel = (() => {
           ? '[X] BLOQUEADO: MASA OBVIA. La senal ' + r.dir + ' ' +
             r.rawScore + '/100 es la que TODOS ven y hay trampa del ' +
             'broker en contra (fakeout). NO entrar.\n'
+          : r.blockReason === 'confluencia'
+          ? '[X] BLOQUEADA: solo ' + (d.confluencia || '-') + ' fuentes ' +
+            'coinciden. El ' + r.score + '% mide el reparto de votos, no ' +
+            'cuantas fuentes votaron: con tan pocas es ruido. NO entrar.\n'
           : '[X] BLOQUEADA: la votacion interna decia ' + r.dir + ' ' +
             r.rawScore + '/100, pero va CONTRA la estructura del mercado. NO entrar.\n')
+        : '') +
+      (r.perfecto && !blocked
+        ? '[*] SETUP CONTRARIAN PERFECTO: las 6 condiciones del metodo ' +
+          'se cumplen (nivel fuerte, fakeout, contra la masa, confluencia, ' +
+          'backtest y trap bajo).\n'
         : '') +
       (r.contrarian && !blocked
         ? '[!] SENAL CONTRARIAN: fakeout a favor, se opera CONTRA la ruptura falsa.\n'
@@ -381,10 +428,15 @@ POScannerPRO.Panel = (() => {
       'Votos CALL: ' + d.votosCALL + ' | Votos PUT: ' + d.votosPUT +
       ' | Confluencia: ' + (d.confluencia || '-') + '\n' +
       'Contexto MTF: ' + (d.contexto || 'sin datos') + btLine + '\n' +
+      btSplit() +
       (blocked
-        ? 'ESPERAR: senal bloqueada por contra-estructura, sin entrada'
-        : (r.confirmed
+        ? 'ESPERAR: senal bloqueada (' + (r.blockReason || 'estructura') +
+          '), sin entrada'
+        : (r.confirmed && r.score >= entryMin
           ? 'Entrada: al cierre de esta vela | Expira en: ' + exp.text + exp.warn
+          : r.confirmed
+          ? 'Senal debil (' + r.score + ' < ' + entryMin +
+            '): sin flecha de entrada, esperar mejor setup'
           : 'Espera: puntaje bajo, sin entrada')) + histLine);
     // Actualizar celda ACIERTO con las estadisticas del historial
     try {
@@ -392,6 +444,19 @@ POScannerPRO.Panel = (() => {
       set('acc', s.total ? s.acc + '% (' + s.wins + 'W/' + s.losses + 'L' +
         (s.ties ? '/' + s.ties + 'E' : '') + ')' : '-');
     } catch (e) { /* historial aun no listo */ }
+  }
+
+  // v4.4: BACKTEST SEPARADO contrarian / normal / total. El
+  // promedio unico escondia que las NORMAL arrastran al conjunto.
+  function btSplit() {
+    try {
+      const b = POScannerPRO.History.backtests();
+      const f = x => x.n ? x.acc + '% en ' + x.n : 'sin muestra';
+      if (!b.total.n) return '';
+      return 'Acierto real -> CONTRARIAN: ' + f(b.contrarian) +
+             ' | NORMAL: ' + f(b.normal) +
+             ' | TOTAL: ' + f(b.total) + '\n';
+    } catch (e) { return ''; }
   }
 
   // Vista del HISTORIAL con estadisticas reales
@@ -410,12 +475,14 @@ POScannerPRO.Panel = (() => {
     // v4.3: historial separado contrarian vs normal
     let tagLine = '';
     try {
-      const tc = H.byTag('CONTRARIAN'), tn = H.byTag('NORMAL');
-      if (tc.n + tn.n > 0) {
-        tagLine = '\nPor tipo -> Contrarian: ' + (tc.n ? tc.acc + '% en ' + tc.n : 'sin datos') +
-                  ' | Normal: ' + (tn.n ? tn.acc + '% en ' + tn.n : 'sin datos');
+      const b = H.backtests();
+      const f = x => x.n ? x.acc + '% en ' + x.n + ' senales' : 'sin muestra';
+      if (b.total.n) {
+        tagLine = '\nBACKTEST CONTRARIAN: ' + f(b.contrarian) +
+                  '\nBacktest NORMAL: ' + f(b.normal) +
+                  '\nBacktest TOTAL: ' + f(b.total);
       }
-    } catch (e) { /* historial sin byTag aun */ }
+    } catch (e) { /* historial sin backtests aun */ }
     set('detail',
       'Acierto: ' + s.acc + '% (' + s.wins + 'W/' + s.losses + 'L' +
       (s.ties ? '/' + s.ties + 'E' : '') + ') | Pendientes: ' +
@@ -452,6 +519,7 @@ POScannerPRO.Panel = (() => {
   }
 
   return { mount: mount, set: set, showResult: showResult, setAuto: setAuto,
+           actionLabel: actionLabel,
            showHistory: showHistory, setVisible: setVisible,
            getTfSec: () => tfSec, getTradeSec: () => tradeSec,
            expiryInfo: expiryInfo, findCurrentPrice: findCurrentPrice,

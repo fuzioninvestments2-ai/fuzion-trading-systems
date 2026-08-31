@@ -21,6 +21,9 @@
 //   3) Si ninguna fuente es confiable: la senal espera; pasado
 //      el tiempo de gracia se marca SIN DATO (no cuenta).
 //   JAMAS se evalua con pixeles-Y crudos de pantalla.
+// v4.4: backtests() devuelve el acierto REAL separado en tres
+//   categorias (contrarian / normal / total): el promedio unico
+//   escondia que las NORMAL arrastran a las CONTRARIAN.
 // v4.3: cada senal se etiqueta tag='CONTRARIAN'|'NORMAL' y con
 //   obvia=true/false (senal de masa) -> estadisticas separadas
 //   (byTag) y crowd loss rate real (crowdBehavior).
@@ -161,12 +164,30 @@ POScannerPRO.History = (() => {
     return { n: its.length, acc: its.length ? Math.round(w / its.length * 100) : null };
   }
 
+  // v4.4: BACKTEST SEPARADO en tres categorias. "Backtest" aqui
+  // significa el acierto REAL de las senales que este bot emitio
+  // y que ya vencieron; no es una simulacion sobre el archivo de
+  // velas (eso lo hace CandleArchive.backtest). Separarlos importa
+  // porque el promedio total lo arrastran las senales NORMAL.
+  function backtests() {
+    const c = byTag('CONTRARIAN');
+    const n = byTag('NORMAL');
+    const done = items.filter(i => i.result === 'WIN' || i.result === 'LOSS');
+    const w = done.filter(i => i.result === 'WIN').length;
+    return {
+      contrarian: c,
+      normal: n,
+      total: { n: done.length,
+               acc: done.length ? Math.round(w / done.length * 100) : null }
+    };
+  }
+
   function clear() { items = []; save(); }
 
   function lastItems(n) { return items.slice(-(n || 8)).reverse(); }
 
   return { add: add, update: update, stats: stats, byQuality: byQuality,
-           byTag: byTag,
+           byTag: byTag, backtests: backtests,
            clear: clear, lastItems: lastItems, ready: true };
 })();
 // [PO-PRO-OK:history]

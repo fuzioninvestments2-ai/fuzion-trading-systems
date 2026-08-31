@@ -101,16 +101,29 @@ POScannerPRO.ChartOverlay = (() => {
     // --- 2) LINEA DE ENTRADA + 3) FLECHA ---
     // v4.2: si la senal esta BLOQUEADA (contra estructura) NO se
     // dibuja entrada ni flecha: solo el aviso ESPERAR en amarillo.
+    // v4.4: lo mismo si el score no llega a FILTER.ENTRY_MIN.
     const cx = X(last.x);
-    if (result.blocked) {
+    // v4.4: la flecha de entrada solo se dibuja si el score llega
+    // a FILTER.ENTRY_MIN. Una senal debil ya no invita a entrar
+    // desde el grafico: se anota en amarillo y se queda ahi.
+    const F = CFG.FILTER || {};
+    const entryMin = F.ENTRY_MIN != null ? F.ENTRY_MIN : 75;
+    const sinEntrada = result.blocked || result.score < entryMin;
+    if (sinEntrada) {
       const tb = el('text', {
         x: cx - 12, y: Y(last.high) - 36, fill: '#ffd23f',
         'font-size': 13, 'font-weight': 'bold', 'text-anchor': 'end',
         stroke: '#04150c', 'stroke-width': 0.4
       });
-      tb.textContent = result.blockReason === 'masa'
+      tb.textContent = !result.blocked
+        ? 'SIN ENTRADA: ' + result.dir + ' ' + result.score + '% (minimo ' +
+          entryMin + ') - senal debil, esperar mejor setup'
+        : result.blockReason === 'masa'
         ? 'ESPERAR: ' + result.dir + ' BLOQUEADO - masa obvia + trampa (' +
           result.rawScore + '% bloqueada)'
+        : result.blockReason === 'confluencia'
+        ? 'ESPERAR: ' + result.dir + ' BLOQUEADO - confluencia insuficiente (' +
+          (result.detail ? result.detail.confluencia : '-') + ')'
         : 'ESPERAR: ' + result.dir + ' contra estructura (' +
           result.rawScore + '% bloqueada)';
       s.appendChild(tb);
@@ -131,7 +144,7 @@ POScannerPRO.ChartOverlay = (() => {
         stroke: '#04150c', 'stroke-width': 0.4
       });
       te.textContent = 'ENTRADA ' + result.dir + ' ' + result.score + '%' +
-        (result.contrarian ? ' [CONTRARIAN]' : '') +
+        (result.perfecto ? ' [PERFECTO]' : result.contrarian ? ' [CONTRARIAN]' : '') +
         (result.expiryText ? ' | ' + result.expiryText : '');
       s.appendChild(te);
 

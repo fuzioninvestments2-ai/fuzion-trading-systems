@@ -53,13 +53,28 @@
 //   se mezclan en warning (una senal CONTRARIAN buena salia
 //   etiquetada "CONTRA-ESTRUCTURA - Riesgo Alto"); y las
 //   senales ya bloqueadas no reciben castigos dobles.
+// v4.4.0 OPTIMIZACION DE SCORING Y FILTRADO:
+//   - SETUP CONTRARIAN PERFECTO: si se cumplen las 6 condiciones
+//     del doctorado (nivel x3+, fakeout, contrarian, confluencia
+//     8/12, backtest contrarian >65% con muestra, trap <70%) el
+//     score recibe +15 y un piso de 90. El panel dice que
+//     condicion falta cuando no llega.
+//   - UMBRAL DE CONFLUENCIA: menos de 7/12 fuentes = BLOQUEADA
+//     (6/12 si el setup contrarian es perfecto).
+//   - ETIQUETA DE ACCION por rango de score: OPERAR / OPERAR SI
+//     CONTRARIAN / RIESGO MEDIO / NO OPERAR / BLOQUEADO. Debajo
+//     de ENTRY_MIN el grafico NO dibuja flecha de entrada.
+//   - BACKTEST SEPARADO: contrarian / normal / total.
+//   OJO: subir el score de un setup no lo hace mas acertado.
+//   Lo que cambia el resultado es operar menos y mejor: mide
+//   el backtest CONTRARIAN antes de dar por buena la mejora.
 // ============================================================
 window.POScannerPRO = window.POScannerPRO || {};
 POScannerPRO._mods = POScannerPRO._mods || [];
 POScannerPRO._mods.push('config');
 
 POScannerPRO.CONFIG = {
-  VERSION: '4.3.1',
+  VERSION: '4.4.0',
 
   // --- Deteccion de color de velas (HSV, robusto a temas) ---
   // v3.5.6: verde LIMA real de las velas PO (medido en video:
@@ -137,6 +152,38 @@ POScannerPRO.CONFIG = {
     OBVIO_PENALTY: 12,     // castigo por senal obvia (masa)
     MASA_BLOCK: true,      // bloquear masa obvia + trampa en contra
     FLOW_PENALTY: 8        // order flow inferido en contra
+  },
+
+  // --- v4.4 FILTRADO AUTOMATICO POR SCORE ---
+  // Rangos de la etiqueta de accion que pinta el panel. Cambia
+  // los numeros si quieres ser mas o menos exigente.
+  FILTER: {
+    OPERAR: 90,              // 90-100: OPERAR (verde brillante)
+    OPERAR_CONTRARIAN: 85,   // 85-89: OPERAR SI CONTRARIAN (verde)
+    RIESGO_MEDIO: 75,        // 75-84: RIESGO MEDIO (amarillo)
+    NO_OPERAR: 60,           // 60-74: NO OPERAR (naranja); <60 rojo
+    ENTRY_MIN: 75,           // debajo: el grafico NO dibuja entrada
+    WEAK_WARN: 85,           // debajo: aviso "senal debil"
+    MIN_CONFLUENCIA: 7,      // <7/12 fuentes = BLOQUEADA
+    MIN_CONFLUENCIA_PERFECTO: 6  // excepcion para contrarian perfecto
+  },
+
+  // --- v4.4 SETUP CONTRARIAN PERFECTO (regla del doctorado) ---
+  // Las 6 condiciones deben cumplirse TODAS. La del backtest usa
+  // el acierto real de TUS senales CONTRARIAN pasadas (history):
+  // no existe un backtest por patron, y inventarlo seria mentir.
+  // Pon REQUIRE_BACKTEST en false si prefieres no exigirla
+  // mientras acumulas muestra.
+  PERFECT: {
+    ENABLED: true,
+    SR_TOUCHES: 3,           // nivel del fakeout con 3+ toques
+    CONFLUENCIA: 8,          // 8/12 fuentes de voto
+    TRAP_MAX: 70,            // trap index por debajo de 70%
+    BONUS: 15,               // puntos extra si se cumple todo
+    MIN_SCORE: 90,           // y piso de 90
+    REQUIRE_BACKTEST: true,  // exigir la condicion del backtest
+    BACKTEST_MIN_N: 10,      // muestra minima de senales contrarian
+    BACKTEST_MIN_ACC: 65     // acierto minimo de esa muestra (%)
   },
 
   // --- Indicadores activos (toggles) ---
