@@ -83,7 +83,7 @@ POScannerPRO._mods = POScannerPRO._mods || [];
 POScannerPRO._mods.push('config');
 
 POScannerPRO.CONFIG = {
-  VERSION: '4.4.1',
+  VERSION: '4.4.2',
 
   // --- Deteccion de color de velas (HSV, robusto a temas) ---
   // v3.5.6: verde LIMA real de las velas PO (medido en video:
@@ -173,8 +173,9 @@ POScannerPRO.CONFIG = {
     NO_OPERAR: 60,           // 60-74: NO OPERAR (naranja); <60 rojo
     ENTRY_MIN: 75,           // debajo: el grafico NO dibuja entrada
     WEAK_WARN: 85,           // debajo: aviso "senal debil"
-    MIN_CONFLUENCIA: 7,      // <7/12 fuentes = BLOQUEADA
-    MIN_CONFLUENCIA_PERFECTO: 6  // excepcion para contrarian perfecto
+    MIN_CONFLUENCIA: 6,      // <6/12 fuentes = BLOQUEADA (v4.4.2: era 7,
+                             // dejaba fuera senales validas de 6/12)
+    MIN_CONFLUENCIA_PERFECTO: 5  // excepcion para contrarian perfecto
   },
 
   // --- v4.4 SETUP CONTRARIAN PERFECTO (regla del doctorado) ---
@@ -191,8 +192,8 @@ POScannerPRO.CONFIG = {
     BONUS: 15,               // puntos extra si se cumple todo
     MIN_SCORE: 90,           // y piso de 90
     REQUIRE_BACKTEST: true,  // exigir la condicion del backtest
-    BACKTEST_MIN_N: 10,      // muestra minima de senales contrarian
-    BACKTEST_MIN_ACC: 65     // acierto minimo de esa muestra (%)
+    BACKTEST_MIN_N: 5,       // v4.4.2: muestra minima (era 10)
+    BACKTEST_MIN_ACC: 55     // v4.4.2: acierto minimo % (era 65)
   },
 
   // --- Indicadores activos (toggles) ---

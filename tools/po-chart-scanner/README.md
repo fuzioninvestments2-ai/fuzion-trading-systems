@@ -1,4 +1,4 @@
-# PO Chart Scanner PRO v4.4.1 — OPTIMIZACION DE SCORING Y FILTRADO
+# PO Chart Scanner PRO v4.4.2 — OPTIMIZACION DE SCORING Y FILTRADO
 
 Extension de Chrome (Manifest V3) que lee el grafico de Pocket Option **por
 pixeles** y produce una senal CALL/PUT puntuada. No opera sola: `AUTOTRADE`
@@ -55,7 +55,12 @@ node tools/po-chart-scanner/test/smoke.js tools/po-chart-scanner
 - v4.4: el umbral de confluencia bloquea lo que debe, las diez etiquetas de
   accion mapean al rango correcto, el setup perfecto no se marca sin muestra
   de backtest (y dice que condicion falta), y las tres categorias de backtest
-  cuadran.
+  cuadran;
+- v4.4.1: nueve casos de seleccion del precio del eje sobre un DOM simulado;
+- v4.4.2: la calibracion del eje traduce pixeles a precio con error nulo,
+  rechaza un eje incoherente o invertido en vez de inventar un numero, las
+  senales de 6/12 se desbloquean, un setup contrarian perfecto completo llega
+  a 90+ (97 en la prueba) y las legacy quedan separadas.
 
 ## Arquitectura
 
@@ -183,6 +188,44 @@ senales saldrian EMPATE.
 Si aun asi devuelve `null`, `diagPrice()` dice en cual de los tres filtros se
 cae, y con esa salida se puede afinar el selector.
 
+### Los tres metodos, en orden (v4.4.2)
+
+La linea de estado del panel termina ahora en `| precio: <metodo> <valor>`:
+
+1. **`eje`** — la etiqueta resaltada del eje derecho, leida directamente.
+2. **`escala`** — si esa etiqueta no aparece, se calibra el eje con sus
+   **etiquetas fijas**: cada una es un par (pixel Y, precio), y con tres o mas
+   se ajusta por minimos cuadrados la recta `precio = a*y + b`. Con ella se
+   traduce el pixel de cierre de la ultima vela a un precio real. La escala de
+   un grafico es lineal por construccion, asi que el ajuste es exacto salvo el
+   redondeo de las etiquetas. Se exige `R2 >= 0.995` y pendiente negativa (en
+   pantalla, bajar de Y = subir de precio); si no cumple devuelve `null` en vez
+   de un numero inventado.
+3. **`archivo`** — ultimo recurso: comparar cierres en pixeles del archivo.
+   **No es un precio**, por eso el panel no imprime numero. Es el metodo que
+   producia los empates de mas.
+
+Un cuarto metodo que se descarto: leer el estado interno de Pocket Option
+(`window.__store__` y similares). Los content scripts de Chrome corren en un
+**mundo aislado** y no ven las variables JS de la pagina; haria falta un
+script en mundo MAIN declarado en el manifest y conocer la estructura interna
+de PO. Sin poder verificar que el numero encontrado es el precio, alimentar
+con el el WIN/LOSS seria repetir el bug que esta version arregla.
+
+### Las senales antiguas no se pueden recalcular
+
+Las senales guardadas antes de este arreglo se juzgaron comparando pixeles del
+archivo. El precio real de aquellos momentos **no existe en ninguna parte** —
+PO no lo expone hacia atras — asi que no hay forma de saber cuantos de aquellos
+EMPATE fueron en realidad WIN o LOSS. Al cargar el historial, esas entradas se
+marcan `refMethod: 'legacy'` y quedan **fuera** de `byQuality`, `byTag` y
+`backtests()`; se reportan aparte para que se vea cuantas son y cuantas
+empataron. A partir de aqui las estadisticas miden limpio.
+
+Los empates no desapareceran del todo: con una binaria de 30s el precio a veces
+cierra exactamente en el de entrada y PO devuelve la apuesta. Con precios
+reales de cinco decimales pasan a ser raros, no cero.
+
 ## Cambios respecto al script original pegado
 
 En `scoring.js`, fuente 5 (histograma MACD), la rama bajista sumaba el punto a
@@ -201,6 +244,18 @@ la confluencia CALL y desinflaba la PUT en cualquier grafico con MACD bajista.
 se habia construido sobre el script original y traia este bug otra vez. Al
 integrarla se conservo la correccion. Por eso el `.ps1` se genera desde el
 repo y no al reves.
+
+### v4.4.2
+
+- Segundo metodo de precio: `axisScale()`, `priceFromY()` y
+  `priceFromCandle()` calibran el eje y traducen pixeles a precio real.
+  `injector.js` encadena los tres metodos y el estado dice cual uso.
+- `history.js`: las senales medidas con el metodo viejo se marcan `legacy` al
+  cargar y salen de las estadisticas; se reportan aparte.
+- `FILTER.MIN_CONFLUENCIA` baja de 7 a **6** (y de 6 a **5** para el setup
+  perfecto): una senal de 6/12 como la de AUD/CHF vuelve a poder desbloquearse.
+- `PERFECT.BACKTEST_MIN_ACC` baja de 65% a **55%** y `BACKTEST_MIN_N` de 10 a
+  **5**, para que la condicion del backtest se pueda cumplir pronto.
 
 ### v4.4.1
 

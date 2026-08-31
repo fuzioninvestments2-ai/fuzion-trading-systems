@@ -194,7 +194,21 @@ POScannerPRO._mods.push('injector');
     // v4.0: el AVISO PREVIO evalua el historial vencido pero NO
     // registra la senal (la vela en formacion no es definitiva);
     // solo 'final' y 'manual' escriben en el historial.
-    const domPrice = P.Panel.findCurrentPrice ? P.Panel.findCurrentPrice() : null;
+    // v4.4.2 CADENA DE METODOS PARA EL PRECIO REAL:
+    //   1) 'eje'     etiqueta resaltada del eje (lectura directa)
+    //   2) 'escala'  calibrar el eje con sus etiquetas fijas y
+    //                traducir el pixel de cierre de la ultima vela
+    //   3) 'archivo' ultimo recurso: comparar en pixeles del
+    //                archivo (history.js). NO es un precio: no se
+    //                puede imprimir un numero, y por eso el panel
+    //                dice "archivo" en vez de inventar uno.
+    let domPrice = P.Panel.findCurrentPrice ? P.Panel.findCurrentPrice() : null;
+    let priceSrc = domPrice != null ? 'eje' : 'archivo';
+    if (domPrice == null && P.Panel.priceFromCandle) {
+      const px = P.Panel.priceFromCandle(candles[candles.length - 1],
+                                         P.CanvasReader.lastStats.conv);
+      if (px != null) { domPrice = px; priceSrc = 'escala'; }
+    }
     P.History.update(domPrice);
     if (mode !== 'pre' && result.confirmed && !weak) {
       P.History.add({
@@ -203,7 +217,8 @@ POScannerPRO._mods.push('injector');
         score: result.score,
         quality: result.quality,
         refPrice: domPrice,             // precio REAL (o null)
-        refReal: !!domPrice,            // true = comparacion directa
+        refReal: domPrice != null,      // true = comparacion directa
+        refMethod: priceSrc,            // v4.4.2: eje | escala | archivo
         refT: Date.now(),               // para la escala del archivo
         tfSec: tfSec,
         deadline: Date.now() + exp.deadlineMs,  // se evalua al vencer
@@ -231,7 +246,7 @@ POScannerPRO._mods.push('injector');
       ' | Motor: ' + engineInfo +
       (archN ? ' | Archivo: ' + archN + ' velas' : '') +
       (weak ? ' | LECTURA DEBIL (' + candles.length + ' velas): NO registrada' : '') +
-      (!domPrice ? ' | precio: archivo' : ''));
+      ' | precio: ' + (domPrice != null ? priceSrc + ' ' + domPrice : 'archivo'));
   }
 
   // MODO AUTO v4.0: MOTOR CONTINUO DE 3 FASES (adios al desfase).

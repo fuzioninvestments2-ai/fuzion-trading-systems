@@ -265,10 +265,13 @@ POScannerPRO.Panel = (() => {
       try { r = el.getBoundingClientRect(); } catch (e) { return; }
       if (!r || r.width <= 0 || r.height <= 0) return;
       const p = bgPintado(el);
+      const dec = (t.split(/[.,]/)[1] || '').length;
       out.push({
         text: t, value: parseFloat(t.replace(',', '.')),
         x: Math.round(r.left), y: Math.round(r.top),
-        w: Math.round(r.width), bg: p.bg, depth: p.depth,
+        cy: r.top + r.height / 2,          // centro vertical (calibracion)
+        w: Math.round(r.width), h: Math.round(r.height),
+        dec: dec, bg: p.bg, depth: p.depth,
         enBanda: r.left >= innerWidth * 0.5
       });
     });
@@ -278,6 +281,77 @@ POScannerPRO.Panel = (() => {
   function findCurrentPrice() {
     const cands = priceCandidates().filter(c => c.enBanda && c.bg);
     return cands.length ? cands[0].value : null;   // el mas a la derecha
+  }
+
+  // ============================================================
+  // METODO 2 (v4.4.2): CALIBRAR LA ESCALA DEL EJE.
+  // Cuando la etiqueta resaltada no se encuentra, el eje de precio
+  // sigue ahi con sus etiquetas fijas. Cada una es un par
+  // (pixel Y, precio): con tres o mas se ajusta por minimos
+  // cuadrados la recta  precio = a * y + b  y con ella se traduce
+  // CUALQUIER pixel a precio real, incluida la ultima vela leida.
+  //
+  // Esto no es una estimacion vaga: la escala de un grafico es
+  // lineal por construccion, asi que el ajuste es exacto salvo
+  // error de redondeo de las etiquetas. Se exige R2 >= 0.995 y
+  // pendiente negativa (en pantalla, bajar de Y = subir de precio);
+  // si el ajuste no cumple, se devuelve null en vez de un numero
+  // inventado.
+  // ============================================================
+  function axisScale() {
+    const c = priceCandidates().filter(p => p.enBanda);
+    if (c.length < 3) return null;
+    // Agrupar por columna: el eje es una columna de etiquetas
+    const cols = [];
+    c.forEach(p => {
+      const col = cols.find(k => Math.abs(k.x - p.x) <= 40);
+      if (col) { col.items.push(p); col.x = Math.max(col.x, p.x); }
+      else cols.push({ x: p.x, items: [p] });
+    });
+    cols.sort((a, b) => b.x - a.x);          // la mas a la derecha primero
+    for (let i = 0; i < cols.length; i++) {
+      const pts = [];
+      cols[i].items.forEach(p => {
+        if (!pts.some(q => q.value === p.value)) pts.push(p);
+      });
+      if (pts.length < 3) continue;
+      let sx = 0, sy = 0, sxx = 0, sxy = 0;
+      const n = pts.length;
+      pts.forEach(p => { sx += p.cy; sy += p.value; sxx += p.cy * p.cy; sxy += p.cy * p.value; });
+      const den = n * sxx - sx * sx;
+      if (Math.abs(den) < 1e-9) continue;
+      const a = (n * sxy - sx * sy) / den;
+      const b = (sy - a * sx) / n;
+      if (!isFinite(a) || a >= 0) continue;   // Y baja = precio sube
+      const media = sy / n;
+      let ssRes = 0, ssTot = 0;
+      pts.forEach(p => {
+        const pred = a * p.cy + b;
+        ssRes += (p.value - pred) * (p.value - pred);
+        ssTot += (p.value - media) * (p.value - media);
+      });
+      const r2 = ssTot > 0 ? 1 - ssRes / ssTot : 0;
+      if (r2 < 0.995) continue;               // eje mal leido: no forzar
+      const dec = Math.max.apply(null, pts.map(p => p.dec));
+      return { a: a, b: b, n: n, r2: r2, x: cols[i].x, dec: dec };
+    }
+    return null;
+  }
+
+  // Pixel Y del viewport -> precio real, usando la escala del eje
+  function priceFromY(yViewport) {
+    const s = axisScale();
+    if (!s) return null;
+    const v = s.a * yViewport + s.b;
+    if (!isFinite(v)) return null;
+    return parseFloat(v.toFixed(Math.min(8, s.dec + 1)));
+  }
+
+  // Precio de una vela leida. candle viene en coordenadas de
+  // IMAGEN; conv (de CanvasReader.lastStats) las lleva al viewport.
+  function priceFromCandle(candle, conv) {
+    if (!candle || !conv || !conv.sy) return null;
+    return priceFromY(conv.top + candle.close / conv.sy);
   }
 
   // Diagnostico para la consola: por que no encuentra el precio.
@@ -290,11 +364,21 @@ POScannerPRO.Panel = (() => {
       enBanda.length + ' en la banda derecha (x >= ' + Math.round(innerWidth * 0.5) +
       '), ' + conFondo.length + ' con fondo pintado.');
     console.log('[PO PRO] findCurrentPrice() =', findCurrentPrice());
+    const s = axisScale();
+    if (s) {
+      console.log('[PO PRO] escala del eje calibrada con ' + s.n + ' etiquetas, ' +
+        'R2=' + s.r2.toFixed(5) + ' -> precio = ' + s.a.toExponential(3) +
+        ' * y + ' + s.b.toFixed(s.dec));
+    } else {
+      console.log('[PO PRO] escala del eje NO calibrada: hacen falta 3+ ' +
+        'etiquetas de precio alineadas en la misma columna.');
+    }
     if (todos.length) console.table(todos.slice(0, 25));
     else console.log('[PO PRO] Ningun nodo casa con ' + PRICE_RE +
       '. Puede que PO parta el precio en varios elementos.');
     return { total: todos.length, enBanda: enBanda.length,
-             conFondo: conFondo.length, candidatos: todos.slice(0, 25) };
+             conFondo: conFondo.length, escala: s,
+             candidatos: todos.slice(0, 25) };
   }
 
   // Lee activo, payout, timeframe y tu Time del DOM de PO
@@ -511,10 +595,15 @@ POScannerPRO.Panel = (() => {
     try {
       const b = POScannerPRO.History.backtests();
       const f = x => x.n ? x.acc + '% en ' + x.n : 'sin muestra';
-      if (!b.total.n) return '';
+      const leg = b.legacy && b.legacy.n
+        ? '\n(' + b.legacy.n + ' senales antiguas excluidas: medidas en ' +
+          'pixeles, ' + b.legacy.empates + ' de ellas EMPATE. No se pueden ' +
+          'recalcular, PO no da el precio pasado.)'
+        : '';
+      if (!b.total.n) return leg ? leg.slice(1) + '\n' : '';
       return 'Acierto real -> CONTRARIAN: ' + f(b.contrarian) +
              ' | NORMAL: ' + f(b.normal) +
-             ' | TOTAL: ' + f(b.total) + '\n';
+             ' | TOTAL: ' + f(b.total) + leg + '\n';
     } catch (e) { return ''; }
   }
 
@@ -583,6 +672,8 @@ POScannerPRO.Panel = (() => {
            getTfSec: () => tfSec, getTradeSec: () => tradeSec,
            expiryInfo: expiryInfo, findCurrentPrice: findCurrentPrice,
            priceCandidates: priceCandidates, diagPrice: diagPrice,
+           axisScale: axisScale, priceFromY: priceFromY,
+           priceFromCandle: priceFromCandle,
            findTradeTime: findTradeTime };
 })();
 // [PO-PRO-OK:panel]

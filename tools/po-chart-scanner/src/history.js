@@ -44,6 +44,21 @@ POScannerPRO.History = (() => {
       const raw = localStorage.getItem(KEY);
       items = raw ? JSON.parse(raw) : [];
       if (!Array.isArray(items)) items = [];
+      // v4.4.2: las senales guardadas ANTES de que el precio real
+      // funcionara se juzgaron comparando pixeles del archivo, con
+      // EMPATE para cualquier movimiento menor de medio pixel. Esa
+      // medicion no es recuperable (PO no da el precio pasado), asi
+      // que se marcan 'legacy' y quedan FUERA de las estadisticas
+      // nuevas en vez de contaminarlas.
+      let migradas = 0;
+      items.forEach(i => {
+        if (!i.refMethod) { i.refMethod = 'legacy'; migradas++; }
+      });
+      if (migradas) {
+        console.log('[PO PRO] historial: ' + migradas + ' senales antiguas ' +
+          'marcadas legacy (medidas en pixeles, no cuentan en el backtest)');
+        save();
+      }
     } catch (e) { items = []; }
   }
 
@@ -80,6 +95,7 @@ POScannerPRO.History = (() => {
       deadline: signal.deadline || 0,// plazo de expiracion (ms)
       expiryText: signal.expiryText || '',
       tag: signal.tag || 'NORMAL',   // v4.3: CONTRARIAN o NORMAL
+      refMethod: signal.refMethod || 'archivo', // v4.4.2: como se midio
       obvia: !!signal.obvia,         // v4.3: senal de masa (obvia)
       result: 'PENDING'
     });
@@ -149,8 +165,11 @@ POScannerPRO.History = (() => {
   }
 
   // Acierto historico FILTRADO por calidad (HIGH/MEDIUM/LOW)
+  // v4.4.2: 'legacy' = medida con el metodo viejo, no cuenta
+  function vale(i) { return i.refMethod !== 'legacy'; }
+
   function byQuality(q) {
-    const its = items.filter(i => i.quality === q &&
+    const its = items.filter(i => vale(i) && i.quality === q &&
       (i.result === 'WIN' || i.result === 'LOSS'));
     const w = its.filter(i => i.result === 'WIN').length;
     return { n: its.length, acc: its.length ? Math.round(w / its.length * 100) : null };
@@ -158,7 +177,7 @@ POScannerPRO.History = (() => {
 
   // v4.3: acierto FILTRADO por tipo (CONTRARIAN vs NORMAL)
   function byTag(tag) {
-    const its = items.filter(i => (i.tag || 'NORMAL') === tag &&
+    const its = items.filter(i => vale(i) && (i.tag || 'NORMAL') === tag &&
       (i.result === 'WIN' || i.result === 'LOSS'));
     const w = its.filter(i => i.result === 'WIN').length;
     return { n: its.length, acc: its.length ? Math.round(w / its.length * 100) : null };
@@ -172,13 +191,21 @@ POScannerPRO.History = (() => {
   function backtests() {
     const c = byTag('CONTRARIAN');
     const n = byTag('NORMAL');
-    const done = items.filter(i => i.result === 'WIN' || i.result === 'LOSS');
+    const cerrada = i => i.result === 'WIN' || i.result === 'LOSS';
+    const done = items.filter(i => vale(i) && cerrada(i));
     const w = done.filter(i => i.result === 'WIN').length;
+    const old = items.filter(i => !vale(i) && cerrada(i));
+    const ow = old.filter(i => i.result === 'WIN').length;
     return {
       contrarian: c,
       normal: n,
       total: { n: done.length,
-               acc: done.length ? Math.round(w / done.length * 100) : null }
+               acc: done.length ? Math.round(w / done.length * 100) : null },
+      // Aparte y solo informativo: no se puede recuperar el precio
+      // real de aquellos momentos, asi que no se recalcula.
+      legacy: { n: old.length,
+                acc: old.length ? Math.round(ow / old.length * 100) : null,
+                empates: items.filter(i => !vale(i) && i.result === 'EMPATE').length }
     };
   }
 

@@ -291,5 +291,122 @@ console.log('  diagPrice cuenta total/enBanda/conFondo'.padEnd(48) + '-> ' +
   d.total + '/' + d.enBanda + '/' + d.conFondo + '  ' + (dOk ? 'OK' : 'FALLO'));
 if (!dOk) fallos++;
 
+// ============================================================
+// v4.4.2: METODO 2 - calibrar la escala del eje y traducir
+// pixeles a precio real. Es el fallback cuando la etiqueta
+// resaltada no aparece.
+// ============================================================
+console.log('\n=== v4.4.2 CALIBRACION DE LA ESCALA DEL EJE ===');
+// Eje sintetico: 3 etiquetas fijas, 100 px = 0.0010 de precio.
+// (en pantalla, bajar de Y = bajar de precio)
+const ejeOk = [nodo({ text: '0.55600', x: 1700, y: 100 }),
+               nodo({ text: '0.55500', x: 1700, y: 200 }),
+               nodo({ text: '0.55400', x: 1700, y: 300 })];
+const esc = conDom(ejeOk, () => P.Panel.axisScale());
+console.log('  escala: n=' + (esc && esc.n) + ' R2=' + (esc && esc.r2.toFixed(5)));
+if (!esc || esc.n !== 3 || esc.r2 < 0.995) { console.log('  !! no calibro'); fallos++; }
+
+const pruebasY = [[107, 0.556], [207, 0.555], [307, 0.554], [157, 0.5555]];
+pruebasY.forEach(([y, esperado]) => {
+  const got = conDom(ejeOk, () => P.Panel.priceFromY(y));
+  const ok = got != null && Math.abs(got - esperado) < 1e-6;
+  console.log('  y=' + String(y).padStart(3) + ' -> ' + String(got).padEnd(9) +
+    (ok ? 'OK' : 'FALLO: esperaba ' + esperado));
+  if (!ok) fallos++;
+});
+
+// Traducir la ultima vela leida (coords de imagen -> viewport -> precio)
+const velaTest = { close: 200 };                 // y de imagen
+const convTest = { left: 0, top: 7, sx: 1, sy: 1 };  // viewport = 7 + 200 = 207
+const pv = conDom(ejeOk, () => P.Panel.priceFromCandle(velaTest, convTest));
+console.log('  vela (close y=200, conv top=7) -> ' + pv +
+  (Math.abs(pv - 0.555) < 1e-6 ? '  OK' : '  FALLO'));
+if (!(Math.abs(pv - 0.555) < 1e-6)) fallos++;
+
+// Un eje mal leido NO debe producir un numero inventado
+const ejeMalo = [nodo({ text: '0.55600', x: 1700, y: 100 }),
+                 nodo({ text: '0.55500', x: 1700, y: 200 }),
+                 nodo({ text: '0.99999', x: 1700, y: 210 })];  // fuera de recta
+const escMala = conDom(ejeMalo, () => P.Panel.axisScale());
+console.log('  eje incoherente -> ' + (escMala ? 'CALIBRO (FALLO)' : 'null  OK'));
+if (escMala) fallos++;
+// Pendiente positiva (precio sube con Y) = eje invertido: rechazar
+const ejeInv = [nodo({ text: '0.55400', x: 1700, y: 100 }),
+                nodo({ text: '0.55500', x: 1700, y: 200 }),
+                nodo({ text: '0.55600', x: 1700, y: 300 })];
+const escInv = conDom(ejeInv, () => P.Panel.axisScale());
+console.log('  eje invertido   -> ' + (escInv ? 'CALIBRO (FALLO)' : 'null  OK'));
+if (escInv) fallos++;
+
+console.log('\n=== v4.4.2 UMBRAL 6/12 Y BACKTEST RELAJADO ===');
+console.log('  MIN_CONFLUENCIA=' + P.CONFIG.FILTER.MIN_CONFLUENCIA +
+            ' perfecto=' + P.CONFIG.FILTER.MIN_CONFLUENCIA_PERFECTO +
+            ' | backtest min ' + P.CONFIG.PERFECT.BACKTEST_MIN_ACC +
+            '% con muestra ' + P.CONFIG.PERFECT.BACKTEST_MIN_N);
+if (P.CONFIG.FILTER.MIN_CONFLUENCIA !== 6) { console.log('  !! umbral no es 6'); fallos++; }
+let desbloqueadas6 = 0;
+for (const [nombre, velas] of Object.entries(casos)) {
+  const r = P.Scoring.evaluate(velas, {});
+  const conf = parseInt(r.detail.confluencia, 10);
+  if (conf === 6 && r.blockReason !== 'confluencia') desbloqueadas6++;
+  console.log('  ' + nombre.slice(0, 34).padEnd(34) + ' conf=' + r.detail.confluencia +
+    ' blocked=' + r.blocked + (r.blockReason ? '(' + r.blockReason + ')' : ''));
+}
+console.log('  senales de 6/12 ya NO bloqueadas por confluencia: ' + desbloqueadas6);
+if (!desbloqueadas6) { console.log('  !! ninguna 6/12 se desbloqueo'); fallos++; }
+
+// Con muestra de 5 contrarian ganadoras, un setup perfecto llega a 90+
+P.History.clear();
+for (let i = 0; i < 5; i++) {
+  P.History.add({ asset: 'A' + i, dir: 'PUT', score: 80, quality: 'MEDIUM',
+    refPrice: 2, refReal: true, refT: Date.now() - 61000, tfSec: 60,
+    deadline: Date.now() - 1000, tag: 'CONTRARIAN', refMethod: 'eje' });
+  P.History.update(1);            // bajo -> PUT gana
+}
+const bt5 = P.History.byTag('CONTRARIAN');
+const velasFk2 = casos['CAIDA + GIRO FINAL (reversion alcista)'];
+const perf = P.ContrarianScoring.adjust({
+  dir: 'PUT', score: 80, agree: 9, candles: velasFk2,
+  trend: { trend: 'FLAT', strength: 0 },
+  sr: P.SupportResistance.proximity(velasFk2), patterns: [], blocked: false });
+console.log('  muestra contrarian: ' + bt5.acc + '% en ' + bt5.n +
+  ' -> perfecto=' + perf.perfecto + ' score 80 -> ' + perf.score +
+  ' | falta: ' + (perf.faltanPerfecto.join(', ') || 'nada'));
+if (perf.perfecto && perf.score < 90) { console.log('  !! perfecto sin llegar a 90'); fallos++; }
+
+// Setup contrarian PERFECTO completo: nivel x4 + fakeout a favor
+// + confluencia 9 + trap bajo + muestra de backtest -> debe llegar a 90+
+const NIVEL = 250;                       // resistencia en pixel Y
+const velasPerf = [];
+for (let i = 0; i < 60; i++) {           // velas limpias, mechas cortas
+  velasPerf.push({ x: i * 6, width: 4, dir: i % 2 ? 'CALL' : 'PUT',
+    high: 294, low: 306, open: 295, close: 305,
+    bodyTop: 295, bodyBottom: 305, bodySize: 10, wickUp: 1, wickDown: 1 });
+}
+// ultima vela: la mecha PINCHA por encima de la resistencia (high 240 < 250)
+// pero el cierre vuelve por debajo (260 > 250) = ruptura falsa alcista
+velasPerf.push({ x: 366, width: 4, dir: 'CALL',
+  high: 240, low: 275, open: 270, close: 260,
+  bodyTop: 260, bodyBottom: 270, bodySize: 10, wickUp: 20, wickDown: 5 });
+const srPerf = { near: { y: NIVEL, type: 'R', touches: 4 },
+                 levels: [{ y: NIVEL, type: 'R', touches: 4 }] };
+const perfOk = P.ContrarianScoring.adjust({
+  dir: 'PUT', score: 80, agree: 9, candles: velasPerf,
+  trend: { trend: 'FLAT', strength: 0 }, sr: srPerf,
+  patterns: [], blocked: false });
+console.log('  SETUP PERFECTO COMPLETO -> perfecto=' + perfOk.perfecto +
+  ' | trap=' + perfOk.trapIndex + '% | fakeout=' + perfOk.fakeout +
+  ' | score 80 -> ' + perfOk.score +
+  (perfOk.faltanPerfecto.length ? ' | falta: ' + perfOk.faltanPerfecto.join(', ') : ''));
+if (!perfOk.perfecto) { console.log('  !! no lo marco como PERFECTO'); fallos++; }
+if (perfOk.score < 90) { console.log('  !! no llego a 90+'); fallos++; }
+if (!perfOk.contrarian) { console.log('  !! no lo marco CONTRARIAN'); fallos++; }
+
+console.log('\n=== v4.4.2 HISTORIAL LEGACY SEPARADO ===');
+const bl = P.History.backtests();
+console.log('  nuevas: ' + JSON.stringify(bl.total) + ' | legacy: ' + JSON.stringify(bl.legacy));
+if (bl.legacy.n !== 0) { console.log('  !! no deberia haber legacy tras clear()'); fallos++; }
+if (bl.total.n !== 5) { console.log('  !! las 5 nuevas no cuentan'); fallos++; }
+
 console.log('\n===== ' + (fallos ? fallos + ' FALLOS' : 'TODAS LAS COMPROBACIONES OK') + ' =====');
 process.exit(fallos ? 1 : 0);

@@ -249,7 +249,21 @@ POScannerPRO._mods.push('injector');
     // v4.0: el AVISO PREVIO evalua el historial vencido pero NO
     // registra la senal (la vela en formacion no es definitiva);
     // solo 'final' y 'manual' escriben en el historial.
-    const domPrice = P.Panel.findCurrentPrice ? P.Panel.findCurrentPrice() : null;
+    // v4.4.2 CADENA DE METODOS PARA EL PRECIO REAL:
+    //   1) 'eje'     etiqueta resaltada del eje (lectura directa)
+    //   2) 'escala'  calibrar el eje con sus etiquetas fijas y
+    //                traducir el pixel de cierre de la ultima vela
+    //   3) 'archivo' ultimo recurso: comparar en pixeles del
+    //                archivo (history.js). NO es un precio: no se
+    //                puede imprimir un numero, y por eso el panel
+    //                dice "archivo" en vez de inventar uno.
+    let domPrice = P.Panel.findCurrentPrice ? P.Panel.findCurrentPrice() : null;
+    let priceSrc = domPrice != null ? 'eje' : 'archivo';
+    if (domPrice == null && P.Panel.priceFromCandle) {
+      const px = P.Panel.priceFromCandle(candles[candles.length - 1],
+                                         P.CanvasReader.lastStats.conv);
+      if (px != null) { domPrice = px; priceSrc = 'escala'; }
+    }
     P.History.update(domPrice);
     if (mode !== 'pre' && result.confirmed && !weak) {
       P.History.add({
@@ -258,7 +272,8 @@ POScannerPRO._mods.push('injector');
         score: result.score,
         quality: result.quality,
         refPrice: domPrice,             // precio REAL (o null)
-        refReal: !!domPrice,            // true = comparacion directa
+        refReal: domPrice != null,      // true = comparacion directa
+        refMethod: priceSrc,            // v4.4.2: eje | escala | archivo
         refT: Date.now(),               // para la escala del archivo
         tfSec: tfSec,
         deadline: Date.now() + exp.deadlineMs,  // se evalua al vencer
@@ -286,7 +301,7 @@ POScannerPRO._mods.push('injector');
       ' | Motor: ' + engineInfo +
       (archN ? ' | Archivo: ' + archN + ' velas' : '') +
       (weak ? ' | LECTURA DEBIL (' + candles.length + ' velas): NO registrada' : '') +
-      (!domPrice ? ' | precio: archivo' : ''));
+      ' | precio: ' + (domPrice != null ? priceSrc + ' ' + domPrice : 'archivo'));
   }
 
   // MODO AUTO v4.0: MOTOR CONTINUO DE 3 FASES (adios al desfase).
@@ -566,7 +581,7 @@ POScannerPRO._mods.push('injector');
 {
   "manifest_version": 3,
   "name": "PO Chart Scanner PRO v4.4 OPTIMIZACION DE SCORING Y FILTRADO",
-  "version": "4.4.1",
+  "version": "4.4.2",
   "description": "v4.4: setup CONTRARIAN PERFECTO (+15 y piso 90 con las 6 condiciones), umbral de confluencia 7/12 (6/12 si es perfecto), etiqueta de accion OPERAR/NO OPERAR por rango de score, sin flecha de entrada bajo 75 y backtest separado contrarian/normal/total. v4.3: CAPA CONTRARIAN ANTI-MANIPULACION para OTC - Trap Index (mechas largas), deteccion de FAKEOUT en S/R, reversal ratio, order flow inferido por rango (proxy de pixeles, sin volumen real), penalizacion por senal OBVIA (masa), bonus CONTRARIAN por fakeout a favor y BLOQUEO por masa obvia con trampa en contra; historial separado contrarian vs normal. Hereda v4.2: bloqueo total de contra-estructura (ESPERAR), regla de los 90, score con velas cerradas, backtest maduro (30+); v4.1: techos estructurales 60/55/45; v4.0: motor continuo de 3 fases. SIN auto-trading.",
   "permissions": [
     "storage",
@@ -1784,7 +1799,7 @@ POScannerPRO._mods = POScannerPRO._mods || [];
 POScannerPRO._mods.push('config');
 
 POScannerPRO.CONFIG = {
-  VERSION: '4.4.1',
+  VERSION: '4.4.2',
 
   // --- Deteccion de color de velas (HSV, robusto a temas) ---
   // v3.5.6: verde LIMA real de las velas PO (medido en video:
@@ -1874,8 +1889,9 @@ POScannerPRO.CONFIG = {
     NO_OPERAR: 60,           // 60-74: NO OPERAR (naranja); <60 rojo
     ENTRY_MIN: 75,           // debajo: el grafico NO dibuja entrada
     WEAK_WARN: 85,           // debajo: aviso "senal debil"
-    MIN_CONFLUENCIA: 7,      // <7/12 fuentes = BLOQUEADA
-    MIN_CONFLUENCIA_PERFECTO: 6  // excepcion para contrarian perfecto
+    MIN_CONFLUENCIA: 6,      // <6/12 fuentes = BLOQUEADA (v4.4.2: era 7,
+                             // dejaba fuera senales validas de 6/12)
+    MIN_CONFLUENCIA_PERFECTO: 5  // excepcion para contrarian perfecto
   },
 
   // --- v4.4 SETUP CONTRARIAN PERFECTO (regla del doctorado) ---
@@ -1892,8 +1908,8 @@ POScannerPRO.CONFIG = {
     BONUS: 15,               // puntos extra si se cumple todo
     MIN_SCORE: 90,           // y piso de 90
     REQUIRE_BACKTEST: true,  // exigir la condicion del backtest
-    BACKTEST_MIN_N: 10,      // muestra minima de senales contrarian
-    BACKTEST_MIN_ACC: 65     // acierto minimo de esa muestra (%)
+    BACKTEST_MIN_N: 5,       // v4.4.2: muestra minima (era 10)
+    BACKTEST_MIN_ACC: 55     // v4.4.2: acierto minimo % (era 65)
   },
 
   // --- Indicadores activos (toggles) ---
@@ -2281,6 +2297,21 @@ POScannerPRO.History = (() => {
       const raw = localStorage.getItem(KEY);
       items = raw ? JSON.parse(raw) : [];
       if (!Array.isArray(items)) items = [];
+      // v4.4.2: las senales guardadas ANTES de que el precio real
+      // funcionara se juzgaron comparando pixeles del archivo, con
+      // EMPATE para cualquier movimiento menor de medio pixel. Esa
+      // medicion no es recuperable (PO no da el precio pasado), asi
+      // que se marcan 'legacy' y quedan FUERA de las estadisticas
+      // nuevas en vez de contaminarlas.
+      let migradas = 0;
+      items.forEach(i => {
+        if (!i.refMethod) { i.refMethod = 'legacy'; migradas++; }
+      });
+      if (migradas) {
+        console.log('[PO PRO] historial: ' + migradas + ' senales antiguas ' +
+          'marcadas legacy (medidas en pixeles, no cuentan en el backtest)');
+        save();
+      }
     } catch (e) { items = []; }
   }
 
@@ -2317,6 +2348,7 @@ POScannerPRO.History = (() => {
       deadline: signal.deadline || 0,// plazo de expiracion (ms)
       expiryText: signal.expiryText || '',
       tag: signal.tag || 'NORMAL',   // v4.3: CONTRARIAN o NORMAL
+      refMethod: signal.refMethod || 'archivo', // v4.4.2: como se midio
       obvia: !!signal.obvia,         // v4.3: senal de masa (obvia)
       result: 'PENDING'
     });
@@ -2386,8 +2418,11 @@ POScannerPRO.History = (() => {
   }
 
   // Acierto historico FILTRADO por calidad (HIGH/MEDIUM/LOW)
+  // v4.4.2: 'legacy' = medida con el metodo viejo, no cuenta
+  function vale(i) { return i.refMethod !== 'legacy'; }
+
   function byQuality(q) {
-    const its = items.filter(i => i.quality === q &&
+    const its = items.filter(i => vale(i) && i.quality === q &&
       (i.result === 'WIN' || i.result === 'LOSS'));
     const w = its.filter(i => i.result === 'WIN').length;
     return { n: its.length, acc: its.length ? Math.round(w / its.length * 100) : null };
@@ -2395,7 +2430,7 @@ POScannerPRO.History = (() => {
 
   // v4.3: acierto FILTRADO por tipo (CONTRARIAN vs NORMAL)
   function byTag(tag) {
-    const its = items.filter(i => (i.tag || 'NORMAL') === tag &&
+    const its = items.filter(i => vale(i) && (i.tag || 'NORMAL') === tag &&
       (i.result === 'WIN' || i.result === 'LOSS'));
     const w = its.filter(i => i.result === 'WIN').length;
     return { n: its.length, acc: its.length ? Math.round(w / its.length * 100) : null };
@@ -2409,13 +2444,21 @@ POScannerPRO.History = (() => {
   function backtests() {
     const c = byTag('CONTRARIAN');
     const n = byTag('NORMAL');
-    const done = items.filter(i => i.result === 'WIN' || i.result === 'LOSS');
+    const cerrada = i => i.result === 'WIN' || i.result === 'LOSS';
+    const done = items.filter(i => vale(i) && cerrada(i));
     const w = done.filter(i => i.result === 'WIN').length;
+    const old = items.filter(i => !vale(i) && cerrada(i));
+    const ow = old.filter(i => i.result === 'WIN').length;
     return {
       contrarian: c,
       normal: n,
       total: { n: done.length,
-               acc: done.length ? Math.round(w / done.length * 100) : null }
+               acc: done.length ? Math.round(w / done.length * 100) : null },
+      // Aparte y solo informativo: no se puede recuperar el precio
+      // real de aquellos momentos, asi que no se recalcula.
+      legacy: { n: old.length,
+                acc: old.length ? Math.round(ow / old.length * 100) : null,
+                empates: items.filter(i => !vale(i) && i.result === 'EMPATE').length }
     };
   }
 
@@ -2935,10 +2978,13 @@ POScannerPRO.Panel = (() => {
       try { r = el.getBoundingClientRect(); } catch (e) { return; }
       if (!r || r.width <= 0 || r.height <= 0) return;
       const p = bgPintado(el);
+      const dec = (t.split(/[.,]/)[1] || '').length;
       out.push({
         text: t, value: parseFloat(t.replace(',', '.')),
         x: Math.round(r.left), y: Math.round(r.top),
-        w: Math.round(r.width), bg: p.bg, depth: p.depth,
+        cy: r.top + r.height / 2,          // centro vertical (calibracion)
+        w: Math.round(r.width), h: Math.round(r.height),
+        dec: dec, bg: p.bg, depth: p.depth,
         enBanda: r.left >= innerWidth * 0.5
       });
     });
@@ -2948,6 +2994,77 @@ POScannerPRO.Panel = (() => {
   function findCurrentPrice() {
     const cands = priceCandidates().filter(c => c.enBanda && c.bg);
     return cands.length ? cands[0].value : null;   // el mas a la derecha
+  }
+
+  // ============================================================
+  // METODO 2 (v4.4.2): CALIBRAR LA ESCALA DEL EJE.
+  // Cuando la etiqueta resaltada no se encuentra, el eje de precio
+  // sigue ahi con sus etiquetas fijas. Cada una es un par
+  // (pixel Y, precio): con tres o mas se ajusta por minimos
+  // cuadrados la recta  precio = a * y + b  y con ella se traduce
+  // CUALQUIER pixel a precio real, incluida la ultima vela leida.
+  //
+  // Esto no es una estimacion vaga: la escala de un grafico es
+  // lineal por construccion, asi que el ajuste es exacto salvo
+  // error de redondeo de las etiquetas. Se exige R2 >= 0.995 y
+  // pendiente negativa (en pantalla, bajar de Y = subir de precio);
+  // si el ajuste no cumple, se devuelve null en vez de un numero
+  // inventado.
+  // ============================================================
+  function axisScale() {
+    const c = priceCandidates().filter(p => p.enBanda);
+    if (c.length < 3) return null;
+    // Agrupar por columna: el eje es una columna de etiquetas
+    const cols = [];
+    c.forEach(p => {
+      const col = cols.find(k => Math.abs(k.x - p.x) <= 40);
+      if (col) { col.items.push(p); col.x = Math.max(col.x, p.x); }
+      else cols.push({ x: p.x, items: [p] });
+    });
+    cols.sort((a, b) => b.x - a.x);          // la mas a la derecha primero
+    for (let i = 0; i < cols.length; i++) {
+      const pts = [];
+      cols[i].items.forEach(p => {
+        if (!pts.some(q => q.value === p.value)) pts.push(p);
+      });
+      if (pts.length < 3) continue;
+      let sx = 0, sy = 0, sxx = 0, sxy = 0;
+      const n = pts.length;
+      pts.forEach(p => { sx += p.cy; sy += p.value; sxx += p.cy * p.cy; sxy += p.cy * p.value; });
+      const den = n * sxx - sx * sx;
+      if (Math.abs(den) < 1e-9) continue;
+      const a = (n * sxy - sx * sy) / den;
+      const b = (sy - a * sx) / n;
+      if (!isFinite(a) || a >= 0) continue;   // Y baja = precio sube
+      const media = sy / n;
+      let ssRes = 0, ssTot = 0;
+      pts.forEach(p => {
+        const pred = a * p.cy + b;
+        ssRes += (p.value - pred) * (p.value - pred);
+        ssTot += (p.value - media) * (p.value - media);
+      });
+      const r2 = ssTot > 0 ? 1 - ssRes / ssTot : 0;
+      if (r2 < 0.995) continue;               // eje mal leido: no forzar
+      const dec = Math.max.apply(null, pts.map(p => p.dec));
+      return { a: a, b: b, n: n, r2: r2, x: cols[i].x, dec: dec };
+    }
+    return null;
+  }
+
+  // Pixel Y del viewport -> precio real, usando la escala del eje
+  function priceFromY(yViewport) {
+    const s = axisScale();
+    if (!s) return null;
+    const v = s.a * yViewport + s.b;
+    if (!isFinite(v)) return null;
+    return parseFloat(v.toFixed(Math.min(8, s.dec + 1)));
+  }
+
+  // Precio de una vela leida. candle viene en coordenadas de
+  // IMAGEN; conv (de CanvasReader.lastStats) las lleva al viewport.
+  function priceFromCandle(candle, conv) {
+    if (!candle || !conv || !conv.sy) return null;
+    return priceFromY(conv.top + candle.close / conv.sy);
   }
 
   // Diagnostico para la consola: por que no encuentra el precio.
@@ -2960,11 +3077,21 @@ POScannerPRO.Panel = (() => {
       enBanda.length + ' en la banda derecha (x >= ' + Math.round(innerWidth * 0.5) +
       '), ' + conFondo.length + ' con fondo pintado.');
     console.log('[PO PRO] findCurrentPrice() =', findCurrentPrice());
+    const s = axisScale();
+    if (s) {
+      console.log('[PO PRO] escala del eje calibrada con ' + s.n + ' etiquetas, ' +
+        'R2=' + s.r2.toFixed(5) + ' -> precio = ' + s.a.toExponential(3) +
+        ' * y + ' + s.b.toFixed(s.dec));
+    } else {
+      console.log('[PO PRO] escala del eje NO calibrada: hacen falta 3+ ' +
+        'etiquetas de precio alineadas en la misma columna.');
+    }
     if (todos.length) console.table(todos.slice(0, 25));
     else console.log('[PO PRO] Ningun nodo casa con ' + PRICE_RE +
       '. Puede que PO parta el precio en varios elementos.');
     return { total: todos.length, enBanda: enBanda.length,
-             conFondo: conFondo.length, candidatos: todos.slice(0, 25) };
+             conFondo: conFondo.length, escala: s,
+             candidatos: todos.slice(0, 25) };
   }
 
   // Lee activo, payout, timeframe y tu Time del DOM de PO
@@ -3181,10 +3308,15 @@ POScannerPRO.Panel = (() => {
     try {
       const b = POScannerPRO.History.backtests();
       const f = x => x.n ? x.acc + '% en ' + x.n : 'sin muestra';
-      if (!b.total.n) return '';
+      const leg = b.legacy && b.legacy.n
+        ? '\n(' + b.legacy.n + ' senales antiguas excluidas: medidas en ' +
+          'pixeles, ' + b.legacy.empates + ' de ellas EMPATE. No se pueden ' +
+          'recalcular, PO no da el precio pasado.)'
+        : '';
+      if (!b.total.n) return leg ? leg.slice(1) + '\n' : '';
       return 'Acierto real -> CONTRARIAN: ' + f(b.contrarian) +
              ' | NORMAL: ' + f(b.normal) +
-             ' | TOTAL: ' + f(b.total) + '\n';
+             ' | TOTAL: ' + f(b.total) + leg + '\n';
     } catch (e) { return ''; }
   }
 
@@ -3253,6 +3385,8 @@ POScannerPRO.Panel = (() => {
            getTfSec: () => tfSec, getTradeSec: () => tradeSec,
            expiryInfo: expiryInfo, findCurrentPrice: findCurrentPrice,
            priceCandidates: priceCandidates, diagPrice: diagPrice,
+           axisScale: axisScale, priceFromY: priceFromY,
+           priceFromCandle: priceFromCandle,
            findTradeTime: findTradeTime };
 })();
 // [PO-PRO-OK:panel]
