@@ -120,14 +120,31 @@ POScannerPRO.CanvasReader = (() => {
       }
       cur = null;
     };
+    // v4.4.4: RATIO de linea. Las medias moviles de PO son ROJA y
+    // VERDE LIMA, los mismos colores que las velas, y son CONTINUAS:
+    // en el hueco entre dos velas la unica cosa coloreada es la
+    // media. Como es del mismo color y cae a la misma altura, el
+    // agrupador la tomaba por continuacion de la vela y pegaba una
+    // vela con la siguiente, y con la siguiente... hasta formar un
+    // bloque mas ancho que MAX_WIDTH_PX que luego se descartaba
+    // entero. Con el grafico AMPLIADO (velas anchas) esto se comia
+    // casi toda la lectura: el usuario veia "4 velas / 17513 px".
+    // Ahora una columna cuyo tramo es MUCHO mas bajo que la vela en
+    // curso corta el grupo en vez de alargarlo.
+    const LINE_RATIO = C.LINE_RATIO != null ? C.LINE_RATIO : 0.35;
     for (const col of columns) {
       if (col) {
         const cMin = col.rows[0], cMax = col.rows[col.rows.length - 1];
+        const colH = cMax - cMin + 1;
         if (cur) {
           const curH = Math.max(6, cur.maxY - cur.minY);
-          const tol = Math.max(10, curH * 0.6);
-          const mismaZona = cMin <= cur.maxY + tol && cMax >= cur.minY - tol;
-          if (col.dir !== cur.dir || !mismaZona) flush();
+          if (colH < Math.max(4, curH * LINE_RATIO)) {
+            flush();                     // columna de linea: separa velas
+          } else {
+            const tol = Math.max(10, curH * 0.6);
+            const mismaZona = cMin <= cur.maxY + tol && cMax >= cur.minY - tol;
+            if (col.dir !== cur.dir || !mismaZona) flush();
+          }
         }
         if (!cur) cur = { dir: col.dir, cols: [], minY: cMin, maxY: cMax };
         cur.cols.push(col);
@@ -137,6 +154,34 @@ POScannerPRO.CanvasReader = (() => {
       } else if (cur && ++gap > C.MAX_GAP_PX) flush();
     }
     flush();
+
+    // 2b) v4.4.4: quitar los grupos que son TROZOS DE LINEA. Tras
+    //     cortar por altura quedan restos de la media movil (grupos
+    //     de 2-5 px de alto) junto a las velas (decenas de px).
+    //     Se buscan DOS POBLACIONES: se ordenan las alturas y se
+    //     corta por el SALTO relativo mas grande. Solo se corta si
+    //     ese salto es de 3x o mas, es decir, si de verdad hay dos
+    //     cosas distintas; entre velas de tamanos variados los
+    //     saltos son suaves y no se toca nada.
+    //     Se usa el salto y no la mediana porque los fragmentos de
+    //     linea pueden ser casi la mitad de los grupos y envenenan
+    //     cualquier promedio (visto con medias gruesas y el grafico
+    //     muy ampliado: 12 velas leidas como 26).
+    if (groups.length >= 6) {
+      const alt = groups.map(g => ({ g: g, h: g.maxY - g.minY + 1 }))
+                        .sort((a, b) => a.h - b.h);
+      let corteIdx = -1, mejorR = 1;
+      for (let i = 0; i < alt.length - 3; i++) {   // dejar 3 grupos arriba
+        const r = alt[i + 1].h / Math.max(1, alt[i].h);
+        if (r > mejorR) { mejorR = r; corteIdx = i; }
+      }
+      if (corteIdx >= 0 && mejorR >= 3) {
+        const corte = alt[corteIdx + 1].h;
+        for (let i = groups.length - 1; i >= 0; i--) {
+          if (groups[i].maxY - groups[i].minY + 1 < corte) groups.splice(i, 1);
+        }
+      }
+    }
 
     // 3) Por cada vela: separar CUERPO de MECHAS por densidad de fila
     const candles = groups.map(g => {

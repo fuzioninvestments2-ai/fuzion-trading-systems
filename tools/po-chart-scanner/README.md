@@ -1,4 +1,4 @@
-# PO Chart Scanner PRO v4.4.3 — OPTIMIZACION DE SCORING Y FILTRADO
+# PO Chart Scanner PRO v4.4.4 — OPTIMIZACION DE SCORING Y FILTRADO
 
 Extension de Chrome (Manifest V3) que lee el grafico de Pocket Option **por
 pixeles** y produce una senal CALL/PUT puntuada. No opera sola: `AUTOTRADE`
@@ -33,13 +33,23 @@ el codigo no pueden divergir.
 ## Verificacion
 
 ```bash
-# sintaxis de los 21 modulos JS + validez del manifest
+# sintaxis de los modulos JS + validez del manifest
 for f in $(find tools/po-chart-scanner -name '*.js'); do node --check "$f"; done
 python3 -m json.tool tools/po-chart-scanner/manifest.json > /dev/null
 
-# prueba funcional del motor de senales (sin navegador)
-node tools/po-chart-scanner/test/smoke.js tools/po-chart-scanner
+# las tres suites
+node tools/po-chart-scanner/test/boot.js   tools/po-chart-scanner  # arranca?
+node tools/po-chart-scanner/test/pixels.js tools/po-chart-scanner  # lee velas?
+node tools/po-chart-scanner/test/smoke.js  tools/po-chart-scanner  # decide bien?
 ```
+
+`test/boot.js` carga los 20 modulos **en el orden del manifest** con un DOM
+simulado y monta el panel. Un fallo aqui es el sintoma de "no hace ninguna
+funcion": si un modulo revienta al cargarse, los siguientes no ven su objeto.
+
+`test/pixels.js` dibuja graficos sinteticos (velas + las dos medias moviles de
+PO, que son del MISMO color que las velas y continuas) y comprueba cuantas
+velas extrae el lector, con el grafico reducido y ampliado.
 
 `test/smoke.js` carga los 12 modulos de analisis en Node con stubs de
 `window`/`document`/`localStorage`, corre el pipeline sobre velas sinteticas
@@ -163,6 +173,31 @@ para no exigirla mientras acumulas.
 las senales que este bot emitio y ya vencieron, distinto del backtest de
 `CandleArchive`, que es una simulacion sobre el archivo de velas.
 
+## Diagnostico: "Sin velas suficientes" con muchos pixeles
+
+Si el panel dice algo como `captura: 4 velas / 17513 px`, encontro color de
+sobra pero no supo separarlo en velas. La causa tipica son las **medias
+moviles**: en PO son roja y verde lima, exactamente los colores de las velas,
+y son continuas de lado a lado. En el hueco entre dos velas lo unico coloreado
+es la media, del mismo color y a la misma altura, asi que hasta v4.4.3 el
+agrupador la tomaba por continuacion de la vela y pegaba una con la siguiente
+hasta superar `MAX_WIDTH_PX`, momento en el que descartaba el bloque entero.
+
+Con el grafico **ampliado** (pocas velas muy anchas) esto se comia casi toda
+la lectura. Desde v4.4.4:
+
+- una columna cuyo tramo vertical es mucho mas bajo que la vela en curso
+  (`CANDLE.LINE_RATIO`, 35%) **corta** el grupo en vez de alargarlo;
+- los restos de linea que quedan se separan de las velas buscando las **dos
+  poblaciones de altura** (se corta por el salto relativo mas grande, y solo
+  si ese salto es de 3x o mas);
+- `MAX_WIDTH_PX` sube de 30 a 60 px, porque una vela de un grafico ampliado
+  pasa de 30 con facilidad. Los botones BUY/SELL rondan los 110 px y siguen
+  fuera.
+
+Si aun asi lee pocas velas, prueba a **reducir el zoom del grafico** o a usar
+el boton GRAFICO y sombrear solo la zona de velas.
+
 ## Diagnostico: el timeframe del panel no coincide con el grafico
 
 La celda TIMEFRAME muestra `<grafico> / <tu orden>`. Si la primera parte no es
@@ -275,6 +310,16 @@ la confluencia CALL y desinflaba la PUT en cualquier grafico con MACD bajista.
 se habia construido sobre el script original y traia este bug otra vez. Al
 integrarla se conservo la correccion. Por eso el `.ps1` se genera desde el
 repo y no al reves.
+
+### v4.4.4
+
+- El lector ya no funde las velas con las medias moviles (ver el diagnostico
+  de "Sin velas suficientes"). `CANDLE.LINE_RATIO` nuevo, `MAX_WIDTH_PX` de 30
+  a 60.
+- `test/boot.js`: arranque de la extension completa con DOM simulado.
+- `test/pixels.js`: seis graficos sinteticos con y sin medias moviles, con el
+  grafico reducido, ampliado y muy ampliado, mas un boton verde que no debe
+  confundirse con una vela.
 
 ### v4.4.3
 

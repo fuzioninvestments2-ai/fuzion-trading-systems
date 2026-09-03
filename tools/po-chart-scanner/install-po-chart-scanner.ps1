@@ -583,7 +583,7 @@ POScannerPRO._mods.push('injector');
 {
   "manifest_version": 3,
   "name": "PO Chart Scanner PRO v4.4 OPTIMIZACION DE SCORING Y FILTRADO",
-  "version": "4.4.3",
+  "version": "4.4.4",
   "description": "v4.4: setup CONTRARIAN PERFECTO (+15 y piso 90 con las 6 condiciones), umbral de confluencia 7/12 (6/12 si es perfecto), etiqueta de accion OPERAR/NO OPERAR por rango de score, sin flecha de entrada bajo 75 y backtest separado contrarian/normal/total. v4.3: CAPA CONTRARIAN ANTI-MANIPULACION para OTC - Trap Index (mechas largas), deteccion de FAKEOUT en S/R, reversal ratio, order flow inferido por rango (proxy de pixeles, sin volumen real), penalizacion por senal OBVIA (masa), bonus CONTRARIAN por fakeout a favor y BLOQUEO por masa obvia con trampa en contra; historial separado contrarian vs normal. Hereda v4.2: bloqueo total de contra-estructura (ESPERAR), regla de los 90, score con velas cerradas, backtest maduro (30+); v4.1: techos estructurales 60/55/45; v4.0: motor continuo de 3 fases. SIN auto-trading.",
   "permissions": [
     "storage",
@@ -1128,14 +1128,31 @@ POScannerPRO.CanvasReader = (() => {
       }
       cur = null;
     };
+    // v4.4.4: RATIO de linea. Las medias moviles de PO son ROJA y
+    // VERDE LIMA, los mismos colores que las velas, y son CONTINUAS:
+    // en el hueco entre dos velas la unica cosa coloreada es la
+    // media. Como es del mismo color y cae a la misma altura, el
+    // agrupador la tomaba por continuacion de la vela y pegaba una
+    // vela con la siguiente, y con la siguiente... hasta formar un
+    // bloque mas ancho que MAX_WIDTH_PX que luego se descartaba
+    // entero. Con el grafico AMPLIADO (velas anchas) esto se comia
+    // casi toda la lectura: el usuario veia "4 velas / 17513 px".
+    // Ahora una columna cuyo tramo es MUCHO mas bajo que la vela en
+    // curso corta el grupo en vez de alargarlo.
+    const LINE_RATIO = C.LINE_RATIO != null ? C.LINE_RATIO : 0.35;
     for (const col of columns) {
       if (col) {
         const cMin = col.rows[0], cMax = col.rows[col.rows.length - 1];
+        const colH = cMax - cMin + 1;
         if (cur) {
           const curH = Math.max(6, cur.maxY - cur.minY);
-          const tol = Math.max(10, curH * 0.6);
-          const mismaZona = cMin <= cur.maxY + tol && cMax >= cur.minY - tol;
-          if (col.dir !== cur.dir || !mismaZona) flush();
+          if (colH < Math.max(4, curH * LINE_RATIO)) {
+            flush();                     // columna de linea: separa velas
+          } else {
+            const tol = Math.max(10, curH * 0.6);
+            const mismaZona = cMin <= cur.maxY + tol && cMax >= cur.minY - tol;
+            if (col.dir !== cur.dir || !mismaZona) flush();
+          }
         }
         if (!cur) cur = { dir: col.dir, cols: [], minY: cMin, maxY: cMax };
         cur.cols.push(col);
@@ -1145,6 +1162,34 @@ POScannerPRO.CanvasReader = (() => {
       } else if (cur && ++gap > C.MAX_GAP_PX) flush();
     }
     flush();
+
+    // 2b) v4.4.4: quitar los grupos que son TROZOS DE LINEA. Tras
+    //     cortar por altura quedan restos de la media movil (grupos
+    //     de 2-5 px de alto) junto a las velas (decenas de px).
+    //     Se buscan DOS POBLACIONES: se ordenan las alturas y se
+    //     corta por el SALTO relativo mas grande. Solo se corta si
+    //     ese salto es de 3x o mas, es decir, si de verdad hay dos
+    //     cosas distintas; entre velas de tamanos variados los
+    //     saltos son suaves y no se toca nada.
+    //     Se usa el salto y no la mediana porque los fragmentos de
+    //     linea pueden ser casi la mitad de los grupos y envenenan
+    //     cualquier promedio (visto con medias gruesas y el grafico
+    //     muy ampliado: 12 velas leidas como 26).
+    if (groups.length >= 6) {
+      const alt = groups.map(g => ({ g: g, h: g.maxY - g.minY + 1 }))
+                        .sort((a, b) => a.h - b.h);
+      let corteIdx = -1, mejorR = 1;
+      for (let i = 0; i < alt.length - 3; i++) {   // dejar 3 grupos arriba
+        const r = alt[i + 1].h / Math.max(1, alt[i].h);
+        if (r > mejorR) { mejorR = r; corteIdx = i; }
+      }
+      if (corteIdx >= 0 && mejorR >= 3) {
+        const corte = alt[corteIdx + 1].h;
+        for (let i = groups.length - 1; i >= 0; i--) {
+          if (groups[i].maxY - groups[i].minY + 1 < corte) groups.splice(i, 1);
+        }
+      }
+    }
 
     // 3) Por cada vela: separar CUERPO de MECHAS por densidad de fila
     const candles = groups.map(g => {
@@ -1795,13 +1840,23 @@ POScannerPRO.ChartOverlay = (() => {
 //   derecha de la pantalla; y elige la etiqueta MAS A LA
 //   DERECHA en vez de la ultima del DOM. Diagnostico desde la
 //   consola: POScannerPRO.Panel.diagPrice()
+// v4.4.4 LECTOR: las MEDIAS MOVILES de PO son roja y verde lima
+//   (los colores de las velas) y son CONTINUAS. En el hueco
+//   entre dos velas lo unico coloreado es la media, del mismo
+//   color y a la misma altura, asi que el agrupador la tomaba
+//   por continuacion y pegaba vela con vela hasta pasarse de
+//   MAX_WIDTH_PX; el bloque entero se descartaba. Con el
+//   grafico AMPLIADO se comia casi toda la lectura: el usuario
+//   vio "captura: 4 velas / 17513 px". Ahora una columna mucho
+//   mas baja que la vela en curso corta el grupo, los restos de
+//   linea se separan por altura y MAX_WIDTH_PX sube a 60.
 // ============================================================
 window.POScannerPRO = window.POScannerPRO || {};
 POScannerPRO._mods = POScannerPRO._mods || [];
 POScannerPRO._mods.push('config');
 
 POScannerPRO.CONFIG = {
-  VERSION: '4.4.3',
+  VERSION: '4.4.4',
 
   // --- Deteccion de color de velas (HSV, robusto a temas) ---
   // v3.5.6: verde LIMA real de las velas PO (medido en video:
@@ -1816,11 +1871,18 @@ POScannerPRO.CONFIG = {
   // --- Geometria de velas ---
   CANDLE: {
     MIN_WIDTH_PX: 2,
-    MAX_WIDTH_PX: 30,   // una vela real nunca supera ~30px; mas ancho = boton/banner
+    // v4.4.4: 30px se quedaba corto con el grafico AMPLIADO (pocas
+    // velas muy anchas). Los botones BUY/SELL rondan los 110px, asi
+    // que 60 sigue dejandolos fuera.
+    MAX_WIDTH_PX: 60,
     MIN_HEIGHT_PX: 2,
     MAX_GAP_PX: 2,
     RUN_GAP_PX: 2,      // hueco max dentro de un tramo vertical
-    BODY_DENSITY: 0.6   // % de columnas ocupadas para considerar "cuerpo" (vs mecha)
+    BODY_DENSITY: 0.6,  // % de columnas ocupadas para considerar "cuerpo" (vs mecha)
+    // v4.4.4: una columna cuyo tramo mide menos de este % de la
+    // altura de la vela que se esta leyendo NO es parte de ella:
+    // es la MEDIA MOVIL cruzando el hueco entre vela y vela.
+    LINE_RATIO: 0.35
   },
 
   // --- Duracion en segundos de cada timeframe de PO ---

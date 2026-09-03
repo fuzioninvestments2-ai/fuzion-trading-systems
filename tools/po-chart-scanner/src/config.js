@@ -77,13 +77,23 @@
 //   derecha de la pantalla; y elige la etiqueta MAS A LA
 //   DERECHA en vez de la ultima del DOM. Diagnostico desde la
 //   consola: POScannerPRO.Panel.diagPrice()
+// v4.4.4 LECTOR: las MEDIAS MOVILES de PO son roja y verde lima
+//   (los colores de las velas) y son CONTINUAS. En el hueco
+//   entre dos velas lo unico coloreado es la media, del mismo
+//   color y a la misma altura, asi que el agrupador la tomaba
+//   por continuacion y pegaba vela con vela hasta pasarse de
+//   MAX_WIDTH_PX; el bloque entero se descartaba. Con el
+//   grafico AMPLIADO se comia casi toda la lectura: el usuario
+//   vio "captura: 4 velas / 17513 px". Ahora una columna mucho
+//   mas baja que la vela en curso corta el grupo, los restos de
+//   linea se separan por altura y MAX_WIDTH_PX sube a 60.
 // ============================================================
 window.POScannerPRO = window.POScannerPRO || {};
 POScannerPRO._mods = POScannerPRO._mods || [];
 POScannerPRO._mods.push('config');
 
 POScannerPRO.CONFIG = {
-  VERSION: '4.4.3',
+  VERSION: '4.4.4',
 
   // --- Deteccion de color de velas (HSV, robusto a temas) ---
   // v3.5.6: verde LIMA real de las velas PO (medido en video:
@@ -98,11 +108,18 @@ POScannerPRO.CONFIG = {
   // --- Geometria de velas ---
   CANDLE: {
     MIN_WIDTH_PX: 2,
-    MAX_WIDTH_PX: 30,   // una vela real nunca supera ~30px; mas ancho = boton/banner
+    // v4.4.4: 30px se quedaba corto con el grafico AMPLIADO (pocas
+    // velas muy anchas). Los botones BUY/SELL rondan los 110px, asi
+    // que 60 sigue dejandolos fuera.
+    MAX_WIDTH_PX: 60,
     MIN_HEIGHT_PX: 2,
     MAX_GAP_PX: 2,
     RUN_GAP_PX: 2,      // hueco max dentro de un tramo vertical
-    BODY_DENSITY: 0.6   // % de columnas ocupadas para considerar "cuerpo" (vs mecha)
+    BODY_DENSITY: 0.6,  // % de columnas ocupadas para considerar "cuerpo" (vs mecha)
+    // v4.4.4: una columna cuyo tramo mide menos de este % de la
+    // altura de la vela que se esta leyendo NO es parte de ella:
+    // es la MEDIA MOVIL cruzando el hueco entre vela y vela.
+    LINE_RATIO: 0.35
   },
 
   // --- Duracion en segundos de cada timeframe de PO ---
