@@ -1,4 +1,4 @@
-# PO Chart Scanner PRO v4.4.5 — OPTIMIZACION DE SCORING Y FILTRADO
+# PO Chart Scanner PRO v4.4.6 — OPTIMIZACION DE SCORING Y FILTRADO
 
 Extension de Chrome (Manifest V3) que lee el grafico de Pocket Option **por
 pixeles** y produce una senal CALL/PUT puntuada. No opera sola: `AUTOTRADE`
@@ -310,6 +310,29 @@ la confluencia CALL y desinflaba la PUT en cualquier grafico con MACD bajista.
 se habia construido sobre el script original y traia este bug otra vez. Al
 integrarla se conservo la correccion. Por eso el `.ps1` se genera desde el
 repo y no al reves.
+
+### v4.4.6
+
+**El contexto MTF sintetico contaba como confirmacion independiente.** Cuando
+no hay una serie archivada de un timeframe mayor, `higherTrend()` la deriva
+agrupando las velas del timeframe actual (marcada con `*`). Esa serie no es
+informacion nueva: su tendencia **es** la tendencia local remuestreada. Aun
+asi votaba como fuente 12, sumaba a la confluencia y valia como "aliado
+estructural" para permitir un 90+. Es decir, la misma evidencia contaba dos
+veces. Se vio en una senal real del usuario, PUT 95/100 apoyada en
+`Tendencia: DOWN (100%)` y `Contexto MTF: BAJISTA en M1*:BAJISTA`, que eran
+lo mismo.
+
+Ahora `higherTrend()` devuelve `real`, `syn`, `scoreReal` y `dirReal`, y solo
+el contexto de timeframes **realmente archivados** vota, techa y sirve de
+aliado. El sintetico se sigue mostrando, con el aviso explicito de que no
+cuenta. Para tener un MTF de verdad hay que escanear al menos una vez en M1 o
+M5: entonces esa serie queda archivada y pasa a ser una fuente independiente.
+
+**El score no es una probabilidad.** El numero grande es un score de
+confluencia y "95/100" se lee como "95 de cada 100". El detalle lo dice ahora
+de forma explicita y muestra al lado el acierto historico real de esa calidad,
+tambien cuando aun no hay muestra.
 
 ### v4.4.5
 

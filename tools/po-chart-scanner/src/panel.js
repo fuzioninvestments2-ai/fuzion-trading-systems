@@ -555,10 +555,17 @@ POScannerPRO.Panel = (() => {
               : '')));
     const d = r.detail;
     // Acierto historico real de senales de ESTA calidad (aprendizaje)
+    // v4.4.6: el numero grande es un score de CONFLUENCIA, no una
+    // probabilidad de acierto, y se leia como tal ("95%" invita a
+    // pensar en 95 de cada 100). Lo unico que se parece a una
+    // probabilidad es el acierto historico REAL de esa calidad, y
+    // se dice tambien cuando aun no hay muestra.
     let histLine = '';
     try {
       const hq = POScannerPRO.History.byQuality(r.quality);
-      if (hq.n > 0) histLine = '\nHistorico ' + r.quality + ': ' + hq.acc + '% en ' + hq.n + ' senales';
+      histLine = '\nEl score mide CONFLUENCIA, no probabilidad. Acierto real ' +
+        r.quality + ': ' + (hq.n ? hq.acc + '% en ' + hq.n + ' senales'
+                                 : 'sin muestra todavia');
     } catch (e) { /* historial aun sin byQuality */ }
     const exp = expiryInfo();
     r.expiryText = tradeSec ? fmtSec(tradeSec) : fmtSec(tfSec); // para el overlay

@@ -204,7 +204,16 @@ POScannerPRO.CandleArchive = (() => {
     const ORDER = [5, 15, 30, 60, 180, 300, 900, 1800, 3600, 14400, 86400];
     const NAMES = { 5:'S5', 15:'S15', 30:'S30', 60:'M1', 180:'M3', 300:'M5',
                     900:'M15', 1800:'M30', 3600:'H1', 14400:'H4', 86400:'D1' };
-    let score = 0;
+    // v4.4.6: se llevan DOS cuentas. Una serie SINTETICA no es
+    // informacion nueva: se fabrica agrupando las MISMAS velas del
+    // timeframe actual, asi que su tendencia es la tendencia local
+    // remuestreada. Contarla como confirmacion independiente es
+    // contar la misma evidencia dos veces (la vio el usuario en una
+    // senal PUT 95/100: voto la tendencia y voto otra vez el
+    // "contexto MTF" M1*, ambos del mismo tramo de velas).
+    // scoreReal solo acumula series REALMENTE archivadas de otro
+    // timeframe; el score completo se conserva para mostrarlo.
+    let score = 0, scoreReal = 0, nReal = 0, nSyn = 0;
     const used = [];
     ORDER.forEach(s => {
       if (s <= tfSec) return;                     // solo TFs MAYORES
@@ -215,13 +224,22 @@ POScannerPRO.CandleArchive = (() => {
       if (!candles || candles.length < 20) return;
       const t = POScannerPRO.TrendAnalyzer.analyze(candles.slice(-60));
       const tag = NAMES[s] + (syn ? '*' : '');
-      if (t.trend === 'UP')        { score += t.strength >= 50 ? 2 : 1; used.push(tag + ':ALCISTA'); }
-      else if (t.trend === 'DOWN') { score -= t.strength >= 50 ? 2 : 1; used.push(tag + ':BAJISTA'); }
+      const peso = t.strength >= 50 ? 2 : 1;
+      if (t.trend === 'UP' || t.trend === 'DOWN') {
+        const d = t.trend === 'UP' ? peso : -peso;
+        score += d;
+        if (syn) nSyn++; else { nReal++; scoreReal += d; }
+        used.push(tag + (t.trend === 'UP' ? ':ALCISTA' : ':BAJISTA'));
+      }
     });
     return {
       score: score,
       dir: score > 0 ? 'UP' : (score < 0 ? 'DOWN' : 'FLAT'),
-      used: used
+      used: used,
+      real: nReal,                 // series de OTRO timeframe realmente archivadas
+      syn: nSyn,                   // series derivadas del timeframe actual
+      scoreReal: scoreReal,
+      dirReal: scoreReal > 0 ? 'UP' : (scoreReal < 0 ? 'DOWN' : 'FLAT')
     };
   }
 

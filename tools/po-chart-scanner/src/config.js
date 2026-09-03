@@ -93,7 +93,7 @@ POScannerPRO._mods = POScannerPRO._mods || [];
 POScannerPRO._mods.push('config');
 
 POScannerPRO.CONFIG = {
-  VERSION: '4.4.5',
+  VERSION: '4.4.6',
 
   // --- Deteccion de color de velas (HSV, robusto a temas) ---
   // v3.5.6: verde LIMA real de las velas PO (medido en video:

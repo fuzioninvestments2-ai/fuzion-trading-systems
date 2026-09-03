@@ -496,5 +496,46 @@ console.log('  ' + sW.wins + 'W/' + sW.losses + 'L/' + sW.ties + 'E -> acc=' + s
 if (sW.acc !== 100) { console.log('  !! deberia ser 100'); fallos++; }
 P.History.clear();
 
+// ============================================================
+// v4.4.6: el MTF SINTETICO no puede contar como confirmacion.
+// Se fabrica agrupando las MISMAS velas del timeframe actual, asi
+// que su tendencia ES la tendencia local: votar con el infla la
+// confluencia con evidencia repetida. Lo vio el usuario en una
+// senal PUT 95/100 apoyada en "Tendencia DOWN" + "MTF M1*:BAJISTA".
+// ============================================================
+console.log('\n=== v4.4.6 MTF SINTETICO NO CONFIRMA ===');
+const bajista = serie(90, i => 200 + i * 2);        // precio cayendo
+// Solo se ha escaneado UN timeframe: el MTF solo puede ser sintetico
+P.CandleArchive.add('MTF-SOLO', 30, bajista);
+const ctxSyn = P.CandleArchive.higherTrend('MTF-SOLO', 30);
+console.log('  un solo timeframe -> real=' + ctxSyn.real + ' sinteticas=' +
+  ctxSyn.syn + ' | ' + (ctxSyn.used.join(' ') || 'sin series'));
+if (ctxSyn.real !== 0) { console.log('  !! no deberia haber series reales'); fallos++; }
+if (!ctxSyn.syn) { console.log('  !! deberia derivar alguna sintetica'); fallos++; }
+
+const conSyn = P.Scoring.evaluate(bajista, { asset: 'MTF-SOLO', tfSec: 30 });
+const confSyn = parseInt(conSyn.detail.confluencia, 10);
+console.log('  score=' + conSyn.score + ' confluencia=' + conSyn.detail.confluencia +
+  ' | contexto: ' + conSyn.detail.contexto.slice(0, 62) + '...');
+if (!/SINTETICO/.test(conSyn.detail.contexto)) {
+  console.log('  !! el panel no avisa de que es sintetico'); fallos++;
+}
+
+// Ahora SI existe una serie real de un timeframe mayor: debe votar
+P.CandleArchive.add('MTF-REAL', 30, bajista);
+P.CandleArchive.add('MTF-REAL', 300, bajista);      // M5 archivado de verdad
+const ctxReal = P.CandleArchive.higherTrend('MTF-REAL', 30);
+console.log('  con M5 archivado   -> real=' + ctxReal.real + ' sinteticas=' +
+  ctxReal.syn + ' dirReal=' + ctxReal.dirReal);
+if (ctxReal.real < 1) { console.log('  !! deberia contar la serie real'); fallos++; }
+
+const conReal = P.Scoring.evaluate(bajista, { asset: 'MTF-REAL', tfSec: 30 });
+const confReal = parseInt(conReal.detail.confluencia, 10);
+console.log('  confluencia sin MTF real: ' + confSyn + '/12  ->  con MTF real: ' +
+  confReal + '/12');
+if (confReal <= confSyn) {
+  console.log('  !! un MTF real deberia sumar una fuente mas'); fallos++;
+}
+
 console.log('\n===== ' + (fallos ? fallos + ' FALLOS' : 'TODAS LAS COMPROBACIONES OK') + ' =====');
 process.exit(fallos ? 1 : 0);

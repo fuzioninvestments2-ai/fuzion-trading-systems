@@ -156,8 +156,15 @@ POScannerPRO.Scoring = (() => {
     if (ctx && ctx.asset && ctx.tfSec && P.CandleArchive) {
       try {
         contexto = P.CandleArchive.higherTrend(ctx.asset, ctx.tfSec);
-        if (contexto.dir === 'UP') { callPts += Math.abs(contexto.score) >= 2 ? 2 : 1; callSrc++; }
-        else if (contexto.dir === 'DOWN') { putPts += Math.abs(contexto.score) >= 2 ? 2 : 1; putSrc++; }
+        // v4.4.6: SOLO vota el contexto de timeframes REALMENTE
+        // archivados. El sintetico agrupa las mismas velas que ya
+        // analizo la fuente 11 (tendencia): votar con el es contar
+        // la misma evidencia dos veces e inflar la confluencia.
+        if (contexto.real > 0) {
+          const w = Math.abs(contexto.scoreReal) >= 2 ? 2 : 1;
+          if (contexto.dirReal === 'UP') { callPts += w; callSrc++; }
+          else if (contexto.dirReal === 'DOWN') { putPts += w; putSrc++; }
+        }
       } catch (e) { /* archivo aun vacio */ }
     }
 
@@ -284,11 +291,15 @@ POScannerPRO.Scoring = (() => {
     // 3) CONTRA MTF: el contexto de TFs MAYORES archivados
     //    contradice la senal. Si aun no hay archivo, NO castiga
     //    (seria injusto: el contexto se construye escaneando).
-    if (contexto.used && contexto.used.length && contexto.dir !== 'FLAT') {
-      if (dir === 'CALL' && contexto.dir === 'DOWN') {
+    // v4.4.6: tambien aqui solo cuenta el contexto REAL. Ir "contra
+    // un MTF sintetico" es ir contra la tendencia local, que ya tiene
+    // su propio techo: castigarlo dos veces por la misma razon
+    // adornaba el aviso con un motivo que no era independiente.
+    if (contexto.real > 0 && contexto.dirReal !== 'FLAT') {
+      if (dir === 'CALL' && contexto.dirReal === 'DOWN') {
         cap = Math.min(cap, CAP_MTF);
         reasons.push('contra MTF (' + contexto.used.join(' ') + ' BAJISTA)');
-      } else if (dir === 'PUT' && contexto.dir === 'UP') {
+      } else if (dir === 'PUT' && contexto.dirReal === 'UP') {
         cap = Math.min(cap, CAP_MTF);
         reasons.push('contra MTF (' + contexto.used.join(' ') + ' ALCISTA)');
       }
@@ -384,9 +395,11 @@ POScannerPRO.Scoring = (() => {
          (dir === 'PUT'  && sr.near.type === 'R'));
       const aFavorPatron = patterns.some(p =>
         dir === 'CALL' ? p.bias > 0 : p.bias < 0);
-      const aFavorMTF = !!(contexto.used && contexto.used.length) &&
-        ((dir === 'CALL' && contexto.dir === 'UP') ||
-         (dir === 'PUT'  && contexto.dir === 'DOWN'));
+      // v4.4.6: un MTF sintetico NO vale como aliado estructural:
+      // repite la tendencia local, que ya se comprueba arriba.
+      const aFavorMTF = contexto.real > 0 &&
+        ((dir === 'CALL' && contexto.dirReal === 'UP') ||
+         (dir === 'PUT'  && contexto.dirReal === 'DOWN'));
       if (agree < 5 ||
           !(aFavorTendencia || aFavorSR || aFavorPatron || aFavorMTF)) {
         score = MIN90 - 1;   // 89: buena, no impecable
@@ -436,7 +449,11 @@ POScannerPRO.Scoring = (() => {
         actividad: contra ? contra.actividad : null,
         contexto: contexto.used.length
           ? (contexto.dir === 'UP' ? 'ALCISTA' : contexto.dir === 'DOWN' ? 'BAJISTA' : 'mixto') +
-            ' en ' + contexto.used.join(' ')
+            ' en ' + contexto.used.join(' ') +
+            // v4.4.6: decirlo claro en el panel, no solo con un *
+            (contexto.real ? '' :
+             ' [SINTETICO: derivado de estas mismas velas, NO cuenta ' +
+             'como confirmacion. Escanea 1 vez en M1/M5 para uno real]')
           : 'sin datos (escanea 1 vez en M1/M5 para crearlo)'
       }
     };

@@ -583,7 +583,7 @@ POScannerPRO._mods.push('injector');
 {
   "manifest_version": 3,
   "name": "PO Chart Scanner PRO v4.4 OPTIMIZACION DE SCORING Y FILTRADO",
-  "version": "4.4.5",
+  "version": "4.4.6",
   "description": "v4.4: setup CONTRARIAN PERFECTO (+15 y piso 90 con las 6 condiciones), umbral de confluencia 7/12 (6/12 si es perfecto), etiqueta de accion OPERAR/NO OPERAR por rango de score, sin flecha de entrada bajo 75 y backtest separado contrarian/normal/total. v4.3: CAPA CONTRARIAN ANTI-MANIPULACION para OTC - Trap Index (mechas largas), deteccion de FAKEOUT en S/R, reversal ratio, order flow inferido por rango (proxy de pixeles, sin volumen real), penalizacion por senal OBVIA (masa), bonus CONTRARIAN por fakeout a favor y BLOQUEO por masa obvia con trampa en contra; historial separado contrarian vs normal. Hereda v4.2: bloqueo total de contra-estructura (ESPERAR), regla de los 90, score con velas cerradas, backtest maduro (30+); v4.1: techos estructurales 60/55/45; v4.0: motor continuo de 3 fases. SIN auto-trading.",
   "permissions": [
     "storage",
@@ -922,7 +922,16 @@ POScannerPRO.CandleArchive = (() => {
     const ORDER = [5, 15, 30, 60, 180, 300, 900, 1800, 3600, 14400, 86400];
     const NAMES = { 5:'S5', 15:'S15', 30:'S30', 60:'M1', 180:'M3', 300:'M5',
                     900:'M15', 1800:'M30', 3600:'H1', 14400:'H4', 86400:'D1' };
-    let score = 0;
+    // v4.4.6: se llevan DOS cuentas. Una serie SINTETICA no es
+    // informacion nueva: se fabrica agrupando las MISMAS velas del
+    // timeframe actual, asi que su tendencia es la tendencia local
+    // remuestreada. Contarla como confirmacion independiente es
+    // contar la misma evidencia dos veces (la vio el usuario en una
+    // senal PUT 95/100: voto la tendencia y voto otra vez el
+    // "contexto MTF" M1*, ambos del mismo tramo de velas).
+    // scoreReal solo acumula series REALMENTE archivadas de otro
+    // timeframe; el score completo se conserva para mostrarlo.
+    let score = 0, scoreReal = 0, nReal = 0, nSyn = 0;
     const used = [];
     ORDER.forEach(s => {
       if (s <= tfSec) return;                     // solo TFs MAYORES
@@ -933,13 +942,22 @@ POScannerPRO.CandleArchive = (() => {
       if (!candles || candles.length < 20) return;
       const t = POScannerPRO.TrendAnalyzer.analyze(candles.slice(-60));
       const tag = NAMES[s] + (syn ? '*' : '');
-      if (t.trend === 'UP')        { score += t.strength >= 50 ? 2 : 1; used.push(tag + ':ALCISTA'); }
-      else if (t.trend === 'DOWN') { score -= t.strength >= 50 ? 2 : 1; used.push(tag + ':BAJISTA'); }
+      const peso = t.strength >= 50 ? 2 : 1;
+      if (t.trend === 'UP' || t.trend === 'DOWN') {
+        const d = t.trend === 'UP' ? peso : -peso;
+        score += d;
+        if (syn) nSyn++; else { nReal++; scoreReal += d; }
+        used.push(tag + (t.trend === 'UP' ? ':ALCISTA' : ':BAJISTA'));
+      }
     });
     return {
       score: score,
       dir: score > 0 ? 'UP' : (score < 0 ? 'DOWN' : 'FLAT'),
-      used: used
+      used: used,
+      real: nReal,                 // series de OTRO timeframe realmente archivadas
+      syn: nSyn,                   // series derivadas del timeframe actual
+      scoreReal: scoreReal,
+      dirReal: scoreReal > 0 ? 'UP' : (scoreReal < 0 ? 'DOWN' : 'FLAT')
     };
   }
 
@@ -1856,7 +1874,7 @@ POScannerPRO._mods = POScannerPRO._mods || [];
 POScannerPRO._mods.push('config');
 
 POScannerPRO.CONFIG = {
-  VERSION: '4.4.5',
+  VERSION: '4.4.6',
 
   // --- Deteccion de color de velas (HSV, robusto a temas) ---
   // v3.5.6: verde LIMA real de las velas PO (medido en video:
@@ -3341,10 +3359,17 @@ POScannerPRO.Panel = (() => {
               : '')));
     const d = r.detail;
     // Acierto historico real de senales de ESTA calidad (aprendizaje)
+    // v4.4.6: el numero grande es un score de CONFLUENCIA, no una
+    // probabilidad de acierto, y se leia como tal ("95%" invita a
+    // pensar en 95 de cada 100). Lo unico que se parece a una
+    // probabilidad es el acierto historico REAL de esa calidad, y
+    // se dice tambien cuando aun no hay muestra.
     let histLine = '';
     try {
       const hq = POScannerPRO.History.byQuality(r.quality);
-      if (hq.n > 0) histLine = '\nHistorico ' + r.quality + ': ' + hq.acc + '% en ' + hq.n + ' senales';
+      histLine = '\nEl score mide CONFLUENCIA, no probabilidad. Acierto real ' +
+        r.quality + ': ' + (hq.n ? hq.acc + '% en ' + hq.n + ' senales'
+                                 : 'sin muestra todavia');
     } catch (e) { /* historial aun sin byQuality */ }
     const exp = expiryInfo();
     r.expiryText = tradeSec ? fmtSec(tradeSec) : fmtSec(tfSec); // para el overlay
@@ -3734,8 +3759,15 @@ POScannerPRO.Scoring = (() => {
     if (ctx && ctx.asset && ctx.tfSec && P.CandleArchive) {
       try {
         contexto = P.CandleArchive.higherTrend(ctx.asset, ctx.tfSec);
-        if (contexto.dir === 'UP') { callPts += Math.abs(contexto.score) >= 2 ? 2 : 1; callSrc++; }
-        else if (contexto.dir === 'DOWN') { putPts += Math.abs(contexto.score) >= 2 ? 2 : 1; putSrc++; }
+        // v4.4.6: SOLO vota el contexto de timeframes REALMENTE
+        // archivados. El sintetico agrupa las mismas velas que ya
+        // analizo la fuente 11 (tendencia): votar con el es contar
+        // la misma evidencia dos veces e inflar la confluencia.
+        if (contexto.real > 0) {
+          const w = Math.abs(contexto.scoreReal) >= 2 ? 2 : 1;
+          if (contexto.dirReal === 'UP') { callPts += w; callSrc++; }
+          else if (contexto.dirReal === 'DOWN') { putPts += w; putSrc++; }
+        }
       } catch (e) { /* archivo aun vacio */ }
     }
 
@@ -3862,11 +3894,15 @@ POScannerPRO.Scoring = (() => {
     // 3) CONTRA MTF: el contexto de TFs MAYORES archivados
     //    contradice la senal. Si aun no hay archivo, NO castiga
     //    (seria injusto: el contexto se construye escaneando).
-    if (contexto.used && contexto.used.length && contexto.dir !== 'FLAT') {
-      if (dir === 'CALL' && contexto.dir === 'DOWN') {
+    // v4.4.6: tambien aqui solo cuenta el contexto REAL. Ir "contra
+    // un MTF sintetico" es ir contra la tendencia local, que ya tiene
+    // su propio techo: castigarlo dos veces por la misma razon
+    // adornaba el aviso con un motivo que no era independiente.
+    if (contexto.real > 0 && contexto.dirReal !== 'FLAT') {
+      if (dir === 'CALL' && contexto.dirReal === 'DOWN') {
         cap = Math.min(cap, CAP_MTF);
         reasons.push('contra MTF (' + contexto.used.join(' ') + ' BAJISTA)');
-      } else if (dir === 'PUT' && contexto.dir === 'UP') {
+      } else if (dir === 'PUT' && contexto.dirReal === 'UP') {
         cap = Math.min(cap, CAP_MTF);
         reasons.push('contra MTF (' + contexto.used.join(' ') + ' ALCISTA)');
       }
@@ -3962,9 +3998,11 @@ POScannerPRO.Scoring = (() => {
          (dir === 'PUT'  && sr.near.type === 'R'));
       const aFavorPatron = patterns.some(p =>
         dir === 'CALL' ? p.bias > 0 : p.bias < 0);
-      const aFavorMTF = !!(contexto.used && contexto.used.length) &&
-        ((dir === 'CALL' && contexto.dir === 'UP') ||
-         (dir === 'PUT'  && contexto.dir === 'DOWN'));
+      // v4.4.6: un MTF sintetico NO vale como aliado estructural:
+      // repite la tendencia local, que ya se comprueba arriba.
+      const aFavorMTF = contexto.real > 0 &&
+        ((dir === 'CALL' && contexto.dirReal === 'UP') ||
+         (dir === 'PUT'  && contexto.dirReal === 'DOWN'));
       if (agree < 5 ||
           !(aFavorTendencia || aFavorSR || aFavorPatron || aFavorMTF)) {
         score = MIN90 - 1;   // 89: buena, no impecable
@@ -4014,7 +4052,11 @@ POScannerPRO.Scoring = (() => {
         actividad: contra ? contra.actividad : null,
         contexto: contexto.used.length
           ? (contexto.dir === 'UP' ? 'ALCISTA' : contexto.dir === 'DOWN' ? 'BAJISTA' : 'mixto') +
-            ' en ' + contexto.used.join(' ')
+            ' en ' + contexto.used.join(' ') +
+            // v4.4.6: decirlo claro en el panel, no solo con un *
+            (contexto.real ? '' :
+             ' [SINTETICO: derivado de estas mismas velas, NO cuenta ' +
+             'como confirmacion. Escanea 1 vez en M1/M5 para uno real]')
           : 'sin datos (escanea 1 vez en M1/M5 para crearlo)'
       }
     };
