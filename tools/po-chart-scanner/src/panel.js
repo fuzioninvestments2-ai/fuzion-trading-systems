@@ -625,8 +625,11 @@ POScannerPRO.Panel = (() => {
     // Actualizar celda ACIERTO con las estadisticas del historial
     try {
       const s = POScannerPRO.History.stats();
-      set('acc', s.total ? s.acc + '% (' + s.wins + 'W/' + s.losses + 'L' +
-        (s.ties ? '/' + s.ties + 'E' : '') + ')' : '-');
+      const cuenta = '(' + s.wins + 'W/' + s.losses + 'L' +
+        (s.ties ? '/' + s.ties + 'E' : '') + ')';
+      set('acc', !s.total ? '-'
+        : s.acc == null ? 'sin cerrar ' + cuenta   // v4.4.5: 0% era enganoso
+        : s.acc + '% ' + cuenta);
     } catch (e) { /* historial aun no listo */ }
   }
 
@@ -673,12 +676,14 @@ POScannerPRO.Panel = (() => {
       }
     } catch (e) { /* historial sin backtests aun */ }
     set('detail',
-      'Acierto: ' + s.acc + '% (' + s.wins + 'W/' + s.losses + 'L' +
+      'Acierto: ' + (s.acc == null ? 'sin senales cerradas' : s.acc + '%') +
+      ' (' + s.wins + 'W/' + s.losses + 'L' +
       (s.ties ? '/' + s.ties + 'E' : '') + ') | Pendientes: ' +
       s.pending + (s.cancelled ? ' | Canceladas: ' + s.cancelled : '') +
       tagLine + '\n' +
       lines.join('\n'));
-    set('status', 'HISTORIAL: ' + s.total + ' senales | Acierto real: ' + s.acc + '%');
+    set('status', 'HISTORIAL: ' + s.total + ' senales | Acierto real: ' +
+      (s.acc == null ? 'sin senales cerradas aun' : s.acc + '%'));
   }
 
   // Estado visual del boton AUTO (ON = verde encendido)

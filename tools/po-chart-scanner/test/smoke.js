@@ -474,5 +474,27 @@ console.log('  nuevas: ' + JSON.stringify(bl.total) + ' | legacy: ' + JSON.strin
 if (bl.legacy.n !== 0) { console.log('  !! no deberia haber legacy tras clear()'); fallos++; }
 if (bl.total.n !== 5) { console.log('  !! las 5 nuevas no cuentan'); fallos++; }
 
+console.log('\n=== v4.4.5 ACIERTO SIN SENALES CERRADAS ===');
+// Con solo EMPATE y PENDIENTE el acierto es DESCONOCIDO, no 0%
+P.History.clear();
+P.History.add({ asset: 'E', dir: 'CALL', score: 70, quality: 'MEDIUM',
+  refPrice: 1, refReal: true, refT: Date.now() - 61000, tfSec: 60,
+  deadline: Date.now() - 1000, tag: 'NORMAL', refMethod: 'eje' });
+P.History.update(1);                    // no se movio -> EMPATE
+const sE = P.History.stats();
+console.log('  ' + sE.wins + 'W/' + sE.losses + 'L/' + sE.ties + 'E -> acc=' +
+  sE.acc + ' decididas=' + sE.decididas);
+if (sE.acc !== null) { console.log('  !! deberia ser null, no ' + sE.acc); fallos++; }
+if (sE.ties !== 1) { console.log('  !! el empate no se registro'); fallos++; }
+// Y con una decidida, el acierto vuelve a ser un numero
+P.History.add({ asset: 'F', dir: 'CALL', score: 70, quality: 'MEDIUM',
+  refPrice: 1, refReal: true, refT: Date.now() - 61000, tfSec: 60,
+  deadline: Date.now() - 1000, tag: 'NORMAL', refMethod: 'eje' });
+P.History.update(2);                    // subio -> WIN
+const sW = P.History.stats();
+console.log('  ' + sW.wins + 'W/' + sW.losses + 'L/' + sW.ties + 'E -> acc=' + sW.acc + '%');
+if (sW.acc !== 100) { console.log('  !! deberia ser 100'); fallos++; }
+P.History.clear();
+
 console.log('\n===== ' + (fallos ? fallos + ' FALLOS' : 'TODAS LAS COMPROBACIONES OK') + ' =====');
 process.exit(fallos ? 1 : 0);

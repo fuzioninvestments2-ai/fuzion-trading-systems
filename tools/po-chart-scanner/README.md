@@ -1,4 +1,4 @@
-# PO Chart Scanner PRO v4.4.4 — OPTIMIZACION DE SCORING Y FILTRADO
+# PO Chart Scanner PRO v4.4.5 — OPTIMIZACION DE SCORING Y FILTRADO
 
 Extension de Chrome (Manifest V3) que lee el grafico de Pocket Option **por
 pixeles** y produce una senal CALL/PUT puntuada. No opera sola: `AUTOTRADE`
@@ -310,6 +310,14 @@ la confluencia CALL y desinflaba la PUT en cualquier grafico con MACD bajista.
 se habia construido sobre el script original y traia este bug otra vez. Al
 integrarla se conservo la correccion. Por eso el `.ps1` se genera desde el
 repo y no al reves.
+
+### v4.4.5
+
+La celda ACIERTO mostraba `0% (0W/0L/2E)` cuando ninguna senal se habia
+resuelto todavia: se lee como "las pierde todas" y en realidad no habia
+decidido ninguna (los EMPATE no deciden). `stats()` devuelve ahora `acc: null`
+y `decididas` con el numero de WIN+LOSS; el panel muestra `sin cerrar` hasta
+que haya al menos una.
 
 ### v4.4.4
 

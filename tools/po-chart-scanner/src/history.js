@@ -160,7 +160,11 @@ POScannerPRO.History = (() => {
     return {
       total: wins + losses + pend, wins: wins, losses: losses,
       ties: ties, pending: pend, cancelled: canc,
-      acc: done ? Math.round(wins / done * 100) : 0
+      decididas: done,          // v4.4.5: WIN+LOSS (los EMPATE no deciden)
+      // v4.4.5: sin ninguna decidida el acierto es DESCONOCIDO, no 0%.
+      // Con 0W/0L/2E el panel mostraba "0%", que se lee como "las
+      // pierde todas" cuando en realidad no ha resuelto ninguna.
+      acc: done ? Math.round(wins / done * 100) : null
     };
   }
 

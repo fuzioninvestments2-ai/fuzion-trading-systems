@@ -583,7 +583,7 @@ POScannerPRO._mods.push('injector');
 {
   "manifest_version": 3,
   "name": "PO Chart Scanner PRO v4.4 OPTIMIZACION DE SCORING Y FILTRADO",
-  "version": "4.4.4",
+  "version": "4.4.5",
   "description": "v4.4: setup CONTRARIAN PERFECTO (+15 y piso 90 con las 6 condiciones), umbral de confluencia 7/12 (6/12 si es perfecto), etiqueta de accion OPERAR/NO OPERAR por rango de score, sin flecha de entrada bajo 75 y backtest separado contrarian/normal/total. v4.3: CAPA CONTRARIAN ANTI-MANIPULACION para OTC - Trap Index (mechas largas), deteccion de FAKEOUT en S/R, reversal ratio, order flow inferido por rango (proxy de pixeles, sin volumen real), penalizacion por senal OBVIA (masa), bonus CONTRARIAN por fakeout a favor y BLOQUEO por masa obvia con trampa en contra; historial separado contrarian vs normal. Hereda v4.2: bloqueo total de contra-estructura (ESPERAR), regla de los 90, score con velas cerradas, backtest maduro (30+); v4.1: techos estructurales 60/55/45; v4.0: motor continuo de 3 fases. SIN auto-trading.",
   "permissions": [
     "storage",
@@ -1856,7 +1856,7 @@ POScannerPRO._mods = POScannerPRO._mods || [];
 POScannerPRO._mods.push('config');
 
 POScannerPRO.CONFIG = {
-  VERSION: '4.4.4',
+  VERSION: '4.4.5',
 
   // --- Deteccion de color de velas (HSV, robusto a temas) ---
   // v3.5.6: verde LIMA real de las velas PO (medido en video:
@@ -2482,7 +2482,11 @@ POScannerPRO.History = (() => {
     return {
       total: wins + losses + pend, wins: wins, losses: losses,
       ties: ties, pending: pend, cancelled: canc,
-      acc: done ? Math.round(wins / done * 100) : 0
+      decididas: done,          // v4.4.5: WIN+LOSS (los EMPATE no deciden)
+      // v4.4.5: sin ninguna decidida el acierto es DESCONOCIDO, no 0%.
+      // Con 0W/0L/2E el panel mostraba "0%", que se lee como "las
+      // pierde todas" cuando en realidad no ha resuelto ninguna.
+      acc: done ? Math.round(wins / done * 100) : null
     };
   }
 
@@ -3407,8 +3411,11 @@ POScannerPRO.Panel = (() => {
     // Actualizar celda ACIERTO con las estadisticas del historial
     try {
       const s = POScannerPRO.History.stats();
-      set('acc', s.total ? s.acc + '% (' + s.wins + 'W/' + s.losses + 'L' +
-        (s.ties ? '/' + s.ties + 'E' : '') + ')' : '-');
+      const cuenta = '(' + s.wins + 'W/' + s.losses + 'L' +
+        (s.ties ? '/' + s.ties + 'E' : '') + ')';
+      set('acc', !s.total ? '-'
+        : s.acc == null ? 'sin cerrar ' + cuenta   // v4.4.5: 0% era enganoso
+        : s.acc + '% ' + cuenta);
     } catch (e) { /* historial aun no listo */ }
   }
 
@@ -3455,12 +3462,14 @@ POScannerPRO.Panel = (() => {
       }
     } catch (e) { /* historial sin backtests aun */ }
     set('detail',
-      'Acierto: ' + s.acc + '% (' + s.wins + 'W/' + s.losses + 'L' +
+      'Acierto: ' + (s.acc == null ? 'sin senales cerradas' : s.acc + '%') +
+      ' (' + s.wins + 'W/' + s.losses + 'L' +
       (s.ties ? '/' + s.ties + 'E' : '') + ') | Pendientes: ' +
       s.pending + (s.cancelled ? ' | Canceladas: ' + s.cancelled : '') +
       tagLine + '\n' +
       lines.join('\n'));
-    set('status', 'HISTORIAL: ' + s.total + ' senales | Acierto real: ' + s.acc + '%');
+    set('status', 'HISTORIAL: ' + s.total + ' senales | Acierto real: ' +
+      (s.acc == null ? 'sin senales cerradas aun' : s.acc + '%'));
   }
 
   // Estado visual del boton AUTO (ON = verde encendido)
